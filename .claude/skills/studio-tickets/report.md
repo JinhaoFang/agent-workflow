@@ -23,4 +23,4 @@
 - **设计负责人主会话**：`~/.claude/projects/<项目目录>/<会话>.jsonl` 里每条回复的 `message.usage`。按 `message.id` 去重，跳过 `isSidechain` 的记录。
 - **子代理**：任务通知里的 `subagent_tokens`。
 
-范例：`docs/reports/spec-1-guardrails.md`。
+范例：汇报目录里已有的汇报，目录见本仓库配置说明。
