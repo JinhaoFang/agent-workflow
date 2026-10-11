@@ -2,18 +2,31 @@
  * CLI behavior tests run by `pnpm verify`. Each case starts tickets.ts with a
  * fake gh first on PATH, feeding queued JSON responses and recording argument
  * arrays and acceptance file contents. No test calls GitHub or uses the network.
+ * Temporary directories and bounded child processes use only Node built-ins,
+ * keeping these tests runnable after copying the skill to another repository.
  */
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
-  runCommand as spawnSync,
-  temporaryDirectory,
-} from "../../../../tools/test-support.ts";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
 
-type Response = { args: string[]; value?: unknown; error?: string };
+type Response = {
+  args: string[];
+  value?: unknown;
+  output?: string;
+  error?: string;
+};
 type Call = { args: string[]; body?: string };
+const temporaryDirectory = (): string =>
+  mkdtempSync(join(tmpdir(), "studio-test-"));
 const repo = "another-owner/another-repository";
 const repository: Response = {
   args: ["repo", "view", "--json", "nameWithOwner"],
@@ -114,6 +127,7 @@ else if (response.error) {
   process.stderr.write(response.error);
   process.exitCode = 1;
 }
+else if (response.output !== undefined) process.stdout.write(response.output);
 else if (response.value !== undefined) process.stdout.write(JSON.stringify(response.value));
 `,
       { mode: 0o755 },
@@ -127,6 +141,7 @@ else if (response.value !== undefined) process.stdout.write(JSON.stringify(respo
         ),
       ],
       {
+        timeout: 30000,
         cwd: directory,
         env: {
           ...process.env,
@@ -280,12 +295,62 @@ test("link supports no blockers and fully existing relationships", () => {
   assert.equal((result.stdout.match(/已存在/g) ?? []).length, 2);
 });
 
+test("link prints one Chinese line per created or existing edge without raw responses", () => {
+  const responses = [
+    repository,
+    get(1),
+    get(4),
+    children([[]]),
+    dependencies(4, [[item(2)]]),
+    get(2),
+    get(3),
+    {
+      ...post(1, "sub_issues", "sub_issue_id", item(4).id),
+      value: { ...item(4), body: "raw GitHub response" },
+    },
+    {
+      ...post(4, "dependencies/blocked_by", "issue_id", item(3).id),
+      value: { ...item(3), body: "raw GitHub response" },
+    },
+  ];
+  const result = run(["link", "1", "4", "--blocked-by", "2", "3"], responses);
+  success(result, responses);
+  assert.equal(
+    result.stdout,
+    "#4 的父子关系已建立\n#4 被 #2 阻塞的关系已存在\n#4 被 #3 阻塞的关系已建立\n",
+  );
+});
+
 test("accept passes a UTF-8 comment file, preserves multiline fields, then closes", () => {
   const responses = [repository, get(4), comment, close];
   const result = run(["accept", "4", "--result", "通过", ...fields], responses);
   success(result, responses);
   assert.equal(result.calls[2].body, expectedBody);
   assert.equal(existsSync(result.calls[2].args.at(-1)!), false);
+});
+
+test("accept prints the comment URL and confirms closure only after passing", () => {
+  const url =
+    "https://github.com/another-owner/another-repository/issues/4#issuecomment-123";
+  for (const verdict of ["通过", "需返工"]) {
+    const responses = [
+      repository,
+      get(4),
+      { ...comment, output: `${url}\n` },
+      ...(verdict === "通过"
+        ? [{ ...close, output: "raw close response\n" }]
+        : []),
+    ];
+    const result = run(
+      ["accept", "4", "--result", verdict, ...fields],
+      responses,
+    );
+    success(result, responses);
+    assert.equal(
+      result.stdout,
+      `${url}\n${verdict === "通过" ? "#4 已关闭\n" : ""}`,
+    );
+  }
 });
 
 test("accept reads all four multiline fields from files and never closes rework", () => {
