@@ -6,10 +6,10 @@
 
 **环境**：WSL2（Linux 5.15），Node 22.23（官方要求 24），`codex-cli 0.161.0`，模型跟随 `~/.codex/config.toml`（`gpt-6.1-sol` / high）。
 
-**安装**：DispatchDock v0.1.3，只装进本项目，不碰全局的 `~/.claude/skills/`：
+**安装**：DispatchDock v0.1.3，只装进本项目，不碰全局的 `~/.claude/skills/`。在仓库根目录运行：
 
 ```bash
-node references/DispatchDock/installer/install.mjs --host claude-code --claude-dir /root/project/my-video/.claude/skills --no-config --yes
+node references/DispatchDock/installer/install.mjs --host claude-code --claude-dir "$PWD/.claude/skills" --no-config --yes
 ```
 
 - 安装器加 `--status` 查看已装版本，加 `--rollback` 撤销；备份在 `~/.config/codex-dispatch/backups/`。
