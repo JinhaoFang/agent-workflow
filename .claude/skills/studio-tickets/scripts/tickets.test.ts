@@ -468,7 +468,7 @@ const dispatchRecord = (
 test("accept includes dispatch and rework from both checkouts, deduplicating copied names", () => {
   const initial = dispatchRecord("gh-4");
   const rework = Object.fromEntries(
-    Object.entries(dispatchRecord("gh-4-2", 2000, 0, 100)).map(
+    Object.entries(dispatchRecord("gh-4-2", 2000, 1000, 1000)).map(
       ([file, contents]) => [`ticket:${file}`, contents],
     ),
   );
@@ -494,7 +494,7 @@ test("accept includes dispatch and rework from both checkouts, deduplicating cop
       result.calls[2].body,
       expectedBody.replace(
         "  全部通过\n",
-        "  全部通过\n  派发 gh-4：用时 1.5 分钟，输入 1000（其中缓存 800），输出 50 tokens\n  派发 gh-4-2：用时 1.5 分钟，输入 2000（其中缓存 0），输出 100 tokens\n",
+        "  全部通过\n  - 派发 gh-4：用时 1.5 分钟，输入 1,000（其中缓存 800），输出 50 tokens\n  - 派发 gh-4-2：用时 1.5 分钟，输入 2,000（其中缓存 1,000），输出 1,000 tokens\n",
       ),
     );
   }
@@ -578,7 +578,7 @@ test("accept prefers a complete copied record over an interrupted duplicate", ()
   );
   success(result, responses);
   assert.equal((result.stdout.match(/派发 gh-4：/g) ?? []).length, 1);
-  assert.match(result.stdout, /输入 1000（其中缓存 800），输出 50 tokens/);
+  assert.match(result.stdout, /输入 1,000（其中缓存 800），输出 50 tokens/);
   assert.doesNotMatch(result.stdout, /不完整/);
 });
 
@@ -608,7 +608,7 @@ test("accept sums raw completed turns rather than normalized events or quoted pr
   success(result, responses);
   assert.match(
     result.calls[2].body!,
-    /派发 gh-4：用时 1.5 分钟，输入 1200（其中缓存 900），输出 60 tokens/,
+    /^ {2}- 派发 gh-4：用时 1.5 分钟，输入 1,200（其中缓存 900），输出 60 tokens$/m,
   );
   assert.doesNotMatch(result.calls[2].body!, /9999|不完整/);
 });

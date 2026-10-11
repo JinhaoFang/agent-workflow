@@ -3,6 +3,8 @@
  * git worktrees and a local bare origin. Assertions inspect output, exit codes,
  * refs, rebase state and copied files. Run with node --test on this file or pnpm
  * verify. Fixtures use paths with spaces and never touch the project's worktrees.
+ * Post-merge failures use a broken origin, a copy destination collision and a
+ * PATH git wrapper that fails only the requested deletion command.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -398,6 +400,164 @@ test("land help is read-only and argument errors exit with 2", () => {
       assert.match(result.stderr, /^出错：/);
     }
     f.assertUnlanded();
+  } finally {
+    f.cleanup();
+  }
+});
+
+for (const stage of ["push", "copy", "worktree", "branch"]) {
+  test(`land resumes ${stage} failure after fast-forward and completes all remaining steps`, () => {
+    const f = fixture();
+    try {
+      const ticketHead = f.git(["rev-parse", "ticket/21"]);
+      const blocker = join(f.root, f.artifacts, "nested/result.txt");
+      const realGit = spawnSync("which", ["git"], { encoding: "utf8" });
+      assert.equal(realGit.status, 0, realGit.stderr);
+      if (stage === "push")
+        f.git([
+          "remote",
+          "set-url",
+          "origin",
+          join(f.temporary, "missing.git"),
+        ]);
+      if (stage === "copy") mkdirSync(blocker, { recursive: true });
+      const failedCommand =
+        stage === "worktree"
+          ? ["worktree", "remove"]
+          : stage === "branch"
+            ? ["branch", "-d"]
+            : undefined;
+      if (failedCommand)
+        writeFileSync(
+          join(f.temporary, "git"),
+          `#!${process.execPath}
+const {spawnSync} = require("node:child_process");
+const args = process.argv.slice(2);
+if (JSON.stringify(args.slice(0,2)) === ${JSON.stringify(JSON.stringify(failedCommand))}) {
+  process.stderr.write("injected deletion failure\\n");
+  process.exit(1);
+}
+const result = spawnSync(${JSON.stringify(realGit.stdout.trim())}, args, {stdio:"inherit"});
+process.exit(result.status ?? 2);
+`,
+          { mode: 0o755 },
+        );
+      const rejected = f.run(["21"]);
+      assert.equal(rejected.status, 2, `${stage}: ${rejected.stderr}`);
+      assert.match(rejected.stderr, /^出错：/);
+      assert.match(rejected.stdout, /已快进合并/);
+      assert.equal(f.git(["rev-parse", f.integration]), ticketHead);
+      if (stage === "push") {
+        assert.equal(
+          f.git([
+            "--git-dir",
+            f.remote,
+            "rev-parse",
+            `refs/heads/${f.integration}`,
+          ]),
+          f.git(["rev-parse", "main"]),
+        );
+        assert.ok(!existsSync(join(f.root, ".codex-runs/gh-21.json")));
+        f.git(["remote", "set-url", "origin", f.remote]);
+      } else {
+        assert.equal(
+          f.git([
+            "--git-dir",
+            f.remote,
+            "rev-parse",
+            `refs/heads/${f.integration}`,
+          ]),
+          ticketHead,
+        );
+        assert.ok(existsSync(join(f.root, ".codex-runs/gh-21.json")));
+      }
+      if (stage === "copy") rmSync(blocker, { recursive: true });
+      if (failedCommand) rmSync(join(f.temporary, "git"));
+      assert.equal(existsSync(f.worktree), stage !== "branch");
+      assert.ok(f.git(["branch", "--list", "ticket/21"]));
+      const beforeDryRun = f.git(["show-ref"]);
+      const dryRun = f.run(["21", "--dry-run"], 7);
+      assert.equal(dryRun.status, 0, dryRun.stderr);
+      assert.match(dryRun.stdout, /工单已合入.*跳过/);
+      assert.equal(f.git(["show-ref"]), beforeDryRun);
+      assert.equal(existsSync(f.worktree), stage !== "branch");
+      const resumed = f.run(["21"], 7);
+      assert.equal(resumed.status, 0, `${stage}: ${resumed.stderr}`);
+      assert.match(resumed.stdout, /工单已合入.*跳过/);
+      assert.doesNotMatch(resumed.stdout, /临时仓库验证完成|已快进合并/);
+      if (stage !== "push") assert.match(resumed.stdout, /推送已完成，跳过/);
+      if (stage === "worktree" || stage === "branch")
+        assert.match(resumed.stdout, /复制派发记录和验收产物已完成，跳过/);
+      if (stage === "branch")
+        assert.match(resumed.stdout, /删除 worktree 已完成，跳过/);
+      assert.equal(f.git(["rev-parse", f.integration]), ticketHead);
+      assert.equal(
+        f.git([
+          "--git-dir",
+          f.remote,
+          "rev-parse",
+          `refs/heads/${f.integration}`,
+        ]),
+        ticketHead,
+      );
+      assert.equal(f.git(["rev-parse", "@{upstream}"]), ticketHead);
+      for (const name of ["gh-21.json", "gh-21.progress.log", "gh-21-2.md"])
+        assert.equal(
+          readFileSync(join(f.root, ".codex-runs", name), "utf8"),
+          name,
+        );
+      assert.equal(readFileSync(blocker, "utf8"), "ticket QA");
+      assert.deepEqual(
+        JSON.parse(
+          readFileSync(join(f.root, f.artifacts, "verification.json"), "utf8"),
+        ),
+        { cwd: f.worktree, args: f.config.verificationCommand.slice(2) },
+      );
+      assert.ok(!existsSync(f.worktree));
+      assert.equal(f.git(["branch", "--list", "ticket/21"]), "");
+      assert.ok(
+        !f.git(["worktree", "list", "--porcelain"]).includes(f.worktree),
+      );
+      assert.equal(f.git(["status", "--porcelain"]), "");
+      const completed = f.run(["21"], 7);
+      assert.equal(completed.status, 0, completed.stderr);
+      for (const step of [
+        "推送",
+        "复制派发记录和验收产物",
+        "删除 worktree ",
+        "删除分支",
+      ])
+        assert.ok(
+          completed.stdout.includes(`${step}已完成，跳过`),
+          completed.stdout,
+        );
+    } finally {
+      f.cleanup();
+    }
+  });
+}
+
+test("land does not reuse a completed journal for new commits on a recreated ticket branch", () => {
+  const f = fixture();
+  try {
+    assert.equal(f.run(["21"]).status, 0);
+    f.git(["worktree", "add", "-b", "ticket/21", f.worktree, f.integration]);
+    f.commit("follow-up.txt", "new ticket work", f.worktree);
+    mkdirSync(join(f.worktree, f.artifacts), { recursive: true });
+    const previous = f.git(["rev-parse", f.integration]);
+    const rejected = f.run(["21"], 7);
+    assert.equal(rejected.status, 1, rejected.stderr);
+    assert.match(rejected.stderr, /^出错：验证未通过/);
+    assert.equal(f.git(["rev-parse", f.integration]), previous);
+    assert.ok(existsSync(f.worktree));
+    const result = f.run(["21"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /验证已通过.*已快进合并/s);
+    assert.equal(
+      readFileSync(join(f.root, "follow-up.txt"), "utf8"),
+      "new ticket work",
+    );
+    assert.ok(!existsSync(f.worktree));
   } finally {
     f.cleanup();
   }
