@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -98,12 +99,45 @@ const run = (
   args: string[],
   responses: Response[],
   files: Record<string, string> = {},
+  ticketWorktree?: { number: number; invokeFrom?: "main" | "ticket" },
 ) => {
   const directory = temporaryDirectory();
+  const worktrees = `${directory}.worktrees`;
+  const checkout = ticketWorktree
+    ? join(worktrees, String(ticketWorktree.number))
+    : directory;
   try {
+    if (ticketWorktree) {
+      for (const args of [
+        ["init", "--initial-branch=main"],
+        [
+          "-c",
+          "user.name=Fixture",
+          "-c",
+          "user.email=fixture@example.test",
+          "commit",
+          "--allow-empty",
+          "-m",
+          "fixture",
+        ],
+        ["worktree", "add", "-b", `ticket/${ticketWorktree.number}`, checkout],
+      ]) {
+        const git = spawnSync("git", args, {
+          cwd: directory,
+          encoding: "utf8",
+        });
+        assert.ifError(git.error);
+        assert.equal(git.status, 0, git.stderr);
+      }
+    }
     writeFileSync(join(directory, "responses.json"), JSON.stringify(responses));
-    for (const [name, contents] of Object.entries(files))
-      writeFileSync(join(directory, name), contents);
+    for (const [name, contents] of Object.entries(files)) {
+      const file = name.startsWith("ticket:")
+        ? join(checkout, name.slice(7))
+        : join(directory, name);
+      mkdirSync(join(file, ".."), { recursive: true });
+      writeFileSync(file, contents);
+    }
     writeFileSync(
       join(directory, "gh"),
       `#!${process.execPath}
@@ -142,7 +176,7 @@ else if (response.value !== undefined) process.stdout.write(JSON.stringify(respo
       ],
       {
         timeout: 30000,
-        cwd: directory,
+        cwd: ticketWorktree?.invokeFrom === "ticket" ? checkout : directory,
         env: {
           ...process.env,
           PATH: `${directory}${delimiter}${process.env.PATH}`,
@@ -161,6 +195,7 @@ else if (response.value !== undefined) process.stdout.write(JSON.stringify(respo
       : [];
     return { ...result, calls };
   } finally {
+    rmSync(worktrees, { recursive: true, force: true });
     rmSync(directory, { recursive: true, force: true });
   }
 };
@@ -407,6 +442,175 @@ test("accept dry-run previews full comment and prints only the appropriate write
     assert.equal(existsSync(writes[0].at(-1)!), false);
     if (verdict === "通过") assert.deepEqual(writes[1], ["gh", ...close.args]);
   }
+});
+
+const dispatchRecord = (
+  name: string,
+  input = 1000,
+  cached = 800,
+  output = 50,
+): Record<string, string> => ({
+  [`.codex-runs/${name}.progress.log`]:
+    "=== Codex 开始：样例 ===\n\n=== Codex 结束：exit=0，用时 1.5 分钟，汇报在 /fixture/report.md ===\n",
+  [`.codex-runs/${name}.log`]:
+    "原始 stderr 文本\n" +
+    JSON.stringify({
+      type: "turn.completed",
+      usage: {
+        input_tokens: input,
+        cached_input_tokens: cached,
+        output_tokens: output,
+      },
+    }) +
+    "\n",
+});
+
+test("accept includes dispatch and rework from both checkouts, deduplicating copied names", () => {
+  const initial = dispatchRecord("gh-4");
+  const rework = Object.fromEntries(
+    Object.entries(dispatchRecord("gh-4-2", 2000, 0, 100)).map(
+      ([file, contents]) => [`ticket:${file}`, contents],
+    ),
+  );
+  for (const invokeFrom of ["main", "ticket"] as const) {
+    const responses = [repository, get(4), comment, close];
+    const result = run(
+      ["accept", "4", "--result", "通过", ...fields],
+      responses,
+      {
+        ...initial,
+        ...rework,
+        ...Object.fromEntries(
+          Object.entries(initial).map(([file, contents]) => [
+            `ticket:${file}`,
+            contents,
+          ]),
+        ),
+      },
+      { number: 4, invokeFrom },
+    );
+    success(result, responses);
+    assert.equal(
+      result.calls[2].body,
+      expectedBody.replace(
+        "  全部通过\n",
+        "  全部通过\n  派发 gh-4：用时 1.5 分钟，输入 1000（其中缓存 800），输出 50 tokens\n  派发 gh-4-2：用时 1.5 分钟，输入 2000（其中缓存 0），输出 100 tokens\n",
+      ),
+    );
+  }
+});
+
+test("accept leaves comments unchanged without records in a real worktree", () => {
+  const responses = [repository, get(4), comment, close];
+  const result = run(
+    ["accept", "4", "--result", "通过", ...fields],
+    responses,
+    {},
+    { number: 4, invokeFrom: "ticket" },
+  );
+  success(result, responses);
+  assert.equal(result.calls[2].body, expectedBody);
+});
+
+test("accept matches legacy suffixes but excludes other ticket prefixes", () => {
+  const responses = [repository, get(1)];
+  const result = run(
+    ["accept", "1", "--result", "通过", ...fields, "--dry-run"],
+    responses,
+    {
+      ...dispatchRecord("gh-1"),
+      ...dispatchRecord("gh-1-refactor"),
+      ...dispatchRecord("gh-12"),
+      ...dispatchRecord("gh-12-refactor"),
+      ...dispatchRecord("gh-1other"),
+      ...dispatchRecord("smoke-test"),
+    },
+  );
+  success(result, responses);
+  assert.equal((result.stdout.match(/派发 gh-/g) ?? []).length, 2);
+  assert.match(result.stdout, /派发 gh-1：/);
+  assert.match(result.stdout, /派发 gh-1-refactor：/);
+  assert.doesNotMatch(result.stdout, /gh-12|gh-1other|smoke-test/);
+});
+
+test("accept previews incomplete interrupted, missing, or changed record formats without failing", () => {
+  const base = dispatchRecord("gh-4");
+  const raw = ".codex-runs/gh-4.log";
+  const progress = ".codex-runs/gh-4.progress.log";
+  const scenarios: Record<string, string>[] = [
+    { ...base, [progress]: "=== Codex 开始：样例 ===\n" },
+    {
+      ...base,
+      [raw]:
+        '{"type":"turn.completed","usage":{"input_tokens":1000,"output_tokens":50}}\n',
+    },
+    { ...base, [raw]: '{"type":"turn.completed","usage":' },
+    { ...base, [raw]: '{"type":"changed","usage":{"input_tokens":1000}}\n' },
+    { ".codex-runs/gh-4.md": "只有汇报" },
+    {
+      ".codex-runs/gh-4.events.jsonl":
+        '{"kind":"turn","usage":{"input":1000,"output":50}}\n',
+    },
+  ];
+  for (const files of scenarios) {
+    const responses = [repository, get(4)];
+    const result = run(
+      ["accept", "4", "--result", "需返工", ...fields, "--dry-run"],
+      responses,
+      files,
+    );
+    success(result, responses);
+    assert.match(result.stdout, /派发 gh-4：.*未知.*；不完整/);
+    assert.equal(dryWrites(result.stdout).length, 1);
+  }
+});
+
+test("accept prefers a complete copied record over an interrupted duplicate", () => {
+  const responses = [repository, get(4)];
+  const result = run(
+    ["accept", "4", "--result", "通过", ...fields, "--dry-run"],
+    responses,
+    {
+      ...dispatchRecord("gh-4"),
+      "ticket:.codex-runs/gh-4.progress.log": "=== Codex 开始：样例 ===\n",
+    },
+    { number: 4 },
+  );
+  success(result, responses);
+  assert.equal((result.stdout.match(/派发 gh-4：/g) ?? []).length, 1);
+  assert.match(result.stdout, /输入 1000（其中缓存 800），输出 50 tokens/);
+  assert.doesNotMatch(result.stdout, /不完整/);
+});
+
+test("accept sums raw completed turns rather than normalized events or quoted progress output", () => {
+  const responses = [repository, get(4), comment];
+  const first = dispatchRecord("gh-4");
+  const result = run(
+    ["accept", "4", "--result", "需返工", ...fields],
+    responses,
+    {
+      ...first,
+      ".codex-runs/gh-4.log":
+        first[".codex-runs/gh-4.log"] +
+        JSON.stringify({
+          type: "turn.completed",
+          usage: {
+            input_tokens: 200,
+            cached_input_tokens: 100,
+            output_tokens: 10,
+          },
+        }) +
+        "\n",
+      ".codex-runs/gh-4.events.jsonl":
+        '{"kind":"turn","usage":{"input":9999,"output":9999}}\n',
+    },
+  );
+  success(result, responses);
+  assert.match(
+    result.calls[2].body!,
+    /派发 gh-4：用时 1.5 分钟，输入 1200（其中缓存 900），输出 60 tokens/,
+  );
+  assert.doesNotMatch(result.calls[2].body!, /9999|不完整/);
 });
 
 test("help for every command succeeds without calling gh", () => {

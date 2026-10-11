@@ -24,6 +24,10 @@
  * exact name or hyphen suffix. Dirty/current/mismatched trees and their branches
  * are retained, with exit 1. Ticket refs may be unmerged and are deleted with -D;
  * worktree removal is never forced. --dry-run only lists the plan.
+ * accept appends one verification line per gh-<ticket> dispatch from the main
+ * checkout and ticket worktree, deduplicating copied records by name. Duration
+ * comes from the progress footer; tokens (including cached input) come from raw
+ * .log turn.completed usage. Missing/changed formats are marked incomplete.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -235,6 +239,87 @@ const link = (values: Values, numbers: number[]): void => {
   }
 };
 
+const acceptanceDispatches = (ticket: number): string[] => {
+  const trees = spawnSync("git", ["worktree", "list", "--porcelain"], {
+    encoding: "utf8",
+  });
+  const root =
+    trees.status === 0 ? trees.stdout.split("\n")[0].slice(9) : process.cwd();
+  const records = new Map<string, string[]>();
+  const suffixes = [".progress.log", ".events.jsonl", ".log", ".md"];
+  for (const checkout of [root, `${root}.worktrees/${ticket}`]) {
+    const directory = join(checkout, ".codex-runs");
+    if (!existsSync(directory)) continue;
+    for (const file of readdirSync(directory)) {
+      const suffix = suffixes.find((ending) => file.endsWith(ending));
+      if (!suffix || !statSync(join(directory, file)).isFile()) continue;
+      const name = file.slice(0, -suffix.length);
+      if (name !== `gh-${ticket}` && !name.startsWith(`gh-${ticket}-`))
+        continue;
+      const directories = records.get(name) ?? [];
+      if (!directories.includes(directory)) directories.push(directory);
+      records.set(name, directories);
+    }
+  }
+  return [...records.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, directories]) => {
+      const summaries = directories.map((directory) => {
+        const read = (suffix: string): string => {
+          const file = join(directory, `${name}${suffix}`);
+          return existsSync(file) ? readFileSync(file, "utf8") : "";
+        };
+        const footer = read(".progress.log").match(
+          /^=== Codex 结束：exit=-?\d+，用时 (\d+(?:\.\d+)?) 分钟，汇报在 .+ ===\r?$/m,
+        );
+        const usages: Record<string, unknown>[] = [];
+        let malformed = false;
+        for (const line of read(".log").split(/\r?\n/)) {
+          if (!line.trimStart().startsWith("{")) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event?.type === "turn.completed")
+              usages.push(event.usage ?? {});
+          } catch {
+            malformed = true;
+          }
+        }
+        const counts = [
+          "input_tokens",
+          "cached_input_tokens",
+          "output_tokens",
+        ].map((key) => {
+          if (
+            !usages.length ||
+            !usages.every(
+              (usage) =>
+                Number.isSafeInteger(usage[key]) && Number(usage[key]) >= 0,
+            )
+          )
+            return undefined;
+          const total = usages.reduce(
+            (sum, usage) => sum + Number(usage[key]),
+            0,
+          );
+          return Number.isSafeInteger(total) ? total : undefined;
+        });
+        const complete =
+          Boolean(footer) &&
+          !malformed &&
+          counts.every((count) => count !== undefined);
+        return {
+          score:
+            Number(Boolean(footer)) +
+            counts.filter((count) => count !== undefined).length +
+            Number(complete),
+          line: `派发 ${name}：用时 ${footer ? `${footer[1]} 分钟` : "未知"}，输入 ${counts[0] ?? "未知"}（其中缓存 ${counts[1] ?? "未知"}），输出 ${counts[2] ?? "未知"} tokens${complete ? "" : "；不完整"}`,
+        };
+      });
+      summaries.sort((left, right) => left.score - right.score);
+      return summaries.at(-1)!.line;
+    });
+};
+
 const accept = (values: Values, numbers: number[]): void => {
   if (values.result !== "通过" && values.result !== "需返工") {
     throw usageError("--result 必须是通过或需返工。", commands.accept.help);
@@ -252,6 +337,9 @@ const accept = (values: Values, numbers: number[]): void => {
     if (!content.trim()) throw new Error(`${field} 不能为空`);
     return content.replace(/\r\n/g, "\n").trimEnd();
   });
+  const number = numbers[0];
+  const dispatches = acceptanceDispatches(number);
+  if (dispatches.length) contents[1] += `\n${dispatches.join("\n")}`;
   const labels = ["提交", "验证", "TODO(design) 与推断", "遗留"];
   const body = `## 验收：${values.result}\n${contents
     .map((content, index) => {
@@ -260,7 +348,6 @@ const accept = (values: Values, numbers: number[]): void => {
     })
     .join("\n")}\n`;
   const { repo, issue, write } = github(Boolean(values["dry-run"]));
-  const number = numbers[0];
   issue(number);
   const directory = mkdtempSync(join(tmpdir(), "studio-accept-"));
   try {
@@ -867,6 +954,8 @@ rebase 后运行配置的验证命令，通过后快进合并并推送 origin。
 四个字段支持包含换行的单个参数；也可用对应的 --commits-file、
 --verification-file、--design-file、--remaining-file 读取 UTF-8 文件。
 同一字段的文本和文件参数不能同时使用，所有字段必填。
+自动在「验证」中附主工作区与本工单 worktree 的派发数据（含返工）。
+复制的同名记录只写一次；缺失用时或 token 数据时标为「不完整」。
 通过：评论成功后关闭；需返工：只评论。
 --dry-run 查询工单，打印评论预览和写操作的 gh 参数数组，不写 GitHub。
 评论通过临时 UTF-8 文件传给 gh --body-file；运行结束后删除。`,
