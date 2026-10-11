@@ -31,6 +31,8 @@
  * checkout and ticket worktree, deduplicating copied records by name. Duration
  * comes from the progress footer; tokens (including cached input) come from raw
  * .log turn.completed usage. Missing/changed formats are marked incomplete.
+ * land, accept and cleanup share record ownership: strip known extensions,
+ * then match the exact gh-<ticket>/review-<spec> name or a hyphen suffix.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -243,6 +245,17 @@ const link = (values: Values, numbers: number[]): void => {
   }
 };
 
+const recordName = (file: string): string =>
+  file.replace(
+    /(?:\.progress\.log|\.events\.jsonl|\.(?:json|jsonl|md|log))$/,
+    "",
+  );
+
+const matchesRecord = (file: string, prefix: string): boolean => {
+  const name = recordName(file);
+  return name === prefix || name.startsWith(`${prefix}-`);
+};
+
 const acceptanceDispatches = (ticket: number): string[] => {
   const trees = spawnSync("git", ["worktree", "list", "--porcelain"], {
     encoding: "utf8",
@@ -250,16 +263,16 @@ const acceptanceDispatches = (ticket: number): string[] => {
   const root =
     trees.status === 0 ? trees.stdout.split("\n")[0].slice(9) : process.cwd();
   const records = new Map<string, string[]>();
-  const suffixes = [".progress.log", ".events.jsonl", ".log", ".md"];
   for (const checkout of [root, `${root}.worktrees/${ticket}`]) {
     const directory = join(checkout, ".codex-runs");
     if (!existsSync(directory)) continue;
     for (const file of readdirSync(directory)) {
-      const suffix = suffixes.find((ending) => file.endsWith(ending));
-      if (!suffix || !statSync(join(directory, file)).isFile()) continue;
-      const name = file.slice(0, -suffix.length);
-      if (name !== `gh-${ticket}` && !name.startsWith(`gh-${ticket}-`))
+      if (
+        !matchesRecord(file, `gh-${ticket}`) ||
+        !statSync(join(directory, file)).isFile()
+      )
         continue;
+      const name = recordName(file);
       const directories = records.get(name) ?? [];
       if (!directories.includes(directory)) directories.push(directory);
       records.set(name, directories);
@@ -734,9 +747,7 @@ const land = (values: Values, numbers: number[]): void => {
   const artifacts = join(config.acceptanceRoot, `spec-${spec}`, String(ticket));
   const records = join(worktree, ".codex-runs");
   const names = existsSync(records)
-    ? readdirSync(records).filter((name) =>
-        new RegExp(`^gh-${ticket}(?:[.-]|$)`).test(name),
-      )
+    ? readdirSync(records).filter((name) => matchesRecord(name, `gh-${ticket}`))
     : [];
   if (values["dry-run"]) {
     console.log(`合并计划：#${ticket} → ${integration}（主工作区 ${root}）`);
@@ -876,13 +887,6 @@ const cleanup = (values: Values, numbers: number[]): void => {
       issueNumber(String(child.number)),
     ),
   );
-  const matchesRecord = (name: string, prefix: string): boolean => {
-    const record = name.replace(
-      /(?:\.progress\.log|\.events\.jsonl|\.(?:json|jsonl|md|log))$/,
-      "",
-    );
-    return record === prefix || record.startsWith(`${prefix}-`);
-  };
   const records = join(root, ".codex-runs");
   const files = existsSync(records)
     ? readdirSync(records)

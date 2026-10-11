@@ -18,6 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
+import { recordExtensions, recordFixtures } from "./record-fixtures.ts";
 
 type Response = {
   args: string[];
@@ -531,6 +532,36 @@ test("accept matches legacy suffixes but excludes other ticket prefixes", () => 
   assert.match(result.stdout, /派发 gh-1：/);
   assert.match(result.stdout, /派发 gh-1-refactor：/);
   assert.doesNotMatch(result.stdout, /gh-12|gh-1other|smoke-test/);
+});
+
+test("accept uses the shared ownership corpus for every extension without prefix collisions", () => {
+  for (const ticket of [2, 18, 21]) {
+    for (const extension of recordExtensions) {
+      const records = recordFixtures.filter(
+        (record) => record.extension === extension,
+      );
+      const responses = [repository, get(ticket)];
+      const result = run(
+        ["accept", String(ticket), "--result", "通过", ...fields, "--dry-run"],
+        responses,
+        Object.fromEntries(
+          records.map((record) => [`.codex-runs/${record.file}`, "fixture"]),
+        ),
+      );
+      success(result, responses);
+      const actual = [...result.stdout.matchAll(/- 派发 ([^：\n]+)：/g)]
+        .map((match) => match[1])
+        .sort();
+      assert.deepEqual(
+        actual,
+        records
+          .filter((record) => record.ticket === ticket)
+          .map((record) => record.name)
+          .sort(),
+        `ticket ${ticket}, extension ${extension || "none"}`,
+      );
+    }
+  }
 });
 
 test("accept previews incomplete interrupted, missing, or changed record formats without failing", () => {

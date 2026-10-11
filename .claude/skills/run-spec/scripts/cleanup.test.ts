@@ -18,6 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
+import { recordFixtures } from "./record-fixtures.ts";
 
 const cli = join(import.meta.dirname, "tickets.ts");
 const fixture = () => {
@@ -207,6 +208,43 @@ test("cleanup removes only spec records, QA, worktrees and exact ticket refs, in
     assert.ok(firstDeletion > result.stdout.indexOf("删除分支：ticket/2"));
   } finally {
     f.cleanup();
+  }
+});
+
+test("cleanup removes exactly ticket and review files from the shared ownership corpus", () => {
+  for (const ticket of [2, 18, 21]) {
+    const f = fixture();
+    try {
+      const responsesFile = join(f.temporary, "responses.json");
+      const responses = JSON.parse(readFileSync(responsesFile, "utf8"));
+      responses[1].value = [[{ number: ticket, state: "closed" }]];
+      writeFileSync(responsesFile, JSON.stringify(responses));
+      rmSync(f.records, { recursive: true });
+      mkdirSync(f.records);
+      for (const record of recordFixtures)
+        writeFileSync(join(f.records, record.file), record.file);
+      const result = f.run();
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(
+        readdirSync(f.records).sort(),
+        recordFixtures
+          .filter((record) => record.ticket !== ticket && record.spec !== 17)
+          .map((record) => record.file)
+          .sort(),
+        `ticket ${ticket}`,
+      );
+      for (const record of recordFixtures) {
+        if (record.ticket === ticket || record.spec === 17)
+          assert.ok(!existsSync(join(f.records, record.file)), record.file);
+        else
+          assert.equal(
+            readFileSync(join(f.records, record.file), "utf8"),
+            record.file,
+          );
+      }
+    } finally {
+      f.cleanup();
+    }
   }
 });
 

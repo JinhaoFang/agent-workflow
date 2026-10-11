@@ -13,19 +13,21 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
+import { recordFixtures } from "./record-fixtures.ts";
 
 const cli = join(import.meta.dirname, "tickets.ts");
-const fixture = () => {
+const fixture = (ticket = 21) => {
   const temporary = mkdtempSync(join(tmpdir(), "land-test-"));
   const root = join(temporary, "clone with spaces");
   const remote = join(temporary, "bare origin.git");
-  const worktree = `${root}.worktrees/21`;
+  const worktree = `${root}.worktrees/${ticket}`;
   const integration = "spec/17-test";
   mkdirSync(root);
   const git = (args: string[], cwd = root) => {
@@ -60,7 +62,7 @@ const fixture = () => {
     `const fs = require("node:fs");
 fs.mkdirSync("out", {recursive:true});
 fs.writeFileSync("out/verification.json", JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2)}));
-fs.writeFileSync("out/custom-qa/spec-17/21/verification.json", fs.readFileSync("out/verification.json"));
+fs.writeFileSync("out/custom-qa/spec-17/${ticket}/verification.json", fs.readFileSync("out/verification.json"));
 console.log("临时仓库验证完成");
 process.exitCode = Number(process.env.LAND_VERIFY_EXIT || 0);
 `,
@@ -80,7 +82,7 @@ process.exitCode = Number(process.env.LAND_VERIFY_EXIT || 0);
   git(["init", "--bare", remote]);
   git(["remote", "add", "origin", remote]);
   git(["push", "-u", "origin", integration]);
-  git(["worktree", "add", "-b", "ticket/21", worktree, integration]);
+  git(["worktree", "add", "-b", `ticket/${ticket}`, worktree, integration]);
   commit("ticket.txt", "ticket implementation", worktree);
   mkdirSync(join(worktree, ".codex-runs"));
   for (const name of [
@@ -93,7 +95,7 @@ process.exitCode = Number(process.env.LAND_VERIFY_EXIT || 0);
     writeFileSync(join(worktree, ".codex-runs", name), name);
   mkdirSync(join(root, ".codex-runs"));
   writeFileSync(join(root, ".codex-runs/smoke.json"), "main smoke");
-  const artifacts = join(config.acceptanceRoot, "spec-17/21");
+  const artifacts = join(config.acceptanceRoot, `spec-17/${ticket}`);
   mkdirSync(join(worktree, artifacts, "nested"), { recursive: true });
   writeFileSync(join(worktree, artifacts, "nested/result.txt"), "ticket QA");
   mkdirSync(join(worktree, config.acceptanceRoot, "spec-17/22"), {
@@ -109,7 +111,12 @@ process.exitCode = Number(process.env.LAND_VERIFY_EXIT || 0);
       value: { nameWithOwner: "fixture/repo" },
     },
     {
-      args: ["api", "--method", "GET", "repos/fixture/repo/issues/21/parent"],
+      args: [
+        "api",
+        "--method",
+        "GET",
+        `repos/fixture/repo/issues/${ticket}/parent`,
+      ],
       value: { number: 17 },
     },
   ];
@@ -255,6 +262,36 @@ test("land copies nested QA and rework records, preserves unrelated main records
     assert.ok(!existsSync(join(f.root, "forbidden")));
   } finally {
     f.cleanup();
+  }
+});
+
+test("land copies exactly the ticket files from the shared ownership corpus", () => {
+  for (const ticket of [2, 18, 21]) {
+    const f = fixture(ticket);
+    try {
+      const records = join(f.worktree, ".codex-runs");
+      rmSync(records, { recursive: true });
+      mkdirSync(records);
+      for (const record of recordFixtures)
+        writeFileSync(join(records, record.file), record.file);
+      const result = f.run([String(ticket)]);
+      assert.equal(result.status, 0, result.stderr);
+      const expected = recordFixtures
+        .filter((record) => record.ticket === ticket)
+        .map((record) => record.file);
+      assert.deepEqual(
+        readdirSync(join(f.root, ".codex-runs")).sort(),
+        [...expected, "smoke.json"].sort(),
+        `ticket ${ticket}`,
+      );
+      for (const file of expected)
+        assert.equal(
+          readFileSync(join(f.root, ".codex-runs", file), "utf8"),
+          file,
+        );
+    } finally {
+      f.cleanup();
+    }
   }
 });
 
