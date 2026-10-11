@@ -27,7 +27,7 @@ gh api repos/{owner}/{repo}/issues/<S>/sub_issues --jq '.[] | {number, title, st
 
 ## 3. 按执行角色分流
 
-- `role:design`：自己做。按工单的验收标准验证，`pnpm lint` 通过后提交 `[设计] … (#T)`，然后转到第 5 步。
+- `role:design`：自己做。按工单的验收标准验证，`pnpm lint` 通过后提交，提交信息按 `AGENTS.md` 的格式写，尾注 `Refs: #T`、`Role: design`。然后转到第 5 步。
 - `ready-for-human`：告诉用户要做什么、做完要交回什么，然后等用户。
 - 没有执行角色标签：按 `docs/roles/design.md` 的判断标准定一个，补上标签。
 - `role:engineering`：转到第 4 步。
