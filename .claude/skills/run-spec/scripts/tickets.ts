@@ -1,5 +1,5 @@
 /**
- * Designer-only ticket CLI: run `node .claude/skills/studio-tickets/scripts/tickets.ts
+ * Designer-only ticket CLI: run `node .claude/skills/run-spec/scripts/tickets.ts
  * <frontier|link|accept|dispatch|land|cleanup> --help` from a clone. gh resolves the current repository.
  * All child processes receive argument arrays; --dry-run still reads GitHub but
  * only prints write arguments and the acceptance comment preview. Comment files
@@ -961,7 +961,7 @@ const cleanup = (values: Values, numbers: number[]): void => {
     );
 };
 
-const entry = "node .claude/skills/studio-tickets/scripts/tickets.ts";
+const entry = "node .claude/skills/run-spec/scripts/tickets.ts";
 const commands: Record<string, Command> = {
   cleanup: {
     options: {},

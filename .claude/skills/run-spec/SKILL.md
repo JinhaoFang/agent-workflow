@@ -1,13 +1,13 @@
 ---
-name: studio-tickets
-description: 执行本仓库 GitHub 上的 spec 和工单：选出可做的工单，role:design 自己做，role:engineering 用 codex-dispatch 派给 Codex，验收后写回 issue，全部完成后开 PR。用户要求执行、派发或验收某个 spec 或工单（#号）时使用。
+name: run-spec
+description: 执行 GitHub 上的 spec 和工单：选出可做的工单，role:design 自己做，role:engineering 用 codex-dispatch 派给 Codex，验收后写回 issue，全部完成后开 PR。用户要求执行、派发或验收某个 spec 或工单（#号）时使用。
 ---
 
 # 执行 spec 和工单
 
 你是设计负责人（`docs/roles/design.md`）。工单约定见 `docs/agents/issue-tracker.md`：执行角色标签、边界、测试接缝、验收产物、集成分支。本仓库特有的值（验证命令、Codex 权限、汇报目录、实测用时等）见 `docs/agents/run-spec.md`。上下文只靠指针传递：派发时给 issue 号，不复述工单内容。
 
-机械步骤都由工单脚本 `node .claude/skills/studio-tickets/scripts/tickets.ts <子命令>` 完成：`frontier` 选单，`link` 建关系，`dispatch` 派发，`land` 合并，`accept` 写验收评论，`cleanup` 收尾清理。各子命令的参数看 `--help`；写操作和删除先加 `--dry-run` 核对。
+机械步骤都由工单脚本 `node .claude/skills/run-spec/scripts/tickets.ts <子命令>` 完成：`frontier` 选单，`link` 建关系，`dispatch` 派发，`land` 合并，`accept` 写验收评论，`cleanup` 收尾清理。各子命令的参数看 `--help`；写操作和删除先加 `--dry-run` 核对。
 
 名字由脚本决定：集成分支 `spec/<S>-<英文短名>`，工单分支 `ticket/<T>`，worktree 在主工作区旁边的 `<仓库目录>.worktrees/<T>`，派发记录 `gh-<T>`，验收产物在配置的验收产物目录下的 `spec-<S>/<T>/`。
 
@@ -37,7 +37,7 @@ description: 执行本仓库 GitHub 上的 spec 和工单：选出可做的工�
 每张工程工单在自己的 worktree 里做，一个工作区同时只跑一个 Codex；主工作区留给设计工单和合并。在主工作区用 Bash 后台运行（`run_in_background: true`）：
 
 ```bash
-node .claude/skills/studio-tickets/scripts/tickets.ts dispatch <T> [--note <补充说明> | --note-file <文件>]
+node .claude/skills/run-spec/scripts/tickets.ts dispatch <T> [--note <补充说明> | --note-file <文件>]
 ```
 
 - 它建好 worktree（接软链接、装依赖），返工时复用原来的 worktree，然后派给 Codex，等到 Codex 结束才退出，退出码跟随 Codex。
