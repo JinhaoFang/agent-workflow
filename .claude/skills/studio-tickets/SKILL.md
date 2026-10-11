@@ -9,6 +9,8 @@ description: 执行本仓库 GitHub 上的 spec 和工单：选出可做的工�
 
 工单脚本 `node .claude/skills/studio-tickets/scripts/tickets.ts <frontier|link|accept>` 完成 GitHub 上的机械步骤，各子命令的参数看 `--help`；写操作先加 `--dry-run` 核对。
 
+向用户报进度时，写明 spec 还剩哪几步（剩余工单、按批审查、收尾）。用户中断过的写操作，重做前先查 GitHub 上的实际状态，被中断的调用可能已经执行了。
+
 ## 1. 进入集成分支
 
 确定 spec 号 `S`。用户只给了工单号时，从工单的 Parent 一节或 GitHub 上的父 issue 找到 `S`。切到 `spec/<S>-<英文短名>`，分支不存在就从最新的 `main` 建一个。
@@ -55,19 +57,34 @@ cd "$W" && node "$ROOT/.claude/skills/codex-dispatch/codex-task.mjs" "完成 Git
 
 ## 5. 验收并写回
 
-1. 读汇报 `$W/.codex-runs/<记录名>.md`；`git -C "$W" log spec/<S>-<英文短名>..HEAD --stat`；确认 `$W` 的 `git status` 干净，提交里只有写入范围内的文件。
+1. 读汇报 `$W/.codex-runs/<记录名>.md`；`git -C "$W" log spec/<S>-<英文短名>..HEAD --stat`；确认 `$W` 的 `git status` 干净，改动没有越过工单的「边界」。
 2. 在 `$W` 里自己跑 `pnpm verify`，再逐条核对工单的验收标准。验收产物要亲自看：图片用 Read 看，命令自己重跑。
 3. 汇报里的每一条 `TODO(design)` 和推断清单都要给出处理：接受，或者做决定、写进后续工单，或者自己动手改。
 4. 合并：在 `$W` 里 `git rebase spec/<S>-<英文短名>`，冲突自己解决，再跑一次 `pnpm verify`；回到主工作区 `git merge --ff-only ticket/T-<英文短名>`，然后 `git push -u origin spec/<S>-<英文短名>`。
-5. 写验收评论：把四个字段分别写进文件，运行 `tickets.ts accept T --result 通过|需返工 --commits-file <文件> --verification-file <文件> --design-file <文件> --remaining-file <文件>`（字段短时也可以直接用 `--commits` 等传文本）。通过就评论并关闭；需返工只评论，然后带补充说明回到第 4 步（在同一个 worktree 里重新派发，要求另起提交）。
+5. 写验收评论：把四个字段分别写进文件，运行 `tickets.ts accept T --result 通过|需返工 --commits-file <文件> --verification-file <文件> --design-file <文件> --remaining-file <文件>`（字段短时也可以直接用 `--commits` 等传文本）。「验证」里加一行派发数据：进度文件里的用时和输入、输出 token，本地记录清理后写汇报靠它。通过就评论并关闭；需返工只评论，然后带补充说明回到第 4 步（在同一个 worktree 里重新派发，要求另起提交）。
 6. 通过后收尾 worktree：把 `$W/.codex-runs/` 里的记录复制到主工作区的 `.codex-runs/`，再 `git worktree remove --force "$W"`、`git branch -d ticket/T-<英文短名>`。
 
-单张工单不跑 `code-review`，统一放在第 6 步。
+完成标准：每条验收标准都有证据，每条 TODO(design) 和推断都有处理，评论已发出，分支已推送。这一轮派出的工单都合并后先做第 6 步，再回到第 2 步。
 
-完成标准：每条验收标准都有证据，每条 TODO(design) 和推断都有处理，评论已发出，分支已推送。然后回到第 2 步。
+## 6. 按批审查
 
-## 6. 收尾
+审查由 Codex 做，你只取舍。一批 = 同一轮派出、都已合并的工单；一轮只有一张小工单时，可以并到下一批。固定点 `B` 是这一批第一张合并前集成分支的提交（收尾时用 `main`）。在主工作区后台派发，审查跑完前不往集成分支合并新工单：
 
-所有工单都关闭后，用 `code-review` 以 `main` 为固定点审查整个集成分支。发现的问题按轻重处理：要修的汇总成一次返工派出去（单独开一张工单挂在 spec 下，按第 4、5 步做）；接受的写进 PR 正文。然后用 `gh pr create --base main` 开 PR，正文按 `pr` 技能的格式写，并包含 `Closes #S`。把 PR 链接交给用户审核合并，并建议在这个会话里跑一次 `/retro`。
+```bash
+node .claude/skills/codex-dispatch/codex-task.mjs "用 code-review 技能审查固定点 B 到 HEAD 的改动，spec 是 #S，各提交的 Refs 指向对应工单。只读：不改文件、不提交，最后输出审查报告。" --role engineering --name review-S-<批次> --sandbox danger-full-access
+```
 
-完成标准：用户拿到了 PR 链接。
+读报告后逐条取舍：要修的写成一张返工工单，用 `tickets.ts link S <号>` 挂到 spec 下，下一轮派发；接受不修的记下来，开 PR 时写进正文。报告要点评论到 spec 的 issue 下。
+
+完成标准：报告的每一条都有处理。
+
+## 7. 收尾
+
+所有工单都关闭后：
+
+1. 按第 6 步以 `main` 为固定点审一次整个分支，要修的返工做完。
+2. `gh pr create --base main` 开 PR，正文按 `pr` 技能的格式写，包含 `Closes #S` 和接受不修的审查意见。
+3. 按 [report.md](report.md) 写汇报，存为 `docs/reports/spec-<S>-<英文短名>.md`，提交并推送到同一分支。
+4. 清理本 spec 的中间产物：`.codex-runs/` 里本 spec 的派发记录、`out/qa/spec-<S>/`，以及 `git worktree list` 里残留的 worktree。
+
+完成标准：用户拿到了 PR 链接和汇报。
