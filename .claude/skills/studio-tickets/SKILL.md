@@ -7,7 +7,7 @@ description: 执行本仓库 GitHub 上的 spec 和工单：选出可做的工�
 
 你是设计负责人（`docs/roles/design.md`）。工单约定见 `docs/agents/issue-tracker.md`：执行角色标签、写入范围、测试接缝、验收产物、集成分支。上下文只靠指针传递：派发指令里给 issue 号，不复述工单内容。
 
-工单脚本 `node .claude/skills/studio-tickets/scripts/tickets.ts <frontier|link|accept>` 完成 GitHub 上的机械步骤，各子命令的参数看 `--help`；写操作先加 `--dry-run` 核对。
+工单脚本 `node .claude/skills/studio-tickets/scripts/tickets.ts <frontier|link|accept|dispatch|land>` 完成 GitHub 上的机械步骤，各子命令的参数看 `--help`；写操作先加 `--dry-run` 核对。
 
 向用户报进度时，写明 spec 还剩哪几步（剩余工单、按批审查、收尾）。用户中断过的写操作，重做前先查 GitHub 上的实际状态，被中断的调用可能已经执行了。
 
@@ -60,9 +60,9 @@ cd "$W" && node "$ROOT/.claude/skills/codex-dispatch/codex-task.mjs" "完成 Git
 1. 读汇报 `$W/.codex-runs/<记录名>.md`；`git -C "$W" log spec/<S>-<英文短名>..HEAD --stat`；确认 `$W` 的 `git status` 干净，改动没有越过工单的「边界」。
 2. 在 `$W` 里自己跑 `pnpm verify`，再逐条核对工单的验收标准。验收产物要亲自看：图片用 Read 看，命令自己重跑。
 3. 汇报里的每一条 `TODO(design)` 和推断清单都要给出处理：接受，或者做决定、写进后续工单，或者自己动手改。
-4. 合并：在 `$W` 里 `git rebase spec/<S>-<英文短名>`，冲突自己解决，再跑一次 `pnpm verify`；回到主工作区 `git merge --ff-only ticket/T-<英文短名>`，然后 `git push -u origin spec/<S>-<英文短名>`。
-5. 写验收评论：把四个字段分别写进文件，运行 `tickets.ts accept T --result 通过|需返工 --commits-file <文件> --verification-file <文件> --design-file <文件> --remaining-file <文件>`（字段短时也可以直接用 `--commits` 等传文本）。「验证」里加一行派发数据：进度文件里的用时和输入、输出 token，本地记录清理后写汇报靠它。通过就评论并关闭；需返工只评论，然后带补充说明回到第 4 步（在同一个 worktree 里重新派发，要求另起提交）。
-6. 通过后收尾 worktree：把 `$W/.codex-runs/` 里的记录复制到主工作区的 `.codex-runs/`，再 `git worktree remove --force "$W"`、`git branch -d ticket/T-<英文短名>`。
+4. 验收通过才合并；需返工直接转到第 5 项。合并时在主工作区先运行 `node .claude/skills/studio-tickets/scripts/tickets.ts land T --dry-run` 核对计划，再去掉 `--dry-run` 执行。脚本 rebase、验证、快进合并并推送，复制本工单记录和验收产物后删除 worktree 与工单分支。冲突时保留现场；在 `$W` 解决并暂存后重跑，或手动完成 rebase 后重跑。
+5. 写验收评论：把四个字段分别写进文件，运行 `tickets.ts accept T --result 通过|需返工 --commits-file <文件> --verification-file <文件> --design-file <文件> --remaining-file <文件>`（字段短时也可以直接用 `--commits` 等传文本）。「验证」里加一行派发数据：主工作区已复制的进度文件里的用时和输入、输出 token，本地记录清理后写汇报靠它。通过就评论并关闭；需返工只评论，然后带补充说明回到第 4 步（在同一个 worktree 里重新派发，要求另起提交）。
+6. `land` 完成后，派发记录在主工作区 `.codex-runs/`，验收产物在配置的验收目录；worktree 和工单分支已删除。
 
 完成标准：每条验收标准都有证据，每条 TODO(design) 和推断都有处理，评论已发出，分支已推送。这一轮派出的工单都合并后先做第 6 步，再回到第 2 步。
 

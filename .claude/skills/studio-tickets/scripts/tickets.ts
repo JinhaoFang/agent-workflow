@@ -1,6 +1,6 @@
 /**
  * Designer-only ticket CLI: run `node .claude/skills/studio-tickets/scripts/tickets.ts
- * <frontier|link|accept|dispatch> --help` from a clone. gh resolves the current repository.
+ * <frontier|link|accept|dispatch|land> --help` from a clone. gh resolves the current repository.
  * All child processes receive argument arrays; --dry-run still reads GitHub but
  * only prints write arguments and the acceptance comment preview. Comment files
  * are temporary and removed after each run. No dependencies or shell evaluation.
@@ -15,15 +15,21 @@
  * paths also work). Install and dispatch run in the ticket worktree, with live
  * inherited output; DispatchDock prints the actual name and progress path and
  * chooses collision suffixes. Missing/invalid configuration exits with 2.
+ * land uses the same configuration, rebases and verifies before fast-forwarding
+ * and pushing origin, then copies ticket records and QA before removing its tree.
+ * Git's rebase head-name identifies an interrupted ticket rebase; reruns continue
+ * staged resolutions with GIT_EDITOR=true. Unresolved conflicts exit with 1.
  */
 import { spawnSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
+  readdirSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -529,8 +535,171 @@ const dispatch = (values: Values, numbers: number[]): void => {
   process.exitCode = result.status ?? 2;
 };
 
+const land = (values: Values, numbers: number[]): void => {
+  const checkout = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
+  const config = dispatchConfig(checkout);
+  const root = git(checkout, ["worktree", "list", "--porcelain"])
+    .split("\n")[0]
+    .slice(9);
+  const ticket = numbers[0];
+  const { endpoint } = github(true);
+  const parent = JSON.parse(
+    gh(["api", "--method", "GET", `${endpoint(ticket)}/parent`]),
+  ) as Issue;
+  const spec = issueNumber(String(parent.number));
+  const branches = git(root, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    `refs/heads/spec/${spec}-*`,
+  ])
+    .split("\n")
+    .filter(Boolean);
+  if (branches.length !== 1)
+    throw new Error(
+      `按 spec/${spec}- 找到 ${branches.length} 个集成分支，必须恰好一个`,
+    );
+  const integration = branches[0];
+  const branch = `ticket/${ticket}`;
+  const worktree = `${root}.worktrees/${ticket}`;
+  if (git(root, ["branch", "--show-current"]) !== integration)
+    throw new CheckFailure(`主工作区必须在集成分支 ${integration} 上`);
+  if (git(root, ["status", "--porcelain"]))
+    throw new CheckFailure(`主工作区不干净：${root}`);
+  const registered = git(root, ["worktree", "list", "--porcelain"])
+    .split("\n\n")
+    .some((block) => block.split("\n").includes(`worktree ${worktree}`));
+  if (!registered || !existsSync(worktree))
+    throw new CheckFailure(`工单 worktree 不存在：${worktree}`);
+  const rebase = ["rebase-merge", "rebase-apply"]
+    .map((name) =>
+      resolve(worktree, git(worktree, ["rev-parse", "--git-path", name])),
+    )
+    .find(existsSync);
+  if (rebase) {
+    if (
+      readFileSync(join(rebase, "head-name"), "utf8").trim() !==
+      `refs/heads/${branch}`
+    )
+      throw new CheckFailure(`进行中的 rebase 不属于 ${branch}，请先处理`);
+    if (git(worktree, ["diff", "--name-only", "--diff-filter=U"]))
+      throw new CheckFailure(
+        `rebase 冲突尚未解决：${worktree}。请解决冲突并用 git add 暂存，再重跑 land ${ticket}；也可在该目录手动 git rebase --continue 后重跑。`,
+      );
+    if (
+      git(worktree, ["diff", "--name-only"]) ||
+      git(worktree, ["ls-files", "--others", "--exclude-standard"])
+    )
+      throw new CheckFailure(
+        `rebase 的修改尚未暂存或有未跟踪文件：${worktree}，请处理后重跑 land ${ticket}`,
+      );
+  } else {
+    if (git(worktree, ["branch", "--show-current"]) !== branch)
+      throw new CheckFailure(`worktree 分支必须是 ${branch}：${worktree}`);
+    if (git(worktree, ["status", "--porcelain"]))
+      throw new CheckFailure(`worktree 不干净：${worktree}`);
+  }
+  if (git(root, ["rev-list", "--count", `${integration}..${branch}`]) === "0")
+    throw new CheckFailure(`${branch} 相对 ${integration} 没有新提交`);
+  const artifacts = join(config.acceptanceRoot, `spec-${spec}`, String(ticket));
+  const records = join(worktree, ".codex-runs");
+  const names = existsSync(records)
+    ? readdirSync(records).filter((name) =>
+        new RegExp(`^gh-${ticket}(?:[.-]|$)`).test(name),
+      )
+    : [];
+  if (values["dry-run"]) {
+    console.log(`合并计划：#${ticket} → ${integration}（主工作区 ${root}）`);
+    console.log(
+      `${rebase ? "继续已有 rebase，再" : "在 worktree"} rebase 到 ${integration}：${worktree}`,
+    );
+    console.log(
+      `验证命令（${worktree}）：${JSON.stringify(config.verificationCommand)}`,
+    );
+    console.log(`主工作区快进合并 ${branch}`);
+    console.log(
+      `推送：${JSON.stringify(["git", "push", "-u", "origin", integration])}`,
+    );
+    console.log(
+      `复制派发记录：${names.join("、") || "无"} → ${join(root, ".codex-runs")}`,
+    );
+    console.log(
+      `复制验收产物：${join(worktree, artifacts)} → ${join(root, artifacts)}`,
+    );
+    console.log(`删除 worktree：${worktree}；删除分支：${branch}`);
+    return;
+  }
+  const runRebase = (args: string[]): void => {
+    const result = spawnSync("git", ["rebase", ...args], {
+      cwd: worktree,
+      encoding: "utf8",
+      env: { ...process.env, GIT_EDITOR: "true" },
+    });
+    if (result.error || result.signal)
+      throw new Error(`rebase 运行出错，现场已保留：${worktree}`);
+    if (result.status !== 0) {
+      const pending = ["rebase-merge", "rebase-apply"].some((name) =>
+        existsSync(
+          resolve(worktree, git(worktree, ["rev-parse", "--git-path", name])),
+        ),
+      );
+      if (pending)
+        throw new CheckFailure(
+          `rebase 未完成，现场已保留：${worktree}。请解决冲突并用 git add 暂存，再重跑 land ${ticket}；也可手动 git rebase --continue 后重跑。`,
+        );
+      throw new Error(`rebase 失败，现场已保留：${result.stderr.trim()}`);
+    }
+  };
+  if (rebase) runRebase(["--continue"]);
+  runRebase([integration]);
+  console.log(`已 rebase 到 ${integration}`);
+  const [program, ...args] = config.verificationCommand;
+  const verification = spawnSync(program, args, {
+    cwd: worktree,
+    stdio: "inherit",
+  });
+  if (verification.error || verification.signal)
+    throw new Error("验证命令运行出错；未合并，worktree 已保留");
+  if (verification.status !== 0)
+    throw new CheckFailure("验证未通过；未合并，worktree 已保留");
+  if (git(worktree, ["status", "--porcelain"]))
+    throw new CheckFailure(`验证后 worktree 不干净；未合并：${worktree}`);
+  console.log("验证已通过");
+  git(root, ["merge", "--ff-only", branch]);
+  console.log(`已快进合并 ${branch} → ${integration}`);
+  git(root, ["push", "-u", "origin", integration]);
+  console.log(`已推送 origin/${integration}`);
+  if (names.length) mkdirSync(join(root, ".codex-runs"), { recursive: true });
+  for (const name of names)
+    cpSync(join(records, name), join(root, ".codex-runs", name), {
+      recursive: true,
+    });
+  const source = join(worktree, artifacts);
+  if (existsSync(source)) {
+    mkdirSync(join(root, artifacts), { recursive: true });
+    cpSync(source, join(root, artifacts), { recursive: true });
+  }
+  console.log(
+    `已复制派发记录（${names.length} 项）和验收产物：${join(root, artifacts)}`,
+  );
+  git(root, ["worktree", "remove", worktree]);
+  console.log(`已删除 worktree：${worktree}`);
+  git(root, ["branch", "-d", branch]);
+  console.log(`已删除分支：${branch}`);
+};
+
 const entry = "node .claude/skills/studio-tickets/scripts/tickets.ts";
 const commands: Record<string, Command> = {
+  land: {
+    options: {},
+    positionals: 1,
+    execute: land,
+    help: `${entry} land <工单> [--dry-run]
+主工作区必须干净且在集成分支上；工单 worktree 干净且有新提交。
+rebase 后运行配置的验证命令，通过后快进合并并推送 origin。
+复制本工单派发记录与验收产物后，删除 worktree 和工单分支。
+冲突以 1 退出并保留现场；解决并暂存后重跑可继续。
+--dry-run 只查询 GitHub 和 git 并打印计划，不改分支、文件或远端。`,
+  },
   dispatch: {
     options: { note: { type: "string" }, "note-file": { type: "string" } },
     positionals: 1,
