@@ -15,6 +15,9 @@
  * paths also work). Install and dispatch run in the ticket worktree, with live
  * inherited output; DispatchDock prints the actual name and progress path and
  * chooses collision suffixes. Missing/invalid configuration exits with 2.
+ * Newly created worktrees carry a pending-preparation marker in their private
+ * git directory until links and install succeed. Reruns with that marker finish
+ * preparation; existing unmarked worktrees reuse their completed installation.
  * land uses the same configuration, rebases and verifies before fast-forwarding
  * and pushing origin, then copies ticket records and QA before removing its tree.
  * Git's rebase head-name identifies an interrupted ticket rebase; reruns continue
@@ -531,6 +534,13 @@ const dispatch = (values: Values, numbers: number[]): void => {
     if (git(checkout, ["branch", "--list", branch]))
       throw new CheckFailure(`工单分支已存在但未挂在目标 worktree：${branch}`);
   }
+  let preparationFile = existing
+    ? join(
+        git(worktree, ["rev-parse", "--absolute-git-dir"]),
+        "dispatch-preparation-pending",
+      )
+    : "";
+  const needsPreparation = !existing || existsSync(preparationFile);
   const script = resolve(root, config.dispatchScript);
   if (!existsSync(script) || !statSync(script).isFile())
     throw new Error(`派发脚本不存在或不是文件：${script}`);
@@ -573,11 +583,11 @@ const dispatch = (values: Values, numbers: number[]): void => {
     `spec-${spec}`,
     String(ticket),
   );
-  const task = `完成 GitHub 工单 #${ticket}（父 spec #${spec}）。先运行 gh issue view ${ticket} --comments 和 gh issue view ${spec} 读取全文，按工单的边界和验收标准完成、验证并提交，最后按角色文档的格式汇报。验证命令参数数组：${JSON.stringify(config.verificationCommand)}。`;
+  const task = `完成 GitHub 工单 #${ticket}（父 spec #${spec}）。先运行 gh issue view ${ticket} --json title,body,comments 和 gh issue view ${spec} --json title,body,comments 读取全文，按工单的边界和验收标准完成、验证并提交，最后按角色文档的格式汇报。验证命令参数数组：${JSON.stringify(config.verificationCommand)}。`;
   const extra = [
     `你在 git worktree ${worktree} 里工作，分支是 ${branch}。提交留在这个分支上，不要切换分支、不要推送，不要改动主工作区 ${root} 和其他 worktree。`,
     `以下目录是指向主工作区的软链接，只读使用：${config.symlinkDirectories.join("、") || "无"}。验收产物写到本 worktree 的 ${artifacts} 下，汇报里用绝对路径。`,
-    existing ? "这是返工派发：请另起提交。" : "",
+    existing && !needsPreparation ? "这是返工派发：请另起提交。" : "",
     note,
   ]
     .filter(Boolean)
@@ -606,7 +616,7 @@ const dispatch = (values: Values, numbers: number[]): void => {
       console.log(
         `${link.create ? "建立" : "复用"}只读软链接：${link.target} → ${link.source}`,
       );
-    if (!existing)
+    if (needsPreparation)
       console.log(`安装命令：${JSON.stringify(config.installCommand)}`);
     console.log(`验收产物：${artifacts}`);
     console.log(
@@ -619,6 +629,11 @@ const dispatch = (values: Values, numbers: number[]): void => {
   }
   if (!existing) {
     git(checkout, ["worktree", "add", "-b", branch, worktree, integration]);
+    preparationFile = join(
+      git(worktree, ["rev-parse", "--absolute-git-dir"]),
+      "dispatch-preparation-pending",
+    );
+    writeFileSync(preparationFile, "pending\n");
     console.log(`已新建 worktree：${worktree}（${branch}）`);
   } else console.log(`已复用 worktree：${worktree}（${branch}）`);
   for (const link of links) {
@@ -628,7 +643,7 @@ const dispatch = (values: Values, numbers: number[]): void => {
     }
     console.log(`已接好只读软链接：${relative(worktree, link.target)}`);
   }
-  if (!existing) {
+  if (needsPreparation) {
     const [program, ...installArgs] = config.installCommand;
     const result = spawnSync(program, installArgs, {
       cwd: worktree,
@@ -636,6 +651,7 @@ const dispatch = (values: Values, numbers: number[]): void => {
     });
     if (result.error || result.status !== 0)
       throw new Error("安装命令失败；worktree 已保留，请处理后重试");
+    rmSync(preparationFile);
     console.log("安装命令已完成");
   }
   mkdirSync(artifacts, { recursive: true });

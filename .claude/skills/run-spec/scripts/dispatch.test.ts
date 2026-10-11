@@ -46,11 +46,15 @@ const fixture = () => {
   writeFileSync(configFile, JSON.stringify(config));
   writeFileSync(
     join(root, ".gitignore"),
-    "references\n.agents\n.codex-runs\nout\ninstall-result.json\n",
+    "references\n.agents\n.codex-runs\nout\ninstall-result.json\ninstall-attempts.jsonl\n",
   );
   writeFileSync(
     join(root, "install.cjs"),
-    'require("node:fs").writeFileSync("install-result.json", JSON.stringify({cwd:process.cwd(), args:process.argv.slice(2)}));',
+    `const fs = require("node:fs");
+const result = JSON.stringify({cwd:process.cwd(), args:process.argv.slice(2)});
+fs.writeFileSync("install-result.json", result);
+fs.appendFileSync("install-attempts.jsonl", result + "\\n");
+process.exitCode = Number(process.env.INSTALL_FIXTURE_EXIT || 0);`,
   );
   writeFileSync(
     join(root, "fake-dispatch.cjs"),
@@ -139,6 +143,7 @@ process.stdout.write(JSON.stringify(response.value));
       state?: string;
       engineering?: boolean;
       exit?: number;
+      installExit?: number;
       cwd?: string;
     } = {},
   ) => {
@@ -159,6 +164,7 @@ process.stdout.write(JSON.stringify(response.value));
           PATH: `${temporary}${delimiter}${process.env.PATH}`,
           DISPATCH_FIXTURE_ROOT: temporary,
           DISPATCH_FIXTURE_EXIT: String(options.exit ?? 0),
+          INSTALL_FIXTURE_EXIT: String(options.installExit ?? 0),
         },
       },
     );
@@ -265,10 +271,12 @@ test("dispatch creates worktree, links and installs, then forwards prompt and re
       readFileSync(join(f.worktree, ".codex-runs/gh-21.json"), "utf8"),
     );
     assert.equal(record.cwd, f.worktree);
-    assert.match(
-      record.args[0],
-      /gh issue view 21 --comments 和 gh issue view 17/,
-    );
+    for (const number of [21, 17])
+      assert.ok(
+        record.args[0].includes(
+          `gh issue view ${number} --json title,body,comments`,
+        ),
+      );
     assert.ok(
       record.args[0].includes(JSON.stringify(f.config.verificationCommand)),
     );
@@ -337,6 +345,66 @@ test("dispatch reuses a clean worktree, reads note-file, skips install and makes
     assert.match(rejected.stderr, /^出错：worktree 不干净/);
     assert.ok(
       !existsSync(join(f.worktree, ".codex-runs/gh-21-3.progress.log")),
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("dispatch retries incomplete preparation after install failure before dispatching", () => {
+  const f = fixture();
+  try {
+    const failed = f.run([], { installExit: 1 });
+    assert.equal(failed.status, 2, failed.stderr);
+    assert.match(failed.stderr, /^出错：安装命令失败/);
+    assert.ok(existsSync(f.worktree));
+    assert.equal(f.git(["status", "--porcelain"], f.worktree), "");
+    assert.equal(
+      f.git(["rev-list", "--count", "spec/17-test..ticket/21"]),
+      "0",
+    );
+    assert.ok(!existsSync(join(f.worktree, ".codex-runs")));
+    const missingLink = join(f.worktree, f.config.symlinkDirectories[0]);
+    rmSync(missingLink);
+    const attempts = join(f.worktree, "install-attempts.jsonl");
+    const firstAttempt = readFileSync(attempts, "utf8");
+    const plan = f.run(["--dry-run"]);
+    assert.equal(plan.status, 0, plan.stderr);
+    assert.match(plan.stdout, /安装命令：/);
+    assert.ok(!existsSync(missingLink));
+    assert.equal(readFileSync(attempts, "utf8"), firstAttempt);
+    assert.ok(!existsSync(join(f.worktree, ".codex-runs")));
+    const retried = f.run([], { cwd: f.worktree });
+    assert.equal(retried.status, 0, retried.stderr);
+    assert.match(retried.stdout, /安装命令已完成/);
+    assert.equal(
+      realpathSync(missingLink),
+      realpathSync(join(f.root, "references")),
+    );
+    assert.deepEqual(
+      readFileSync(attempts, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line)),
+      Array.from({ length: 2 }, () => ({
+        cwd: f.worktree,
+        args: ["literal argument"],
+      })),
+    );
+    const record = JSON.parse(
+      readFileSync(join(f.worktree, ".codex-runs/gh-21.json"), "utf8"),
+    );
+    assert.ok(!record.args[1].includes("这是返工派发"));
+    assert.equal(
+      f.git(["rev-list", "--count", "spec/17-test..ticket/21"]),
+      "1",
+    );
+    const rework = f.run();
+    assert.equal(rework.status, 0, rework.stderr);
+    assert.equal(readFileSync(attempts, "utf8"), firstAttempt.repeat(2));
+    assert.equal(
+      f.git(["rev-list", "--count", "spec/17-test..ticket/21"]),
+      "2",
     );
   } finally {
     f.cleanup();
