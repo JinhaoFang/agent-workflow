@@ -61,10 +61,10 @@ node .claude/skills/run-spec/scripts/tickets.ts dispatch <T> [--note <补充说�
 
 ## 6. 按批审查
 
-审查由 Codex 做，你只取舍。一批 = 同一轮派出、都已合并的工单；一轮只有一张小工单时，可以并到下一批。固定点 `B` 是这一批第一张合并前集成分支的提交（收尾时用 `main`）。在主工作区后台派发，`--sandbox` 用配置里的 Codex 权限：
+审查由 Codex 做，你只取舍。一批 = 同一轮派出、都已合并的工单；一轮只有一张小工单时，可以并到下一批。固定点 `B` 是这一批第一张合并前集成分支的提交（收尾时用 `main`）。在主工作区后台派发，派发脚本和 `--sandbox` 都用配置里的值（`dispatchScript`、`codexSandbox`）：
 
 ```bash
-node .claude/skills/codex-dispatch/codex-task.mjs "用 code-review 技能审查固定点 B 到 HEAD 的改动，spec 是 #S，各提交的 Refs 指向对应工单。只读：不改文件、不提交，最后输出审查报告。" --role engineering --name review-<S>-<批次> --sandbox <权限>
+node <派发脚本> "用 code-review 技能审查固定点 B 到 HEAD 的改动，spec 是 #S，各提交的 Refs 指向对应工单。只读：不改文件、不提交，最后输出审查报告。" --role engineering --name review-<S>-<批次> --sandbox <权限>
 ```
 
 - 指令里列出已经安排了返工的问题，免得重复报告。
