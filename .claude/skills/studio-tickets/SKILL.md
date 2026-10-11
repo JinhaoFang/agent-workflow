@@ -7,7 +7,7 @@ description: 执行本仓库 GitHub 上的 spec 和工单：选出可做的工�
 
 你是设计负责人（`docs/roles/design.md`）。工单约定见 `docs/agents/issue-tracker.md`：执行角色标签、写入范围、测试接缝、验收产物、集成分支。上下文只靠指针传递：派发指令里给 issue 号，不复述工单内容。
 
-工单脚本 `node .claude/skills/studio-tickets/scripts/tickets.ts <frontier|link|accept|dispatch|land>` 完成 GitHub 上的机械步骤，各子命令的参数看 `--help`；写操作先加 `--dry-run` 核对。
+工单脚本 `node .claude/skills/studio-tickets/scripts/tickets.ts <frontier|link|accept|dispatch|land|cleanup>` 完成 GitHub 上的机械步骤，各子命令的参数看 `--help`；写操作先加 `--dry-run` 核对。
 
 向用户报进度时，写明 spec 还剩哪几步（剩余工单、按批审查、收尾）。用户中断过的写操作，重做前先查 GitHub 上的实际状态，被中断的调用可能已经执行了。
 
@@ -85,6 +85,6 @@ node .claude/skills/codex-dispatch/codex-task.mjs "用 code-review 技能审查�
 1. 按第 6 步以 `main` 为固定点审一次整个分支，要修的返工做完。
 2. `gh pr create --base main` 开 PR，正文按 `pr` 技能的格式写，包含 `Closes #S` 和接受不修的审查意见。
 3. 按 [report.md](report.md) 写汇报，存为 `docs/reports/spec-<S>-<英文短名>.md`，提交并推送到同一分支。
-4. 清理本 spec 的中间产物：`.codex-runs/` 里本 spec 的派发记录、`out/qa/spec-<S>/`，以及 `git worktree list` 里残留的 worktree。
+4. 运行 `node .claude/skills/studio-tickets/scripts/tickets.ts cleanup <S> --dry-run` 核对清单，再去掉 `--dry-run` 清理本 spec 的中间产物；不干净的 worktree 会跳过并保留对应分支，处理后重跑。
 
 完成标准：用户拿到了 PR 链接和汇报。
