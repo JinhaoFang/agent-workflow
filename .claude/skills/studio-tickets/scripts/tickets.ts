@@ -1,17 +1,36 @@
 /**
  * Designer-only ticket CLI: run `node .claude/skills/studio-tickets/scripts/tickets.ts
- * <frontier|link|accept> --help` from a clone. gh resolves the current repository.
+ * <frontier|link|accept|dispatch> --help` from a clone. gh resolves the current repository.
  * All child processes receive argument arrays; --dry-run still reads GitHub but
  * only prints write arguments and the acceptance comment preview. Comment files
  * are temporary and removed after each run. No dependencies or shell evaluation.
  * Commands are registered once with help, options, positional count and handler.
  * CLI diagnostics are local so copying this skill needs no repository helpers.
  * Established in #4: CLI option names and frontier's plain-text grouping.
+ * dispatch loads docs/agents/run-spec.json from the invoking checkout:
+ * verificationCommand and installCommand are executable/argument arrays;
+ * symlinkDirectories lists repository-relative directories shared read-only;
+ * acceptanceRoot is the worktree-relative QA root; codexSandbox selects Codex
+ * permissions; dispatchScript is resolved against the main worktree (absolute
+ * paths also work). Install and dispatch run in the ticket worktree, with live
+ * inherited output; DispatchDock prints the actual name and progress path and
+ * chooses collision suffixes. Missing/invalid configuration exits with 2.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 type Issue = { id: number; number: number; title: string; state: string };
@@ -29,6 +48,7 @@ type Command = {
   execute: (values: Values, numbers: number[]) => void;
 };
 const fields = ["commits", "verification", "design", "remaining"];
+class CheckFailure extends Error {}
 
 const usageError = (message: string, usage: string): Error =>
   new Error(`${message}\n用法：${usage}`);
@@ -53,7 +73,7 @@ const errorMessage = (error: unknown): string => {
 
 const reportError = (error: unknown): void => {
   console.error(`出错：${errorMessage(error)}`);
-  process.exitCode = 2;
+  process.exitCode = error instanceof CheckFailure ? 1 : 2;
 };
 
 const gh = (args: string[]): string => {
@@ -255,8 +275,272 @@ const accept = (values: Values, numbers: number[]): void => {
   }
 };
 
+type DispatchConfig = {
+  verificationCommand: string[];
+  installCommand: string[];
+  symlinkDirectories: string[];
+  acceptanceRoot: string;
+  codexSandbox: string;
+  dispatchScript: string;
+};
+
+const localPath = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.length > 0 &&
+  !isAbsolute(value) &&
+  !value.split(/[\\/]/).includes("..") &&
+  value !== ".";
+
+const dispatchConfig = (root: string): DispatchConfig => {
+  const file = join(root, "docs/agents/run-spec.json");
+  if (!existsSync(file)) throw new Error(`缺少本仓库配置：${file}`);
+  const config = JSON.parse(readFileSync(file, "utf8"));
+  if (!config || typeof config !== "object" || Array.isArray(config))
+    throw new Error(`配置必须是 JSON 对象：${file}`);
+  for (const key of [
+    "verificationCommand",
+    "installCommand",
+    "symlinkDirectories",
+    "acceptanceRoot",
+    "codexSandbox",
+    "dispatchScript",
+  ]) {
+    if (!Object.hasOwn(config, key))
+      throw new Error(`配置缺少 ${key}：${file}`);
+  }
+  for (const key of ["verificationCommand", "installCommand"]) {
+    if (
+      !Array.isArray(config[key]) ||
+      !config[key].length ||
+      !config[key].every(
+        (part: unknown) => typeof part === "string" && part.length > 0,
+      )
+    )
+      throw new Error(`配置 ${key} 必须是非空的程序和参数数组`);
+  }
+  if (
+    !Array.isArray(config.symlinkDirectories) ||
+    !config.symlinkDirectories.every(localPath)
+  )
+    throw new Error("配置 symlinkDirectories 必须是仓库内相对目录的数组");
+  if (!localPath(config.acceptanceRoot))
+    throw new Error("配置 acceptanceRoot 必须是仓库内相对目录");
+  if (
+    !["read-only", "workspace-write", "danger-full-access"].includes(
+      config.codexSandbox,
+    )
+  )
+    throw new Error(
+      "配置 codexSandbox 必须是 read-only、workspace-write 或 danger-full-access",
+    );
+  if (
+    typeof config.dispatchScript !== "string" ||
+    !config.dispatchScript.trim()
+  )
+    throw new Error("配置 dispatchScript 必须是派发脚本路径");
+  return config;
+};
+
+const git = (root: string, args: string[]): string => {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  if (result.error || result.status !== 0)
+    throw new Error(
+      `git 调用失败（${args[0]}）：${result.stderr?.trim() || "请检查仓库状态"}`,
+    );
+  return result.stdout.trim();
+};
+
+const dispatch = (values: Values, numbers: number[]): void => {
+  if (values.note !== undefined && values["note-file"] !== undefined)
+    throw usageError(
+      "--note 和 --note-file 不能同时使用",
+      commands.dispatch.help,
+    );
+  const note =
+    values["note-file"] === undefined
+      ? ((values.note as string | undefined) ?? "")
+      : readFileSync(values["note-file"] as string, "utf8");
+  const checkout = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
+  const config = dispatchConfig(checkout);
+  const trees = git(checkout, ["worktree", "list", "--porcelain"])
+    .split("\n\n")
+    .map((block) => {
+      const lines = block.split("\n");
+      return {
+        path:
+          lines.find((line) => line.startsWith("worktree "))?.slice(9) ?? "",
+        branch: lines.find((line) => line.startsWith("branch "))?.slice(7),
+      };
+    });
+  const root = trees[0].path;
+  const { endpoint, issue } = github(true);
+  const ticket = numbers[0];
+  const child = issue(ticket) as Issue & { labels?: { name: string }[] };
+  if (child.state !== "open")
+    throw new CheckFailure(`#${ticket} 已关闭，不能派发`);
+  if (!child.labels?.some((label) => label.name === "role:engineering"))
+    throw new CheckFailure(`#${ticket} 不是 role:engineering 工单，不能派发`);
+  const parent = JSON.parse(
+    gh(["api", "--method", "GET", `${endpoint(ticket)}/parent`]),
+  ) as Issue;
+  const spec = issueNumber(String(parent.number));
+  const branches = git(checkout, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    `refs/heads/spec/${spec}-*`,
+  ])
+    .split("\n")
+    .filter(Boolean);
+  if (branches.length !== 1)
+    throw new Error(
+      `按 spec/${spec}- 找到 ${branches.length} 个集成分支，必须恰好一个`,
+    );
+  const integration = branches[0];
+  const worktree = `${root}.worktrees/${ticket}`;
+  const branch = `ticket/${ticket}`;
+  const existing = trees.find((tree) => tree.path === worktree);
+  if (existing) {
+    if (existing.branch !== `refs/heads/${branch}`)
+      throw new CheckFailure(`worktree 分支必须是 ${branch}：${worktree}`);
+    if (git(worktree, ["status", "--porcelain"]))
+      throw new CheckFailure(`worktree 不干净，不能复用：${worktree}`);
+  } else {
+    if (existsSync(worktree))
+      throw new CheckFailure(
+        `目标路径已存在但不是本仓库的 worktree：${worktree}`,
+      );
+    if (git(checkout, ["branch", "--list", branch]))
+      throw new CheckFailure(`工单分支已存在但未挂在目标 worktree：${branch}`);
+  }
+  const script = resolve(root, config.dispatchScript);
+  if (!existsSync(script) || !statSync(script).isFile())
+    throw new Error(`派发脚本不存在或不是文件：${script}`);
+  const links = [...new Set(config.symlinkDirectories)].map((directory) => {
+    const source = join(root, directory);
+    const target = join(worktree, directory);
+    if (!existsSync(source) || !statSync(source).isDirectory())
+      throw new Error(`软链接来源目录不存在：${source}`);
+    if (existing) {
+      let entry;
+      try {
+        entry = lstatSync(target);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      if (
+        entry &&
+        (!entry.isSymbolicLink() ||
+          realpathSync(target) !== realpathSync(source))
+      )
+        throw new CheckFailure(`目标软链接不匹配：${target}`);
+      return { source, target, create: !entry };
+    }
+    if (
+      git(checkout, [
+        "ls-tree",
+        "-r",
+        "--name-only",
+        integration,
+        "--",
+        directory,
+      ])
+    )
+      throw new Error(`软链接目标在集成分支中已有文件：${directory}`);
+    return { source, target, create: true };
+  });
+  const artifacts = resolve(
+    worktree,
+    config.acceptanceRoot,
+    `spec-${spec}`,
+    String(ticket),
+  );
+  const task = `完成 GitHub 工单 #${ticket}（父 spec #${spec}）。先运行 gh issue view ${ticket} --comments 和 gh issue view ${spec} 读取全文，按工单的边界和验收标准完成、验证并提交，最后按角色文档的格式汇报。验证命令参数数组：${JSON.stringify(config.verificationCommand)}。`;
+  const extra = [
+    `你在 git worktree ${worktree} 里工作，分支是 ${branch}。提交留在这个分支上，不要切换分支、不要推送，不要改动主工作区 ${root} 和其他 worktree。`,
+    `以下目录是指向主工作区的软链接，只读使用：${config.symlinkDirectories.join("、") || "无"}。验收产物写到本 worktree 的 ${artifacts} 下，汇报里用绝对路径。`,
+    existing ? "这是返工派发：请另起提交。" : "",
+    note,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const args = [
+    script,
+    task,
+    extra,
+    "--role",
+    "engineering",
+    "--name",
+    `gh-${ticket}`,
+    "--sandbox",
+    config.codexSandbox,
+  ];
+  if (values["dry-run"]) {
+    console.log(
+      `派发计划：#${ticket}，父 spec #${spec}，集成分支 ${integration}`,
+    );
+    console.log(
+      existing
+        ? `复用干净的 worktree：${worktree}（${branch}）`
+        : `新建 worktree：${worktree}（${branch}，基于 ${integration}）`,
+    );
+    for (const link of links)
+      console.log(
+        `${link.create ? "建立" : "复用"}只读软链接：${link.target} → ${link.source}`,
+      );
+    if (!existing)
+      console.log(`安装命令：${JSON.stringify(config.installCommand)}`);
+    console.log(`验收产物：${artifacts}`);
+    console.log(
+      `记录名前缀：gh-${ticket}；实际记录名和进度文件由派发脚本启动时打印（重名自动错开）。`,
+    );
+    console.log(
+      `派发工作目录：${worktree}\n派发参数：${JSON.stringify([process.execPath, ...args])}\n标准指令：${task}\nworktree 与补充说明：\n${extra}`,
+    );
+    return;
+  }
+  if (!existing) {
+    git(checkout, ["worktree", "add", "-b", branch, worktree, integration]);
+    console.log(`已新建 worktree：${worktree}（${branch}）`);
+  } else console.log(`已复用 worktree：${worktree}（${branch}）`);
+  for (const link of links) {
+    if (link.create) {
+      mkdirSync(resolve(link.target, ".."), { recursive: true });
+      symlinkSync(link.source, link.target, "dir");
+    }
+    console.log(`已接好只读软链接：${relative(worktree, link.target)}`);
+  }
+  if (!existing) {
+    const [program, ...installArgs] = config.installCommand;
+    const result = spawnSync(program, installArgs, {
+      cwd: worktree,
+      stdio: "inherit",
+    });
+    if (result.error || result.status !== 0)
+      throw new Error("安装命令失败；worktree 已保留，请处理后重试");
+    console.log("安装命令已完成");
+  }
+  mkdirSync(artifacts, { recursive: true });
+  const result = spawnSync(process.execPath, args, {
+    cwd: worktree,
+    stdio: "inherit",
+  });
+  if (result.error || result.signal)
+    throw new Error("派发程序运行出错或被信号中断；worktree 已保留");
+  process.exitCode = result.status ?? 2;
+};
+
 const entry = "node .claude/skills/studio-tickets/scripts/tickets.ts";
 const commands: Record<string, Command> = {
+  dispatch: {
+    options: { note: { type: "string" }, "note-file": { type: "string" } },
+    positionals: 1,
+    execute: dispatch,
+    help: `${entry} dispatch <工单> [--note <文字> | --note-file <文件>] [--dry-run]
+读取 docs/agents/run-spec.json，为工程工单准备或复用干净的 worktree，
+在该目录前台运行派发脚本，透传记录名、进度路径和退出码。
+补充说明支持 UTF-8 文件；返工自动要求另起提交。
+--dry-run 只读 GitHub 和 git 并打印计划，不安装、不建目录、不派发。`,
+  },
   frontier: {
     options: {},
     positionals: 1,

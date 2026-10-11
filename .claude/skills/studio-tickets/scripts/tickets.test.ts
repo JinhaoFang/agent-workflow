@@ -415,6 +415,7 @@ test("help for every command succeeds without calling gh", () => {
     ["frontier", "--help"],
     ["link", "--help"],
     ["accept", "--help"],
+    ["dispatch", "--help"],
   ]) {
     const result = run(args, []);
     success(result, []);
