@@ -1,10 +1,12 @@
 /**
  * Cleanup command: export cleanupCommand for CLI registration. List spec-owned
- * main records, QA, worktrees, local ticket branches and exact <ticket>.json
+ * main records, QA, worktrees, local/origin ticket branches and exact <ticket>.json
  * land journals in the common git directory before deletion. Dirty/current/
  * mismatched trees and their branches are retained, with exit 1. Ticket refs
  * may be unmerged and are deleted with -D; worktree removal is never forced.
- * --dry-run only lists the plan.
+ * Query origin directly for exact child refs, without fetching. Remote deletion
+ * failures name the branch, allow other cleanup to proceed and exit with 1.
+ * --dry-run only lists the plan. Integration branches are never deleted here.
  */
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -72,6 +74,17 @@ const cleanup = (values: Values, numbers: number[]): void => {
     .filter((branch) =>
       [...tickets].some((ticket) => branch === `ticket/${ticket}`),
     );
+  const remoteBranches = git(root, [
+    "ls-remote",
+    "--heads",
+    "origin",
+    "refs/heads/ticket/*",
+  ])
+    .split("\n")
+    .map((line) => line.split("\t")[1]?.replace(/^refs\/heads\//, ""))
+    .filter((branch): branch is string =>
+      [...tickets].some((ticket) => branch === `ticket/${ticket}`),
+    );
   const removable: string[] = [];
   const retained = new Set<string>();
   const skipped: string[] = [];
@@ -104,9 +117,17 @@ const cleanup = (values: Values, numbers: number[]): void => {
   for (const file of files) console.log(`删除文件或目录：${file}`);
   for (const tree of removable) console.log(`删除 worktree：${tree}`);
   for (const branch of deletable) console.log(`删除分支：${branch}`);
+  for (const branch of remoteBranches)
+    console.log(`删除远端分支：origin/${branch}`);
   for (const message of skipped) console.log(message);
-  if (!files.length && !removable.length && !deletable.length)
+  if (
+    !files.length &&
+    !removable.length &&
+    !deletable.length &&
+    !remoteBranches.length
+  )
     console.log("没有可删除的内容。");
+  const remoteFailures: string[] = [];
   if (!values["dry-run"]) {
     for (const tree of removable) {
       if (git(tree, ["status", "--porcelain"]))
@@ -122,10 +143,21 @@ const cleanup = (values: Values, numbers: number[]): void => {
       rmSync(file, { recursive: true, force: true });
       console.log(`已删除文件或目录：${file}`);
     }
+    for (const branch of remoteBranches) {
+      try {
+        git(root, ["push", "origin", "--delete", branch]);
+        console.log(`已删除远端分支：origin/${branch}`);
+      } catch (error) {
+        remoteFailures.push(branch);
+        console.error(
+          `出错：删除远端分支 origin/${branch} 失败：${(error as Error).message}`,
+        );
+      }
+    }
   }
-  if (skipped.length)
+  if (skipped.length || remoteFailures.length)
     throw new CheckFailure(
-      `有 ${skipped.length} 个 worktree 未清理，请处理后重跑 cleanup ${spec}`,
+      `有 ${skipped.length} 个 worktree 未清理、${remoteFailures.length} 个远端分支删除失败，请处理后重跑 cleanup ${spec}`,
     );
 };
 
@@ -137,6 +169,9 @@ export const cleanupCommand: Command = {
 读取 spec 的全部子工单，先列清单再删除主工作区的本 spec 派发记录、
 审查记录、配置验收根目录下的 spec-<号>/、残留 worktree 和工单分支，
 以及 git 公共目录 run-spec-land/ 下这些子工单的续做状态文件。
+直接查询 origin，清单列出并删除实际存在的本 spec 子工单远端 ticket/<号> 分支。
+远端没有的工单分支不报错；集成分支由 GitHub 合并 PR 后自动删除，本命令不管。
+远端分支删除失败会报出分支名，继续其他清理，最后以 1 退出。
 记录名只匹配完整编号或编号后接 - 后缀，其他记录保留。
 不干净的 worktree 跳过并保留对应分支，以 1 退出；不强行删除 worktree。
 --dry-run 只读取 GitHub、git 和文件，列出清单，不删除任何内容。`,

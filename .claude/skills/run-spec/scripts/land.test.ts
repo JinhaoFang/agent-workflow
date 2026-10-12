@@ -5,6 +5,8 @@
  * verify. Fixtures use paths with spaces and never touch the project's worktrees.
  * Post-merge failures use a broken origin, a copy destination collision and a
  * PATH git wrapper that fails only the requested deletion command.
+ * Install/verify scripts append observable step records; install failures and
+ * conflict retries demonstrate ordering without reading internal CLI functions.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -48,7 +50,11 @@ const fixture = (ticket = 21) => {
       "verify.cjs",
       "literal $(touch forbidden)",
     ],
-    installCommand: [process.execPath, "install.cjs"],
+    installCommand: [
+      process.execPath,
+      "install.cjs",
+      "literal $(touch forbidden)",
+    ],
     symlinkDirectories: [],
     acceptanceRoot: "out/custom-qa",
     codexSandbox: "danger-full-access",
@@ -58,11 +64,26 @@ const fixture = (ticket = 21) => {
   writeFileSync(join(root, ".gitignore"), ".codex-runs\nout\n");
   writeFileSync(join(root, "shared.txt"), "initial\n");
   writeFileSync(
+    join(root, "install.cjs"),
+    `const fs = require("node:fs");
+const {execFileSync} = require("node:child_process");
+fs.mkdirSync("out", {recursive:true});
+const base = execFileSync("git", ["merge-base", "HEAD", "${integration}"], {encoding:"utf8"}).trim();
+fs.appendFileSync("out/steps.jsonl", JSON.stringify({step:"install",cwd:process.cwd(),args:process.argv.slice(2),base}) + "\\n");
+console.log("安装标准输出：第一行");
+console.log("安装标准输出：第二行");
+console.error("安装标准错误：诊断");
+process.exitCode = Number(process.env.LAND_INSTALL_EXIT || 0);
+`,
+  );
+  writeFileSync(
     join(root, "verify.cjs"),
     `const fs = require("node:fs");
 fs.mkdirSync("out", {recursive:true});
+fs.appendFileSync("out/steps.jsonl", JSON.stringify({step:"verify",cwd:process.cwd()}) + "\\n");
 fs.writeFileSync("out/verification.json", JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2)}));
 fs.writeFileSync("out/custom-qa/spec-17/${ticket}/verification.json", fs.readFileSync("out/verification.json"));
+fs.copyFileSync("out/steps.jsonl", "out/custom-qa/spec-17/${ticket}/steps.jsonl");
 console.log("临时仓库验证完成");
 process.exitCode = Number(process.env.LAND_VERIFY_EXIT || 0);
 `,
@@ -74,6 +95,7 @@ process.exitCode = Number(process.env.LAND_VERIFY_EXIT || 0);
     "add",
     ".gitignore",
     "shared.txt",
+    "install.cjs",
     "verify.cjs",
     "docs/agents/run-spec.json",
   ]);
@@ -137,7 +159,7 @@ process.stdout.write(JSON.stringify(response.value));
 `,
     { mode: 0o755 },
   );
-  const run = (args: string[] = [], exit = 0, cwd = root) => {
+  const run = (args: string[] = [], exit = 0, cwd = root, installExit = 0) => {
     rmSync(join(temporary, "gh-calls.jsonl"), { force: true });
     const result = spawnSync(process.execPath, [cli, "land", ...args], {
       cwd,
@@ -148,6 +170,7 @@ process.stdout.write(JSON.stringify(response.value));
         PATH: `${temporary}${delimiter}${process.env.PATH}`,
         LAND_FIXTURE_ROOT: temporary,
         LAND_VERIFY_EXIT: String(exit),
+        LAND_INSTALL_EXIT: String(installExit),
       },
     });
     assert.ifError(result.error);
@@ -193,10 +216,19 @@ process.stdout.write(JSON.stringify(response.value));
   };
 };
 
-test("land rebases, verifies, fast-forwards, pushes local origin and copies records/QA before deletion", () => {
+const readSteps = (
+  path: string,
+): { step: string; cwd: string; args?: string[]; base?: string }[] =>
+  readFileSync(path, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+
+test("land rebases, installs quietly, verifies, fast-forwards, pushes local origin and copies records/QA before deletion", () => {
   const f = fixture();
   try {
     f.commit("integration.txt", "integration advanced");
+    const integrationHead = f.git(["rev-parse", "HEAD"]);
     const result = f.run(["21"]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(f.git(["branch", "--show-current"]), f.integration);
@@ -227,6 +259,22 @@ test("land rebases, verifies, fast-forwards, pushes local origin and copies reco
       cwd: f.worktree,
       args: f.config.verificationCommand.slice(2),
     });
+    assert.deepEqual(readSteps(join(f.root, f.artifacts, "steps.jsonl")), [
+      {
+        step: "install",
+        cwd: f.worktree,
+        args: f.config.installCommand.slice(2),
+        base: integrationHead,
+      },
+      { step: "verify", cwd: f.worktree },
+    ]);
+    assert.equal(
+      result.stdout.split("\n").filter((line) => line === "安装命令已完成")
+        .length,
+      1,
+    );
+    assert.doesNotMatch(result.stdout + result.stderr, /安装标准/);
+    assert.ok(!existsSync(join(f.root, "forbidden")));
   } finally {
     f.cleanup();
   }
@@ -312,6 +360,7 @@ test("land preserves rebase conflicts and resumes both staged resolutions and ma
       );
       assert.equal(f.git(["rev-parse", f.integration]), integrationHead);
       assert.ok(!existsSync(join(f.worktree, "out/verification.json")));
+      assert.ok(!existsSync(join(f.worktree, "out/steps.jsonl")));
       assert.equal(f.run(["21"]).status, 1);
       writeFileSync(join(f.worktree, "shared.txt"), "resolved\n");
       assert.equal(f.run(["21"]).status, 1);
@@ -335,9 +384,68 @@ test("land preserves rebase conflicts and resumes both staged resolutions and ma
         "resolved\n",
       );
       assert.ok(!existsSync(f.worktree));
+      assert.deepEqual(readSteps(join(f.root, f.artifacts, "steps.jsonl")), [
+        {
+          step: "install",
+          cwd: f.worktree,
+          args: f.config.installCommand.slice(2),
+          base: integrationHead,
+        },
+        { step: "verify", cwd: f.worktree },
+      ]);
     } finally {
       f.cleanup();
     }
+  }
+});
+
+test("land replays failed installation output, preserves the rebased tree and reinstalls on the same command", () => {
+  for (const exit of [1, 7]) {
+    const f = fixture();
+    try {
+      const rejected = f.run(["21"], 0, f.root, exit);
+      assert.equal(rejected.status, 1, rejected.stderr);
+      assert.match(rejected.stderr, /出错：安装未通过/);
+      assert.match(
+        rejected.stdout,
+        /安装标准输出：第一行\n安装标准输出：第二行/,
+      );
+      assert.match(rejected.stderr, /安装标准错误：诊断/);
+      assert.doesNotMatch(rejected.stdout, /安装命令已完成/);
+      assert.ok(!existsSync(join(f.worktree, "out/verification.json")));
+      assert.ok(!existsSync(join(f.root, ".git/run-spec-land/21.json")));
+      const steps = readSteps(join(f.worktree, "out/steps.jsonl"));
+      assert.deepEqual(
+        steps.map((step) => step.step),
+        ["install"],
+      );
+      f.assertUnlanded();
+      const resumed = f.run(["21"]);
+      assert.equal(resumed.status, 0, resumed.stderr);
+      assert.deepEqual(
+        readSteps(join(f.root, f.artifacts, "steps.jsonl")).map(
+          (step) => step.step,
+        ),
+        ["install", "install", "verify"],
+      );
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
+test("land reports an unavailable installation program with exit 2 and leaves verification and merge untouched", () => {
+  const f = fixture();
+  try {
+    f.config.installCommand = [join(f.temporary, "missing installer")];
+    f.commit("docs/agents/run-spec.json", JSON.stringify(f.config), f.worktree);
+    const result = f.run(["21"], 0, f.worktree);
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /^出错：安装命令运行出错/);
+    assert.ok(!existsSync(join(f.worktree, "out/verification.json")));
+    f.assertUnlanded();
+  } finally {
+    f.cleanup();
   }
 });
 
@@ -351,6 +459,12 @@ test("land rejects failing verification without merging, pushing, copying or del
       assert.ok(existsSync(join(f.worktree, "out/verification.json")));
       f.assertUnlanded();
       assert.equal(f.run(["21"]).status, 0);
+      assert.deepEqual(
+        readSteps(join(f.root, f.artifacts, "steps.jsonl")).map(
+          (step) => step.step,
+        ),
+        ["install", "verify", "install", "verify"],
+      );
     } finally {
       f.cleanup();
     }
@@ -404,6 +518,7 @@ test("land dry-run prints each step and changes no refs, files or remote", () =>
       f.worktree,
       f.integration,
       "验证命令",
+      "安装命令",
       "快进合并",
       "推送",
       "复制派发记录",
@@ -418,6 +533,10 @@ test("land dry-run prints each step and changes no refs, files or remote", () =>
     assert.ok(!existsSync(join(f.root, f.artifacts)));
     assert.ok(!existsSync(join(f.root, ".codex-runs/gh-21.json")));
     assert.ok(!existsSync(join(f.worktree, "out/verification.json")));
+    assert.ok(!existsSync(join(f.worktree, "out/steps.jsonl")));
+    assert.ok(
+      result.stdout.indexOf("安装命令") < result.stdout.indexOf("验证命令"),
+    );
   } finally {
     f.cleanup();
   }
@@ -430,6 +549,8 @@ test("land help is read-only and argument errors exit with 2", () => {
     assert.equal(help.status, 0);
     assert.equal(help.calls.length, 0);
     assert.match(help.stdout, /land <工单>/);
+    assert.match(help.stdout, /先运行配置的安装命令，再验证/);
+    assert.match(help.stdout, /失败回放输出/);
     for (const args of [[], ["0"], ["21", "extra"], ["21", "--unknown"]]) {
       const result = f.run(args);
       assert.equal(result.status, 2);

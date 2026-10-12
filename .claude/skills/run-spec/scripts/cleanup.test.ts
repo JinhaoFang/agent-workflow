@@ -2,7 +2,9 @@
  * cleanup CLI tests use a queued fake gh and real temporary git repositories.
  * Assertions inspect arguments, output, exit codes, files, branches and worktrees,
  * including colliding ticket/spec prefixes and dirty trees. Run with node --test
- * on this file or pnpm verify. All deletion stays inside temporary fixtures.
+ * on this file or pnpm verify. A local bare origin and rejecting receive hook
+ * cover remote previews, exact ownership and continued cleanup after failure.
+ * All deletion stays inside temporary fixtures.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -24,6 +26,7 @@ const cli = join(import.meta.dirname, "tickets.ts");
 const fixture = () => {
   const temporary = mkdtempSync(join(tmpdir(), "cleanup-test-"));
   const root = join(temporary, "clone with spaces");
+  const remote = join(temporary, "bare origin.git");
   mkdirSync(join(root, "docs/agents"), { recursive: true });
   const git = (args: string[], cwd = root) => {
     const result = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -48,6 +51,9 @@ const fixture = () => {
   git(["config", "user.email", "fixture@example.test"]);
   git(["add", ".gitignore", "docs/agents/run-spec.json"]);
   git(["commit", "-m", "initial fixture"]);
+  git(["init", "--bare", remote]);
+  git(["remote", "add", "origin", remote]);
+  git(["push", "origin", "spec/17-test"]);
   const owned = [
     "gh-1",
     "gh-1.log",
@@ -161,6 +167,7 @@ process.stdout.write(JSON.stringify(response.value));
   };
   return {
     root,
+    remote,
     temporary,
     records,
     artifacts,
@@ -206,6 +213,118 @@ test("cleanup removes only spec records, QA, worktrees and exact ticket refs, in
       assert.ok(f.git(["branch", "--list", `ticket/${ticket}`]));
     const firstDeletion = result.stdout.indexOf("已删除");
     assert.ok(firstDeletion > result.stdout.indexOf("删除分支：ticket/2"));
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("cleanup queries actual origin refs, previews without mutation and deletes only exact child remote branches", () => {
+  const f = fixture();
+  try {
+    f.git(["push", "origin", "ticket/1", "ticket/12", "ticket/20"]);
+    f.git(["branch", "ticket/1-rework"]);
+    f.git(["push", "origin", "ticket/1-rework"]);
+    f.git(["branch", "-D", "ticket/2"]);
+    f.git([
+      "--git-dir",
+      f.remote,
+      "update-ref",
+      "refs/heads/ticket/2",
+      f.git(["rev-parse", "HEAD"]),
+    ]);
+    const localRefs = f.git(["show-ref"]);
+    const remoteRefs = f.git(["--git-dir", f.remote, "show-ref"]);
+    const trees = f.git(["worktree", "list", "--porcelain"]);
+    const preview = f.run(["17", "--dry-run"], f.worktrees.get(12)!);
+    assert.equal(preview.status, 0, preview.stderr);
+    for (const branch of ["ticket/1", "ticket/2"])
+      assert.ok(preview.stdout.includes(`删除远端分支：origin/${branch}\n`));
+    assert.doesNotMatch(
+      preview.stdout,
+      /删除远端分支：origin\/(?:ticket\/12|ticket\/20|ticket\/1-rework|spec\/17-test)/,
+    );
+    assert.doesNotMatch(preview.stdout, /已删除/);
+    assert.equal(f.git(["show-ref"]), localRefs);
+    assert.equal(f.git(["--git-dir", f.remote, "show-ref"]), remoteRefs);
+    assert.equal(f.git(["worktree", "list", "--porcelain"]), trees);
+    assert.ok(existsSync(f.artifacts));
+    for (const name of f.owned)
+      assert.equal(readFileSync(join(f.records, name), "utf8"), name);
+    assert.ok(
+      preview.stdout.indexOf("删除远端分支：origin/ticket/2") >
+        preview.stdout.indexOf("清理清单"),
+    );
+    const result = f.run();
+    assert.equal(result.status, 0, result.stderr);
+    for (const branch of ["ticket/1", "ticket/2"])
+      assert.equal(
+        f.git(["ls-remote", "--heads", "origin", `refs/heads/${branch}`]),
+        "",
+      );
+    for (const branch of [
+      "ticket/12",
+      "ticket/20",
+      "ticket/1-rework",
+      "spec/17-test",
+    ])
+      assert.ok(
+        f.git(["ls-remote", "--heads", "origin", `refs/heads/${branch}`]),
+      );
+    assert.ok(
+      result.stdout.indexOf("已删除") >
+        result.stdout.indexOf("删除远端分支：origin/ticket/2"),
+    );
+    const again = f.run();
+    assert.equal(again.status, 0, again.stderr);
+    assert.match(again.stdout, /没有可删除的内容/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("cleanup names a rejected remote branch, exits 1, completes other cleanup and succeeds on retry", () => {
+  const f = fixture();
+  try {
+    f.git(["push", "origin", "ticket/1", "ticket/2", "ticket/12"]);
+    const hook = join(f.remote, "hooks/update");
+    writeFileSync(
+      hook,
+      `#!${process.execPath}
+if (process.argv[2] === "refs/heads/ticket/1") {
+  console.error("拒绝删除测试分支");
+  process.exit(1);
+}
+`,
+      { mode: 0o755 },
+    );
+    const result = f.run();
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /出错：删除远端分支 origin\/ticket\/1 失败/);
+    assert.match(result.stderr, /1 个远端分支删除失败/);
+    assert.match(result.stdout, /已删除远端分支：origin\/ticket\/2/);
+    assert.ok(f.git(["ls-remote", "--heads", "origin", "refs/heads/ticket/1"]));
+    assert.equal(
+      f.git(["ls-remote", "--heads", "origin", "refs/heads/ticket/2"]),
+      "",
+    );
+    for (const ticket of [1, 2])
+      assert.equal(f.git(["branch", "--list", `ticket/${ticket}`]), "");
+    assert.ok(!existsSync(f.worktrees.get(1)!));
+    assert.ok(!existsSync(f.artifacts));
+    assert.deepEqual(readdirSync(f.records).sort(), [...f.unrelated].sort());
+    assert.ok(existsSync(f.worktrees.get(12)!));
+    assert.ok(
+      f.git(["ls-remote", "--heads", "origin", "refs/heads/ticket/12"]),
+    );
+    rmSync(hook);
+    const resumed = f.run();
+    assert.equal(resumed.status, 0, resumed.stderr);
+    assert.match(resumed.stdout, /已删除远端分支：origin\/ticket\/1/);
+    assert.doesNotMatch(resumed.stdout, /删除远端分支：origin\/ticket\/2/);
+    assert.equal(
+      f.git(["ls-remote", "--heads", "origin", "refs/heads/ticket/1"]),
+      "",
+    );
   } finally {
     f.cleanup();
   }
@@ -382,6 +501,9 @@ test("cleanup help is read-only and invalid arguments exit with 2", () => {
     assert.equal(help.status, 0);
     assert.equal(help.calls.length, 0);
     assert.match(help.stdout, /cleanup <spec>/);
+    assert.match(help.stdout, /直接查询 origin/);
+    assert.match(help.stdout, /继续其他清理，最后以 1 退出/);
+    assert.match(help.stdout, /集成分支.*本命令不管/);
     for (const args of [[], ["0"], ["17", "extra"], ["17", "--unknown"]]) {
       const result = f.run(args);
       assert.equal(result.status, 2);

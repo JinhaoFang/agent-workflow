@@ -1,12 +1,14 @@
 /**
  * Land command: export landCommand for CLI registration. Use dispatch config,
- * rebase and verify before fast-forwarding and pushing origin, then copy
+ * rebase, reinstall and verify before fast-forwarding and pushing origin, then copy
  * ticket records and QA before removing its tree. Git rebase head-name
  * identifies an interrupted ticket rebase; reruns continue staged resolutions
  * with GIT_EDITOR=true. Unresolved conflicts exit with 1. A journal in the
  * common git directory records the verified commit before merge and completed
  * cleanup steps. Reruns confirm commit ancestry before resuming; journals
  * survive worktree/branch deletion and never dirty the checkout.
+ * Installation output is buffered and replayed on failure. No installation
+ * journal state is needed: every unmerged attempt installs after rebase.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -135,10 +137,14 @@ const land = (values: Values, numbers: number[]): void => {
     : [];
   if (values["dry-run"]) {
     console.log(`合并计划：#${ticket} → ${integration}（主工作区 ${root}）`);
-    if (merged) console.log("工单已合入，rebase、验证和快进合并已完成，跳过");
+    if (merged)
+      console.log("工单已合入，rebase、安装、验证和快进合并已完成，跳过");
     else {
       console.log(
         `${rebase ? "继续已有 rebase，再" : "在 worktree"} rebase 到 ${integration}：${worktree}`,
+      );
+      console.log(
+        `安装命令（${worktree}）：${JSON.stringify(config.installCommand)}`,
       );
       console.log(
         `验证命令（${worktree}）：${JSON.stringify(config.verificationCommand)}`,
@@ -193,6 +199,29 @@ const land = (values: Values, numbers: number[]): void => {
     if (rebase) runRebase(["--continue"]);
     runRebase([integration]);
     console.log(`已 rebase 到 ${integration}`);
+    const [installProgram, ...installArgs] = config.installCommand;
+    const installation = spawnSync(installProgram, installArgs, {
+      cwd: worktree,
+      stdio: ["inherit", "pipe", "pipe"],
+      encoding: "utf8",
+      maxBuffer: Infinity,
+    });
+    if (
+      installation.error ||
+      installation.signal ||
+      installation.status !== 0
+    ) {
+      if (installation.stdout) process.stdout.write(installation.stdout);
+      if (installation.stderr) process.stderr.write(installation.stderr);
+      if (installation.error || installation.signal)
+        throw new Error(
+          "安装命令运行出错；未验证、未合并，worktree 已保留，请处理后重跑",
+        );
+      throw new CheckFailure(
+        "安装未通过；未验证、未合并，worktree 已保留，请处理后重跑",
+      );
+    }
+    console.log("安装命令已完成");
     const [program, ...args] = config.verificationCommand;
     const verification = spawnSync(program, args, {
       cwd: worktree,
@@ -209,7 +238,7 @@ const land = (values: Values, numbers: number[]): void => {
     saveJournal();
     git(root, ["merge", "--ff-only", branch]);
     console.log(`已快进合并 ${branch} → ${integration}`);
-  } else console.log("工单已合入，rebase、验证和快进合并已完成，跳过");
+  } else console.log("工单已合入，rebase、安装、验证和快进合并已完成，跳过");
   const head = git(root, ["rev-parse", integration]);
   if (journal!.pushedHead === head) console.log("推送已完成，跳过");
   else {
@@ -255,7 +284,9 @@ export const landCommand: Command = {
   execute: land,
   help: `${entry} land <工单> [--dry-run]
 主工作区必须干净且在集成分支上；工单 worktree 干净且有新提交。
-rebase 后运行配置的验证命令，通过后快进合并并推送 origin。
+每次 rebase 完成后（含冲突解决后重跑），先运行配置的安装命令，再验证。
+安装成功只打印一行；失败回放输出、非零退出，保留现场，不验证也不合并。
+安装失败修好后重跑同一条命令会重新安装；验证通过后快进合并并推送 origin。
 复制本工单派发记录与验收产物后，删除 worktree 和工单分支。
 冲突以 1 退出并保留现场；解决并暂存后重跑可继续。
 合并后失败可重跑续做，已完成的推送、复制和删除步骤跳过。
