@@ -81,6 +81,6 @@ node <派发脚本> "用 code-review 技能审查固定点 B 到 HEAD 的改动�
 1. 按第 6 步以 `main` 为固定点审一次整个分支，要修的返工做完。
 2. `gh pr create --base main` 开 PR，正文按 `pr` 技能的格式写，包含 `Closes #S` 和接受不修的审查意见。
 3. 按 [report.md](report.md) 写 HTML 可视化汇报，存进配置说明里写的汇报目录，文件名 `spec-<S>-<英文短名>.html`，提交并推送到同一分支，把文件路径告诉用户。
-4. 运行 `tickets.ts cleanup <S>`，清理本 spec 的派发记录、审查记录、验收产物、残留的 worktree 和工单分支，其他记录保留。不干净的 worktree 会被跳过，看过里面的改动再处理，然后重跑。
+4. 运行 `tickets.ts cleanup <S>`，清理本 spec 的派发记录、审查记录、验收产物、残留的 worktree 和工单分支，以及 git 公共目录 `run-spec-land/` 下子工单的续做状态文件，其他 spec 的文件保留。不干净的 worktree 会被跳过，看过里面的改动再处理，然后重跑。
 
 完成标准：用户拿到了 PR 链接和汇报。

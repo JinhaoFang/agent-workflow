@@ -22,6 +22,11 @@ import { test } from "node:test";
 
 const cli = join(import.meta.dirname, "tickets.ts");
 const repo = "fixture-owner/fixture-repo";
+const installStdout = Array.from(
+  { length: 24 },
+  (_, index) => `安装标准输出 ${index + 1}\n`,
+).join("");
+const installStderr = "安装错误输出第一行\n安装错误输出最后一行\n";
 const fixture = () => {
   const temporary = mkdtempSync(join(tmpdir(), "dispatch-test-"));
   const root = join(temporary, "clone with spaces");
@@ -54,6 +59,8 @@ const fixture = () => {
 const result = JSON.stringify({cwd:process.cwd(), args:process.argv.slice(2)});
 fs.writeFileSync("install-result.json", result);
 fs.appendFileSync("install-attempts.jsonl", result + "\\n");
+process.stdout.write(${JSON.stringify(installStdout)});
+process.stderr.write(${JSON.stringify(installStderr)});
 process.exitCode = Number(process.env.INSTALL_FIXTURE_EXIT || 0);`,
   );
   writeFileSync(
@@ -316,6 +323,48 @@ test("dispatch creates worktree, links and installs, then forwards prompt and re
   }
 });
 
+test("dispatch successful install emits exactly one summary line and hides stdout and stderr", () => {
+  const f = fixture();
+  try {
+    const result = f.run();
+    assert.equal(result.status, 0, result.stderr);
+    const lastLink = "已接好只读软链接：.agents\n";
+    assert.ok(result.stdout.includes(lastLink));
+    assert.equal(
+      result.stdout.slice(
+        result.stdout.indexOf(lastLink) + lastLink.length,
+        result.stdout.indexOf("记录名："),
+      ),
+      "安装命令已完成\n",
+    );
+    assert.equal(result.stderr, "");
+    assert.ok(!result.stdout.includes(installStdout));
+    assert.ok(!result.stdout.includes(installStderr));
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("dispatch failed install replays complete stdout and stderr before the existing error with exit 2", () => {
+  for (const installExit of [1, 7]) {
+    const f = fixture();
+    try {
+      const result = f.run([], { installExit });
+      assert.equal(result.status, 2);
+      assert.ok(result.stdout.endsWith(installStdout));
+      assert.equal(
+        result.stderr,
+        `${installStderr}出错：安装命令失败；worktree 已保留，请处理后重试\n`,
+      );
+      assert.ok(!result.stdout.includes("安装命令已完成"));
+      assert.ok(!existsSync(join(f.worktree, ".codex-runs")));
+      assert.ok(existsSync(f.worktree));
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
 test("dispatch reuses a clean worktree, reads note-file, skips install and makes a new record and commit", () => {
   const f = fixture();
   try {
@@ -356,7 +405,7 @@ test("dispatch retries incomplete preparation after install failure before dispa
   try {
     const failed = f.run([], { installExit: 1 });
     assert.equal(failed.status, 2, failed.stderr);
-    assert.match(failed.stderr, /^出错：安装命令失败/);
+    assert.match(failed.stderr, /^出错：安装命令失败/m);
     assert.ok(existsSync(f.worktree));
     assert.equal(f.git(["status", "--porcelain"], f.worktree), "");
     assert.equal(

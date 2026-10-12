@@ -273,6 +273,38 @@ test("cleanup dry-run lists the whole plan and preserves files, refs, worktrees 
   }
 });
 
+test("cleanup lists and deletes only child land journals in the common git directory from another worktree", () => {
+  for (const dryRun of [false, true]) {
+    const f = fixture();
+    try {
+      const checkout = f.worktrees.get(12)!;
+      const journals = join(f.root, ".git/run-spec-land");
+      const owned = ["1.json", "2.json"];
+      const unrelated = ["12.json", "20.json", "17.json", "1.json.123.tmp"];
+      mkdirSync(journals);
+      for (const name of [...owned, ...unrelated])
+        writeFileSync(join(journals, name), name);
+      f.git(["branch", "-D", "ticket/2"]);
+      const result = f.run(dryRun ? ["17", "--dry-run"] : ["17"], checkout);
+      assert.equal(result.status, 0, result.stderr);
+      for (const name of owned) {
+        const path = join(journals, name);
+        assert.ok(result.stdout.includes(`删除文件或目录：${path}\n`), name);
+        assert.equal(existsSync(path), dryRun, name);
+        if (dryRun) assert.equal(readFileSync(path, "utf8"), name);
+      }
+      for (const name of unrelated) {
+        const path = join(journals, name);
+        assert.equal(readFileSync(path, "utf8"), name);
+        assert.ok(!result.stdout.includes(path), name);
+      }
+      assert.ok(existsSync(checkout));
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
 test("cleanup skips dirty trees and retains their branches without forcing deletion", () => {
   for (const dirty of ["untracked", "modified", "staged"]) {
     const f = fixture();

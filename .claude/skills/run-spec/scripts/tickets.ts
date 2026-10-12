@@ -12,8 +12,9 @@
  * symlinkDirectories lists repository-relative directories shared read-only;
  * acceptanceRoot is the worktree-relative QA root; codexSandbox selects Codex
  * permissions; dispatchScript is resolved against the main worktree (absolute
- * paths also work). Install and dispatch run in the ticket worktree, with live
- * inherited output; DispatchDock prints the actual name and progress path and
+ * paths also work). Install runs in the ticket worktree with captured output:
+ * success prints one line; failure replays stdout/stderr before the error.
+ * Dispatch inherits live output and prints the actual name and progress path and
  * chooses collision suffixes. Missing/invalid configuration exits with 2.
  * Newly created worktrees carry a pending-preparation marker in their private
  * git directory until links and install succeed. Reruns with that marker finish
@@ -25,7 +26,8 @@
  * A journal in the common git directory records the verified commit before merge
  * and completed cleanup steps. Reruns confirm commit ancestry before resuming;
  * journals survive worktree/branch deletion and never dirty the checkout.
- * cleanup lists spec-owned main records, QA, worktrees and local ticket branches
+ * cleanup lists spec-owned main records, QA, worktrees, local ticket branches
+ * and exact <ticket>.json land journals in the common git directory
  * before deletion. Known record file extensions are removed before matching an
  * exact name or hyphen suffix. Dirty/current/mismatched trees and their branches
  * are retained, with exit 1. Ticket refs may be unmerged and are deleted with -D;
@@ -647,10 +649,15 @@ const dispatch = (values: Values, numbers: number[]): void => {
     const [program, ...installArgs] = config.installCommand;
     const result = spawnSync(program, installArgs, {
       cwd: worktree,
-      stdio: "inherit",
+      stdio: ["inherit", "pipe", "pipe"],
+      encoding: "utf8",
+      maxBuffer: Infinity,
     });
-    if (result.error || result.status !== 0)
+    if (result.error || result.status !== 0) {
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
       throw new Error("安装命令失败；worktree 已保留，请处理后重试");
+    }
     rmSync(preparationFile);
     console.log("安装命令已完成");
   }
@@ -915,6 +922,15 @@ const cleanup = (values: Values, numbers: number[]): void => {
     : [];
   const artifacts = join(root, config.acceptanceRoot, `spec-${spec}`);
   if (existsSync(artifacts)) files.push(artifacts);
+  const journals = resolve(
+    checkout,
+    git(checkout, ["rev-parse", "--git-common-dir"]),
+    "run-spec-land",
+  );
+  for (const ticket of tickets) {
+    const journal = join(journals, `${ticket}.json`);
+    if (existsSync(journal)) files.push(journal);
+  }
   const branches = git(root, [
     "for-each-ref",
     "--format=%(refname:short)",
@@ -989,7 +1005,8 @@ const commands: Record<string, Command> = {
     execute: cleanup,
     help: `${entry} cleanup <spec> [--dry-run]
 读取 spec 的全部子工单，先列清单再删除主工作区的本 spec 派发记录、
-审查记录、配置验收根目录下的 spec-<号>/、残留 worktree 和工单分支。
+审查记录、配置验收根目录下的 spec-<号>/、残留 worktree 和工单分支，
+以及 git 公共目录 run-spec-land/ 下这些子工单的续做状态文件。
 记录名只匹配完整编号或编号后接 - 后缀，其他记录保留。
 不干净的 worktree 跳过并保留对应分支，以 1 退出；不强行删除 worktree。
 --dry-run 只读取 GitHub、git 和文件，列出清单，不删除任何内容。`,
