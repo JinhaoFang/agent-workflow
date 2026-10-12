@@ -1,0 +1,16 @@
+# 追加到 .gitignore，目录名和 docs/agents/run-spec.json 保持一致。仓库已有等价的规则时跳过。
+
+# 派发记录：Codex 在 worktree 和主工作区里都会写。
+.codex-runs/
+
+# 验收产物根目录（acceptanceRoot）。不忽略的话，Codex 写了产物后 worktree 不干净，land 会拒绝合并。
+out/
+
+# 软链接进 worktree 的目录（symlinkDirectories）。不带末尾斜杠：worktree 里它们是软链接，
+# 带斜杠的规则只匹配真目录，管不到软链接。
+references
+.agents
+
+# 第三方技能不进 git，包括从 video-studio 安装的 run-spec、setup-run-spec 和 DispatchDock 的技能。
+# 仓库有自己要进 git 的技能时，改成先忽略 .claude/skills/*，再用 ! 为它开例外。
+.claude/skills/
