@@ -14,6 +14,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -556,6 +557,142 @@ test("dispatch propagates dispatcher exit codes after writing progress and repor
     } finally {
       f.cleanup();
     }
+  }
+});
+
+test("dispatch normalizes linked directories when creating and reusing worktrees", () => {
+  for (const configured of [
+    "references",
+    "references/",
+    "./references",
+    "references//",
+    "./nested//refs///",
+  ]) {
+    const f = fixture();
+    try {
+      const directory = configured.includes("nested")
+        ? "nested/refs"
+        : "references";
+      mkdirSync(join(f.root, directory), { recursive: true });
+      if (directory === "nested/refs")
+        writeFileSync(
+          join(f.root, ".gitignore"),
+          "nested\n.agents\n.codex-runs\nout\ninstall-result.json\ninstall-attempts.jsonl\n",
+        );
+      f.config.symlinkDirectories = [configured, ".agents"];
+      writeFileSync(f.configFile, JSON.stringify(f.config));
+      f.git(["add", "docs/agents/run-spec.json", ".gitignore"]);
+      f.git([
+        "commit",
+        "--allow-empty",
+        "-m",
+        "configured link spelling",
+        "--",
+        "docs/agents/run-spec.json",
+        ".gitignore",
+      ]);
+      f.git(["branch", "-f", "spec/17-test", "HEAD"]);
+      const first = f.run();
+      assert.equal(first.status, 0, first.stderr);
+      const target = join(f.worktree, directory);
+      assert.ok(lstatSync(target).isSymbolicLink());
+      assert.equal(readlinkSync(target), join(f.root, directory));
+      const inode = lstatSync(target).ino;
+      const install = readFileSync(
+        join(f.worktree, "install-attempts.jsonl"),
+        "utf8",
+      );
+      const plan = f.run(["--dry-run"], { cwd: f.worktree });
+      assert.equal(plan.status, 0, plan.stderr);
+      assert.ok(
+        plan.stdout.includes(
+          `复用只读软链接：${target} → ${join(f.root, directory)}`,
+        ),
+      );
+      const rework = f.run([], { cwd: f.worktree });
+      assert.equal(rework.status, 0, rework.stderr);
+      assert.equal(lstatSync(target).ino, inode);
+      assert.equal(
+        readFileSync(join(f.worktree, "install-attempts.jsonl"), "utf8"),
+        install,
+      );
+      const record = JSON.parse(
+        readFileSync(join(f.worktree, ".codex-runs/gh-21-2.json"), "utf8"),
+      );
+      assert.ok(record.args[1].includes(`只读使用：${directory}、.agents。`));
+      assert.match(record.args[1], /这是返工派发/);
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
+test("dispatch handles each normalized linked directory only once", () => {
+  const f = fixture();
+  try {
+    f.config.symlinkDirectories = [
+      "references/",
+      "./references",
+      "references//",
+      "references",
+      ".agents/",
+      "./.agents//",
+    ];
+    writeFileSync(f.configFile, JSON.stringify(f.config));
+    const plan = f.run(["--dry-run"]);
+    assert.equal(plan.status, 0, plan.stderr);
+    assert.equal(plan.stdout.match(/建立只读软链接：/g)?.length, 2);
+    for (const [index, args] of [[], []].entries()) {
+      const result = f.run(args);
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout.match(/已接好只读软链接：/g)?.length, 2);
+      const name = index === 0 ? "gh-21" : "gh-21-2";
+      const record = JSON.parse(
+        readFileSync(join(f.worktree, `.codex-runs/${name}.json`), "utf8"),
+      );
+      assert.ok(record.args[1].includes("只读使用：references、.agents。"));
+    }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("dispatch identifies invalid linked directory entries before accessing GitHub or creating worktrees", () => {
+  const f = fixture();
+  try {
+    for (const directory of [
+      "../outside",
+      "references/../../outside",
+      "/outside",
+      "",
+      ".",
+      "./",
+      ".//",
+      "references/..",
+      7,
+      null,
+    ]) {
+      writeFileSync(
+        f.configFile,
+        JSON.stringify({
+          ...f.config,
+          symlinkDirectories: ["references", directory],
+        }),
+      );
+      const result = f.run();
+      assert.equal(result.status, 2, result.stderr);
+      assert.match(result.stderr, /^出错：/);
+      assert.ok(result.stderr.includes("symlinkDirectories[1]"), result.stderr);
+      assert.ok(
+        result.stderr.includes(JSON.stringify(directory)),
+        result.stderr,
+      );
+      assert.deepEqual(result.calls, []);
+      assert.ok(!existsSync(f.worktree));
+      assert.equal(f.git(["branch", "--list", "ticket/21"]), "");
+    }
+  } finally {
+    f.cleanup();
   }
 });
 

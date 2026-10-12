@@ -99,7 +99,7 @@ const dispatch = (values: Values, numbers: number[]): void => {
   const script = resolve(root, config.dispatchScript);
   if (!existsSync(script) || !statSync(script).isFile())
     throw new Error(`派发脚本不存在或不是文件：${script}`);
-  const links = [...new Set(config.symlinkDirectories)].map((directory) => {
+  const links = config.symlinkDirectories.map((directory) => {
     const source = join(root, directory);
     const target = join(worktree, directory);
     if (!existsSync(source) || !statSync(source).isDirectory())

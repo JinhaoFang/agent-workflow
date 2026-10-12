@@ -4,6 +4,9 @@
  * local Chinese diagnostics. Commands import these exports without repo helpers.
  * verificationCommand and installCommand are executable/argument arrays;
  * symlinkDirectories and acceptanceRoot are repository-relative directories;
+ * linked directories normalize lexically against the checkout root and dedupe
+ * before any command receives them. Empty/root, absolute and parent paths fail
+ * with the configured entry index and value; symlink targets are not resolved.
  * codexSandbox selects Codex permissions; dispatchScript resolves against the
  * main worktree (absolute paths also work). Missing/invalid config exits with 2.
  * Record ownership strips known extensions, then matches the exact
@@ -12,7 +15,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 export type Issue = {
@@ -167,11 +170,22 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     )
       throw new Error(`配置 ${key} 必须是非空的程序和参数数组`);
   }
-  if (
-    !Array.isArray(config.symlinkDirectories) ||
-    !config.symlinkDirectories.every(localPath)
-  )
+  if (!Array.isArray(config.symlinkDirectories))
     throw new Error("配置 symlinkDirectories 必须是仓库内相对目录的数组");
+  config.symlinkDirectories = [
+    ...new Set(
+      config.symlinkDirectories.map((value: unknown, index: number) => {
+        const invalid = () =>
+          new Error(
+            `配置 symlinkDirectories[${index}] 必须是仓库内的非空相对目录，不能使用绝对路径或 ..：${JSON.stringify(value)}`,
+          );
+        if (!localPath(value)) throw invalid();
+        const directory = relative(root, resolve(root, value));
+        if (!localPath(directory)) throw invalid();
+        return directory;
+      }),
+    ),
+  ];
   if (!localPath(config.acceptanceRoot))
     throw new Error("配置 acceptanceRoot 必须是仓库内相对目录");
   if (
