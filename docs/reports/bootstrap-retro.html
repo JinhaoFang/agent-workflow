@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>建仓过程复盘</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
+<style>
+/* Layout: one reading column of briefing sections; charts and tables scroll inside their own frames. Visual version of bootstrap-retro.md. */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #141820;
+  --ink-2: #485164;
+  --muted: #737d90;
+  --line: #dde2ea;
+  --accent: #2f45b5;
+  --accent-soft: #e6e9fa;
+  --s-feature: #2a78d6;
+  --s-rework: #eb6834;
+  --s-review: #1baf7a;
+  --s-prev: #9aa3b3;
+  --good: #1a7f37;
+  --warn: #9a5b00;
+  --font-display: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101319; --surface: #171b23; --ink: #eceef4; --ink-2: #b6bdcc; --muted: #8b93a5;
+    --line: #2a303c; --accent: #9eabff; --accent-soft: #232a4a;
+    --s-feature: #3987e5; --s-rework: #d95926; --s-review: #199e70; --s-prev: #5c6576;
+    --good: #4cc46a; --warn: #f0a347; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101319; --surface: #171b23; --ink: #eceef4; --ink-2: #b6bdcc; --muted: #8b93a5;
+  --line: #2a303c; --accent: #9eabff; --accent-soft: #232a4a;
+  --s-feature: #3987e5; --s-rework: #d95926; --s-review: #199e70; --s-prev: #5c6576;
+  --good: #4cc46a; --warn: #f0a347; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.75; margin: 0; }
+table { font-size: inherit; }
+.page { max-width: 960px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.35; }
+h1 { font-size: clamp(26px, 4.4vw, 38px); }
+h2 { font-size: 22px; }
+h3 { font-size: 16px; font-family: var(--font-body); font-weight: 700; }
+p { margin: 0; max-width: 46em; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, .mono { font-family: var(--font-data); font-size: 0.86em; }
+code { background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--font-data); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 18px; min-width: 0; }
+.section-head { display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 20px; }
+.lede { font-size: 17px; color: var(--ink-2); }
+.muted { color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); }
+
+header.hero { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 1px 10px; border-radius: 999px; border: 1px solid currentColor; }
+.status.pending { color: var(--warn); }
+.status.done { color: var(--good); }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 2px; min-width: 0; }
+.kpi .num { font-family: var(--font-data); font-size: 26px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.kpi .num small { font-size: 14px; color: var(--muted); font-weight: 400; }
+.kpi .label { font-size: 13px; color: var(--ink-2); }
+@media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.flow { display: grid; gap: 10px; }
+.step { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+.step .n { font-family: var(--font-data); font-size: 13px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); color: var(--ink-2); margin-top: 2px; }
+.step .body { display: grid; gap: 2px; min-width: 0; }
+.step .title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-weight: 700; }
+.step .desc { font-size: 14px; color: var(--ink-2); }
+.who { font-size: 11px; font-weight: 500; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); white-space: nowrap; }
+.who.user { border-color: var(--s-rework); }
+.who.agent { border-color: var(--s-feature); }
+.who.codex { border-color: var(--s-review); }
+.who.init { border-color: var(--accent); color: var(--accent); }
+
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.compare > div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; display: grid; gap: 10px; align-content: start; }
+@media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 10px; min-width: 0; position: relative; }
+.chart-scroll { overflow-x: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+svg text { font-family: var(--font-body); }
+.tick-label, .row-label { fill: var(--ink-2); font-size: 12px; }
+.axis-label { fill: var(--muted); font-size: 11px; }
+.grid-line { stroke: var(--line); stroke-width: 1; }
+.marker-line { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.marker-text { fill: var(--accent); font-size: 12px; }
+.bar-value { fill: var(--ink); font-size: 12px; font-family: var(--font-data); }
+.bar-inner { fill: #ffffff; font-size: 11px; font-family: var(--font-data); }
+.band { fill: var(--accent-soft); }
+.band-text { fill: var(--ink-2); font-size: 11px; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; line-height: 1.6; padding: 8px 10px; border-radius: 6px; max-width: 280px; z-index: 2; }
+.tip b { font-weight: 700; }
+
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.04em; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.total td { font-weight: 700; }
+tr.gap td { color: var(--ink-2); font-size: 14px; background: var(--bg); }
+.chip { display: inline-block; font-size: 12px; padding: 0 8px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.rounds { display: inline-flex; gap: 3px; vertical-align: middle; }
+.rounds i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
+
+.items { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.items li { display: grid; gap: 2px; padding-left: 14px; border-left: 2px solid var(--line); }
+.items li.mine { border-left-color: var(--s-rework); }
+.items li.good { border-left-color: var(--s-review); }
+.items .head { font-weight: 700; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.items p { color: var(--ink-2); font-size: 14px; }
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+@media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
+.quotes { display: grid; gap: 10px; }
+blockquote { margin: 0; padding: 10px 14px; border-left: 3px solid var(--s-rework); background: var(--surface); border-radius: 0 8px 8px 0; font-size: 14px; color: var(--ink-2); }
+blockquote .when { display: block; font-family: var(--font-data); font-size: 12px; color: var(--muted); }
+.callout { background: var(--accent-soft); border-radius: 8px; padding: 14px 16px; display: grid; gap: 4px; }
+.callout b { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="page">
+
+<header class="hero">
+  <div class="eyebrow">建仓复盘 · 设计负责人 → 用户 · 2026-10-12</div>
+  <h1>建仓过程复盘</h1>
+  <p class="lede">2026-10-11 从 16:18 用 <code>npx create-video</code> 建仓，到 19:38 把彩排交给新会话：3 小时 20 分钟，得到一个有规则、有分工、接好 GitHub、装好并冒烟测试过 DispatchDock 的私有仓库。结构由 agent 提出，用户一轮就通过；环境事实由用户纠正；交接靠一份没人要求过的路线图。建仓时写的规则几乎原样保留，执行流程在第一次真正使用后整体重写。</p>
+  <div class="meta">
+    <a href="bootstrap-retro.md">文字版（含全部细节）</a>
+    <a href="../workflow/bootstrap.md">开局清单</a>
+    <span class="status pending">待用户审核合并</span>
+    <span>分支 <span class="mono">docs/bootstrap-retro</span></span>
+  </div>
+</header>
+
+<div class="kpis" aria-label="关键数字">
+  <div class="kpi"><span class="num">3:20</span><span class="label">从建仓到交接新会话，8 个提交，另有 6 份参考拆解文档</span></div>
+  <div class="kpi"><span class="num">53 <small>分钟</small></span><span class="label">agent 实际工作；会话共 2 小时 48 分，其余是用户在会话外动手</span></div>
+  <div class="kpi"><span class="num">4 <small>轮</small></span><span class="label">对齐，每轮用户都是"采纳大部分 + 纠正几处"</span></div>
+  <div class="kpi"><span class="num">+8 −6</span><span class="label"><code>AGENTS.md</code> 从建仓结束到现在的净改动（行）</span></div>
+</div>
+
+<section id="timeline">
+  <div class="section-head">
+    <div class="eyebrow">时间线 · 16:18 → 19:38</div>
+    <h2>用户在会话外动手，agent 在会话里干活</h2>
+  </div>
+  <p>每条横条是一段工作，长度是实际用时。agent 等回复的时候，用户在会话外修权限、换包管理器、增删技能、跑 setup、测 Codex，两边是同时在推进。悬停或用 Tab 键聚焦，可以看每段做了什么。</p>
+  <div class="figure" id="lanes-figure">
+    <div class="legend">
+      <span><i class="swatch" style="background: var(--s-rework)"></i>用户</span>
+      <span><i class="swatch" style="background: var(--s-feature)"></i>agent（设计负责人）</span>
+      <span><i class="swatch" style="background: var(--s-review)"></i>Codex 运行</span>
+      <span><i class="swatch" style="background: var(--ink-2)"></i>提交</span>
+    </div>
+    <div class="chart-scroll"><svg id="lanes" role="img" aria-label="建仓时间线：用户、agent、Codex 三条泳道和 8 个提交，16:15 到 19:45"></svg></div>
+    <div class="tip" id="tip" hidden></div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>段</th><th class="num">时间</th><th>谁</th><th>做了什么</th><th>提交</th></tr></thead>
+      <tbody>
+        <tr><td>0 准备</td><td class="num">16:18–16:57</td><td><span class="who user">用户</span></td><td>建仓；装 12 个 Remotion 技能和第一批 18 个 Matt 技能；放参考视频、克隆 DispatchDock；测 Codex；第一条消息交代背景、材料、目标</td><td class="mono">5ff6713</td></tr>
+        <tr><td>1 拆解参考</td><td class="num">16:57–17:23</td><td><span class="who agent">agent</span></td><td>读 DispatchDock 的文档和脚本，转写旁白、切镜头、取色、测响度，写 6 份拆解文档；用户打断等待循环，提醒用 GPU</td><td></td></tr>
+        <tr class="gap"><td></td><td class="num">17:23–17:47</td><td><span class="who user">用户</span></td><td>修好 git 权限，17:28 换成 pnpm</td><td></td></tr>
+        <tr><td>2 对齐仓库形态</td><td class="num">17:47–17:55</td><td><span class="who user">用户</span> <span class="who agent">agent</span></td><td>用户叫停对齐，补上"探索 DispatchDock""复利"两个目标；agent 提出工作室仓库、目录、按句定时；用户打断补充"只用 DispatchDock 的技能"</td><td></td></tr>
+        <tr><td>3 技能融合</td><td class="num">17:55–17:59</td><td><span class="who agent">agent</span></td><td>三个事实和 6 处冲突的对照表，5 件待确认事项各带推荐</td><td></td></tr>
+        <tr class="gap"><td></td><td class="num">17:59–18:21</td><td><span class="who user">用户</span></td><td>补装第二批 9 个 Matt 技能</td><td></td></tr>
+        <tr><td>4 补充技能与 GitHub</td><td class="num">18:21–18:24</td><td><span class="who user">用户</span> <span class="who agent">agent</span></td><td>用户 5 条反馈；agent 给出技能去留表、身份不混淆的三层做法、GitHub 协作回路、实施顺序</td><td></td></tr>
+        <tr class="gap"><td></td><td class="num">18:24–18:47</td><td><span class="who user">用户</span></td><td>删 8 个技能；测 Codex 联网和 GitHub；以 root 身份跑 <code>/setup-matt-pocock-skills</code></td><td></td></tr>
+        <tr><td>5 落地</td><td class="num">18:47–19:00</td><td><span class="who agent">agent</span> <span class="who codex">Codex</span></td><td>整理基线、建远程仓库和标签、写规则、装 DispatchDock、冒烟测试，结尾报备自己定的几处</td><td class="mono">f105c72 7ae0a4a afb7b1c</td></tr>
+        <tr><td>6 三个疑问</td><td class="num">19:11–19:12</td><td><span class="who user">用户</span> <span class="who agent">agent</span></td><td>怎么知道 Codex 做完、配置文件从哪来、以后怎么拆</td><td class="mono">ffeebed</td></tr>
+        <tr><td>7 两处修正</td><td class="num">19:20–19:23</td><td><span class="who user">用户</span> <span class="who agent">agent</span></td><td>本地目录改名；提交格式改成带正文和尾注</td><td class="mono">cdb3215 c293552</td></tr>
+        <tr><td>8 交接</td><td class="num">19:32–19:38</td><td><span class="who user">用户</span> <span class="who agent">agent</span></td><td>路线图去掉会影响新会话的内容；给出新会话的逐步输入指南</td><td class="mono">2433849</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="cost">
+  <div class="section-head">
+    <div class="eyebrow">时间和用量</div>
+    <h2>讨论很便宜，看图很贵</h2>
+  </div>
+  <p>拆解参考时在主会话里读了 27 张图，上下文在 26 分钟里从 3.7 万涨到 25.5 万 token。之后每一次调用都要重读它，落地阶段平均每次调用读 40 万缓存 token。定下几乎所有关键决定的 6 段讨论，合计只用了约 15 分钟、40 次调用。</p>
+  <div class="figure" id="ctx-figure">
+    <h3>每次调用的上下文（千 token）</h3>
+    <div class="chart-scroll"><svg id="ctx" role="img" aria-label="上下文增长：16:57 为 3.7 万，17:23 拆解结束时 25.5 万，18:47 为 35.8 万，19:38 交接结束时 47.4 万"></svg></div>
+  </div>
+  <div class="figure">
+    <h3>各段的缓存读取（百万 token）</h3>
+    <div class="chart-scroll"><svg id="phases" role="img" aria-label="各段缓存读取：落地 17.3 百万最多，拆解 15.9 百万次之，其余各段 1.3 到 4.1 百万"></svg></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>段</th><th class="num">agent 工作</th><th class="num">调用</th><th class="num">工具调用</th><th class="num">缓存读取</th><th class="num">新写入缓存</th><th class="num">输出</th></tr></thead>
+      <tbody id="phase-rows"></tbody>
+    </table>
+  </div>
+  <p class="note">设计负责人主会话，按消息去重；会话 1 没有开子代理。建仓期间 Codex 共运行 6 次，都很小：用户自己的测试 5 次，冒烟测试 1 次（输入 93,795，其中缓存 85,376，输出 1,383）。</p>
+  <div class="callout"><b>用户换会话的判断是对的</b><span>18:47 用户决定彩排换干净会话时，上下文已经 36 万。彩排会话后来又涨到约 47 万，复盘得出同样的结论：拆完工单就开新会话执行 spec。</span></div>
+</section>
+
+<section id="decisions">
+  <div class="section-head">
+    <div class="eyebrow">决定</div>
+    <h2>结构由 agent 提，环境事实由用户纠正</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>决定</th><th>提出</th><th>经过</th><th class="num">轮数</th></tr></thead>
+      <tbody id="decision-rows"></tbody>
+    </table>
+  </div>
+  <ul class="items">
+    <li><div class="head">结构一轮通过</div><p>仓库形态、目录、按句定时、技能冲突的处理，都是 agent 读完材料后提出的，用户没有改动。</p></li>
+    <li><div class="head">环境事实靠用户纠正</div><p>GPU、DispatchDock 的用法、Codex 联网、本地目录名，都是 agent 对用户机器的假设。Codex 联网一条，用户在会话外测了约 3 分钟，就推翻了一套快照机制。</p></li>
+    <li><div class="head">用户的取舍和推荐不完全一样</div><p>删技能时有 4 处和推荐不同，工单系统也没选推荐的本地 markdown。"全部按推荐"只出现在用户认为 agent 更懂的技术细节上。</p></li>
+  </ul>
+</section>
+
+<section id="roles">
+  <div class="section-head">
+    <div class="eyebrow">分工</div>
+    <h2>双方各自起的作用</h2>
+  </div>
+  <div class="two-col">
+    <div>
+      <h3>用户</h3>
+      <ul class="items">
+        <li><div class="head">开口前备齐材料和工具</div><p>agent 不用来回要东西，26 分钟内产出 6 份拆解文档。</p></li>
+        <li><div class="head">动手前叫停对齐，补上真正的目标</div><p>"复刻一个开场"扩成三个目标，仓库从一个视频项目变成工作室。</p></li>
+        <li><div class="head">在 agent 的盲区上纠正</div><p>本机硬件、打算怎么用 DispatchDock、技能装全没有、Codex 的实际权限、提交历史将来怎么读。</p></li>
+        <li><div class="head">事实问题去实测</div><p>Codex 能不能联网，没有讨论，测完带着结果回来。</p></li>
+        <li><div class="head">控制会话边界</div><p>两次打断；决定彩排换会话；交接前检查路线图；要一份逐步的输入指南。</p></li>
+        <li><div class="head">对齐够了就放权</div><p>三轮之后："其他的没有问题，可以按照你的分析来"。范围问题仍自己定。</p></li>
+      </ul>
+    </div>
+    <div>
+      <h3>agent</h3>
+      <ul class="items">
+        <li><div class="head">先读后说</div><p>读完 DispatchDock 的文档和脚本、Matt 技能的 setup 和主流程，空跑派发脚本，再提方案。</p></li>
+        <li><div class="head">每次长回复以"要你决定的事"收尾</div><p>每件都带推荐，用户只回不同意的地方。</p></li>
+        <li><div class="head">补上用户没想到的</div><p>git 属主、技能缺的依赖、Codex 能看到 <code>.agents/skills/</code>、<code>code-review</code> 重名、注释规则冲突、<code>tsc</code> 基线就是坏的、路线图会影响新会话……</p></li>
+        <li><div class="head">自主执行后报备</div><p>放权后自己定的事单独列出，包括一处本机全局配置的改动和撤销方法。</p></li>
+        <li><div class="head">用实测代替推断</div><p>冒烟测试、<code>git check-ignore</code>、尾注解析、改名后在新路径空跑派发。</p></li>
+      </ul>
+    </div>
+  </div>
+  <div class="quotes">
+    <blockquote><span class="when">17:47 · 用户</span>但是在正式开始前我觉得有必要先进行对齐，因为这是我第一次来做视频……除了探索用 AI 制作视频之外，我其实还有两个目标，一个是探索 DispatchDock，另一个是能够复利这个视频制作流程</blockquote>
+    <blockquote><span class="when">18:47 · 用户</span>彩排和第一阶段暂时不进行，因为目前我们的会话有太多信息了，我打算在一个干净的会话中测试……其他的没有问题，可以按照你的分析来</blockquote>
+    <blockquote><span class="when">19:20 · 用户</span>"提交信息是一句中文"不正确，要有规范的 commit 格式，只有一句中文会导致信息丢失。</blockquote>
+  </div>
+  <h3>agent 的失误</h3>
+  <ul class="items">
+    <li class="mine"><div class="head">没先探查环境</div><p>假设没有 GPU：转写从 17:01 拖到 17:20，换了三次方案，换 GPU 后两分钟转完。假设 Codex 不能联网：一套快照机制白设计了一轮。</p></li>
+    <li class="mine"><div class="head">写了等待循环</div><p>其中一个被用户拒绝；派发技能本来就说靠完成通知，不要轮询。</p></li>
+    <li class="mine"><div class="head">照搬参考项目的提交格式</div><p>DispatchDock 的"<code>[设计]</code> 一句中文"，没有判断它在这个仓库里是否合适。</p></li>
+    <li class="mine"><div class="head">只给远程仓库用了新名字</div><p>本地目录没跟上，后来改名让建仓会话的记录留在了旧目录里。</p></li>
+    <li class="mine"><div class="head">两个数字算错</div><p>拆解文档里的前两章句数和停顿分布，自己复核时发现并改正。</p></li>
+  </ul>
+</section>
+
+<section id="after">
+  <div class="section-head">
+    <div class="eyebrow">后来的检验 · 会话 2～4</div>
+    <h2>规则留下了，执行流程重写了</h2>
+  </div>
+  <div class="compare">
+    <div>
+      <h3>保留下来的</h3>
+      <ul class="items">
+        <li class="good"><div class="head"><code>AGENTS.md</code> 的结构</div><p>角色、共同规则、目录与归属没变，净改动 8 行增、6 行删，全是补充。</p></li>
+        <li class="good"><div class="head">角色分工和判断标准</div><p>"描述明显比实现短、结果能客观验收才派出去"，一字未改。</p></li>
+        <li class="good"><div class="head">工单只在 GitHub、Codex 完全权限</div><p>写进路线图「已定」，至今未变。</p></li>
+        <li class="good"><div class="head">提交格式、依赖方向</div><p>spec #1 分别做成提交钩子和 <code>pnpm verify</code> 的检查。</p></li>
+        <li class="good"><div class="head">彩排换干净会话</div><p>推广为"拆完工单就开新会话执行"。</p></li>
+        <li class="good"><div class="head">交接指南</div><p>彩排会话的开场白和指南第 1 步一字不差。</p></li>
+      </ul>
+    </div>
+    <div>
+      <h3>被改掉的</h3>
+      <ul class="items">
+        <li class="mine"><div class="head"><code>studio-tickets</code> → <code>run-spec</code></div><p>通用步骤、本仓库配置、工单脚本分开，为了迁移到别的仓库。</p></li>
+        <li class="mine"><div class="head">写入范围 → 可选的「边界」</div><p>不写文件路径，由执行的 agent 自己查看和决定。</p></li>
+        <li class="mine"><div class="head">一次一张工单 → worktree 并行</div><p>最多三路同时跑。</p></li>
+        <li class="mine"><div class="head">逐张审查 → 按批由 Codex 审</div><p>逐张审查繁琐，审查的 token 花在了 Claude 这边。</p></li>
+        <li class="mine"><div class="head">没有汇报 → HTML 汇报</div><p>向用户汇报工作，并写明用时和 token。</p></li>
+        <li class="mine"><div class="head">合并方式 → 只用 merge commit</div><p>squash 合并让工单和提交对不上。</p></li>
+      </ul>
+    </div>
+  </div>
+  <p class="note">还没经过检验：按句定时、<code>src/kit/</code> 和 <code>episodes/</code> 的分层、风格皮肤，要等第一阶段做镜头时才用得上。</p>
+  <div class="callout"><b>一条规律</b><span>静态的规则（结构、角色、约定、放在哪里）几乎原样保留；动态的执行流程在第一次真正使用后整体重写，而找出这些问题只用了一个彩排 spec。开局时规则可以写得认真，执行流程写一个能跑通的最小版本，然后尽快彩排。</span></div>
+</section>
+
+<section id="roadmap">
+  <div class="section-head">
+    <div class="eyebrow">路线图</div>
+    <h2>没人要求，却成了每次会话的入口</h2>
+  </div>
+  <p>Matt、DispatchDock、Remotion 三套技能都没提到路线图。最接近的是 Matt 的 <code>handoff</code>，但它要手动运行，写一次性的摘要，存在临时目录，不进仓库。</p>
+  <div class="flow">
+    <div class="step"><span class="n">1</span><div class="body"><div class="title">17:15 · 重建计划 <span class="who agent">agent 主动写</span></div><div class="desc"><code>docs/rebuild-plan.md</code>，6 份拆解文档之一，依据是第一条消息里的"分析、拆解和重建整个制作方法和流程"。</div></div></div>
+    <div class="step"><span class="n">2</span><div class="body"><div class="title">18:57 · 改名为路线图并重写 <span class="who agent">agent</span></div><div class="desc">用户决定换干净会话之后，改写成新会话的入口：目标、已定、进度、下一步；文档地图标上"新会话从这里看起"。</div></div></div>
+    <div class="step"><span class="n">3</span><div class="body"><div class="title">19:00、19:38 · 写进交接指南 <span class="who agent">agent</span></div><div class="desc">新会话第一句说"先读 <code>docs/roadmap.md</code>"。</div></div></div>
+    <div class="step"><span class="n">4</span><div class="body"><div class="title">之后每个会话的开场白 <span class="who user">用户</span></div><div class="desc">会话 2、3、4 和本次复盘都以它开头。它不会被自动加载，能起作用靠的是开场白点名。</div></div></div>
+  </div>
+  <ul class="items">
+    <li class="mine"><div class="head">改得很频繁</div><p>从重建计划算起，不到 18 小时有 13 个提交改过它。</p></li>
+    <li class="mine"><div class="head">两张表是摘要副本</div><p>"已定"和"进度"的出处一改，路线图就可能过时。</p></li>
+    <li class="mine"><div class="head">没人管、没有终点</div><p>没有规则说明谁、在什么时候更新；没有约定全部完成后怎么处理。</p></li>
+  </ul>
+  <div class="callout"><b>已补上</b><span>开局清单第 6 步写明路线图的四部分、阶段收尾时由设计负责人更新、全部完成后的处理（已定行在出处写全后删除，完成的进度删除并以汇报和 git 历史为记录，仓库继续就翻到下一阶段）；设计负责人角色文档加了一句，指向这一步。</span></div>
+</section>
+
+<section id="lessons">
+  <div class="section-head">
+    <div class="eyebrow">结论</div>
+    <h2>起作用的做法和付出的代价</h2>
+  </div>
+  <div class="two-col">
+    <div>
+      <h3>起作用的</h3>
+      <ul class="items">
+        <li class="good"><div class="head">人先备齐材料和工具，再开口</div></li>
+        <li class="good"><div class="head">先拆解参考，再讨论结构</div><p>按句定时出自另一位作者说的"改配音就要重新对齐"。</p></li>
+        <li class="good"><div class="head">人叫停对齐，agent 以"结论、理由、要你决定的事"回应</div></li>
+        <li class="good"><div class="head">事实问题用实测回答</div></li>
+        <li class="good"><div class="head">放权以后报备</div></li>
+        <li class="good"><div class="head">纠正一次，改在一处，同步各处</div></li>
+        <li class="good"><div class="head">交接前检查新会话会读到什么</div></li>
+        <li class="good"><div class="head">留一份路线图作交接入口</div></li>
+      </ul>
+    </div>
+    <div>
+      <h3>付出的代价</h3>
+      <ul class="items">
+        <li class="mine"><div class="head">看图和讨论放在同一个会话</div><p>27 张图让上下文在第一段就到 25 万。</p></li>
+        <li class="mine"><div class="head">环境事实靠假设</div><p>GPU、Codex 联网各让一段工作返工。</p></li>
+        <li class="mine"><div class="head">照搬参考项目的约定</div></li>
+        <li class="mine"><div class="head">命名定得晚</div><p>临时名 my-video 后来要改名，会话记录分散在两个目录。</p></li>
+        <li class="mine"><div class="head">用 root 建仓</div><p>第一条 git 命令就失败。</p></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="next">
+  <div class="section-head">
+    <div class="eyebrow">换一个仓库</div>
+    <h2>开局清单</h2>
+  </div>
+  <p>经验整理成了 <a href="../workflow/bootstrap.md"><code>docs/workflow/bootstrap.md</code></a>。标"初始化"的步骤是机械的，适合交给路线图上的迁移初始化技能。</p>
+  <div class="flow">
+    <div class="step"><span class="n">0</span><div class="body"><div class="title">开口前的准备 <span class="who user">人</span></div><div class="desc">用日常用户、用最终的名字建仓；装技能；放参考；确认 Codex 和 <code>gh</code>。</div></div></div>
+    <div class="step"><span class="n">1</span><div class="body"><div class="title">探查环境 <span class="who agent">设计负责人</span> <span class="who init">初始化</span></div><div class="desc">git、基线、版本、Codex 联网和可见技能、技能依赖、硬件，每项都是实测。</div></div></div>
+    <div class="step"><span class="n">2</span><div class="body"><div class="title">读参考 <span class="who agent">设计负责人</span></div><div class="desc">重度的看图和长输出交给子代理或单独会话。</div></div></div>
+    <div class="step"><span class="n">3</span><div class="body"><div class="title">一起对齐 <span class="who user">人</span> <span class="who agent">设计负责人</span></div><div class="desc">结论 → 理由 → 要你决定的事；开局要定的 9 件事。</div></div></div>
+    <div class="step"><span class="n">4</span><div class="body"><div class="title">初始化 Matt 的技能 <span class="who user">人</span></div><div class="desc">删不用的技能，运行 <code>/setup-matt-pocock-skills</code>。</div></div></div>
+    <div class="step"><span class="n">5</span><div class="body"><div class="title">落地 <span class="who agent">设计负责人</span> <span class="who init">大部分初始化</span></div><div class="desc">基线、远程和标签、规则、DispatchDock、<code>run-spec</code>、冒烟测试、报备。</div></div></div>
+    <div class="step"><span class="n">6</span><div class="body"><div class="title">写路线图，交接给新会话 <span class="who agent">设计负责人</span></div><div class="desc">路线图的内容、更新和收尾；检查新会话会读到什么；逐步输入指南。</div></div></div>
+    <div class="step"><span class="n">7</span><div class="body"><div class="title">彩排 <span class="who user">人</span> <span class="who agent">设计负责人</span> <span class="who codex">Codex</span></div><div class="desc">新会话里用第一个 spec 走一遍，之后 <code>/retro</code>。</div></div></div>
+  </div>
+  <h3>下一步</h3>
+  <ul class="items">
+    <li><div class="head">用户审核并合并本次 PR</div></li>
+    <li><div class="head">第一阶段：复刻开场 0:00～0:46</div><p>按路线图先开讨论。</p></li>
+    <li><div class="head">迁移初始化技能</div><p>第一次真正迁移时单独开 spec，开局清单的「交给初始化技能的范围」是输入。</p></li>
+  </ul>
+</section>
+
+<p class="note">数据来源：会话 1 的记录（每次调用的用量按消息去重）、建仓期间 6 次 Codex 运行的记录、git 提交、文件时间和属主、shell 历史；会话 2～4 的彩排发现、两份 spec 汇报和用户原话。</p>
+</main>
+
+<script>
+(function () {
+  var NS = "http://www.w3.org/2000/svg";
+  var el = function (name, attrs, text) {
+    var node = document.createElementNS(NS, name);
+    for (var k in attrs) {
+      if ((k === "fill" || k === "stroke") && String(attrs[k]).indexOf("var(") === 0) node.style[k] = attrs[k];
+      else node.setAttribute(k, attrs[k]);
+    }
+    if (text != null) node.textContent = text;
+    return node;
+  };
+  var fmt = function (n) { return n.toLocaleString("en-US"); };
+  var toMin = function (hm) { var p = hm.split(":").map(Number); return (p[0] - 16) * 60 + p[1] - 15; };
+  var fit = function (svg, W, H, minW) {
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.style.width = "100%";
+    svg.style.minWidth = minW + "px";
+    svg.style.height = "auto";
+  };
+  var tipFor = function (figure) {
+    var tip = figure.querySelector(".tip");
+    if (!tip) { tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; figure.appendChild(tip); }
+    var show = function (evt, html, anchor) {
+      tip.innerHTML = html;
+      tip.hidden = false;
+      var box = figure.getBoundingClientRect();
+      var x, y;
+      if (evt && evt.clientX != null) { x = evt.clientX - box.left + 14; y = evt.clientY - box.top + 14; }
+      else { var r = anchor.getBoundingClientRect(); x = r.left - box.left; y = r.bottom - box.top + 8; }
+      x = Math.min(x, box.width - tip.offsetWidth - 8);
+      tip.style.left = Math.max(8, x) + "px";
+      tip.style.top = y + "px";
+    };
+    var hide = function () { tip.hidden = true; };
+    return function (node, html) {
+      node.setAttribute("tabindex", 0);
+      node.addEventListener("pointermove", function (e) { show(e, html, node); });
+      node.addEventListener("pointerleave", hide);
+      node.addEventListener("focus", function () { show(null, html, node); });
+      node.addEventListener("blur", hide);
+    };
+  };
+
+  var W = 880, left = 96, right = 20, domain = 210;
+  var x = function (m) { return left + m / domain * (W - left - right); };
+  var ticks = ["16:30", "17:00", "17:30", "18:00", "18:30", "19:00", "19:30"];
+
+  var lanes = document.getElementById("lanes");
+  var bindLane = tipFor(document.getElementById("lanes-figure"));
+  var laneNames = ["用户", "agent", "Codex", "提交"];
+  var top = 14, rowH = 38, barH = 18;
+  var LH = top + laneNames.length * rowH + 30;
+  fit(lanes, W, LH, 680);
+  ticks.forEach(function (t) {
+    var xx = x(toMin(t));
+    lanes.appendChild(el("line", { x1: xx, x2: xx, y1: top - 4, y2: LH - 26, "class": "grid-line" }));
+    lanes.appendChild(el("text", { x: xx, y: LH - 8, "text-anchor": "middle", "class": "tick-label" }, t));
+  });
+  laneNames.forEach(function (n, i) {
+    lanes.appendChild(el("text", { x: left - 12, y: top + i * rowH + rowH / 2 + 4, "text-anchor": "end", "class": "row-label" }, n));
+  });
+  var bars = [
+    [0, "16:18", "16:57", "", "准备", "建仓（npx create-video）、装 12 个 Remotion 技能和 18 个 Matt 技能、放参考视频、克隆 DispatchDock、测 Codex"],
+    [0, "17:23", "17:47", "", "修权限、换 pnpm", "修好 git 权限，17:28 换成 pnpm"],
+    [0, "17:50", "17:55", "", "打断并回复", "补充：只用 DispatchDock 的技能；采纳全部建议，提出技能冲突"],
+    [0, "17:59", "18:21", "", "补装技能", "补装第二批 9 个 Matt 技能"],
+    [0, "18:24", "18:47", "", "删技能、测 Codex、跑 setup", "删 8 个技能（4 处和推荐不同）；测 Codex 联网和 GitHub；以 root 身份运行 setup"],
+    [0, "19:00", "19:11", "", "看结果、提问", "提出三个疑问：怎么知道 Codex 做完、配置从哪来、以后怎么拆"],
+    [0, "19:12", "19:20", "", "提出两处修正", "本地目录改名；提交格式要规范"],
+    [0, "19:23", "19:32", "", "问路线图", "路线图会不会影响新会话"],
+    [1, "16:57", "17:23", "1", "1 拆解参考", "25.9 分钟，96 次调用：读 DispatchDock，转写、切镜头、取色、测响度，写 6 份文档"],
+    [1, "17:47", "17:51", "2", "2 对齐仓库形态", "1.9 分钟：工作室仓库、目录、按句定时"],
+    [1, "17:55", "17:59", "3", "3 技能融合", "3.0 分钟：6 处冲突对照表"],
+    [1, "18:21", "18:24", "4", "4 补充技能与 GitHub", "2.4 分钟：去留表、身份三层、GitHub 回路、实施顺序"],
+    [1, "18:47", "19:00", "5", "5 落地", "12.6 分钟，43 次调用：整理、远程、规则、DispatchDock、冒烟测试、报备"],
+    [1, "19:11", "19:12", "6", "6 三个疑问", "0.7 分钟"],
+    [1, "19:20", "19:23", "7", "7 两处修正", "1.9 分钟：提交格式、改名"],
+    [1, "19:32", "19:38", "8", "8 交接", "5.0 分钟：路线图去掉评估清单；逐步输入指南"],
+    [2, "16:49", "16:50", "", "连通性测试", "用户的两次测试：codex exec 回复 ok；在 VS Code 里说 hi"],
+    [2, "18:37", "18:40", "", "联网测试", "用户的三次测试：能否联网、能否访问 GitHub（其中一次中途没有结果）"],
+    [2, "18:57", "18:58", "", "冒烟测试", "派发的只读任务，53 秒：角色、规则、gh、汇报 9 项、技能隔离都通过"]
+  ];
+  var laneColor = ["var(--s-rework)", "var(--s-feature)", "var(--s-review)"];
+  bars.forEach(function (b) {
+    var s = toMin(b[1]), e = toMin(b[2]);
+    var y = top + b[0] * rowH + (rowH - barH) / 2;
+    var w = Math.max(5, x(e) - x(s));
+    var rect = el("rect", { x: x(s), y: y, width: w, height: barH, rx: 3, fill: laneColor[b[0]], stroke: "var(--surface)", "stroke-width": 1, "aria-label": b[4] + "，" + b[1] + "–" + b[2] });
+    bindLane(rect, "<b>" + b[4] + "</b><br>" + b[1] + "–" + b[2] + "<br>" + b[5]);
+    lanes.appendChild(rect);
+    if (b[3] && w >= 14) lanes.appendChild(el("text", { x: x(s) + w / 2, y: y + barH / 2 + 4, "text-anchor": "middle", "class": "bar-inner", "pointer-events": "none" }, b[3]));
+  });
+  var commits = [
+    ["16:18", "5ff6713", "Create new Remotion video（用户建仓）"],
+    ["18:51", "f105c72", "整理仓库：pnpm、忽略规则、类型检查范围、参考拆解、Matt 技能配置"],
+    ["18:57", "7ae0a4a", "双角色分工、GitHub 工单约定、工作流、studio-tickets"],
+    ["19:00", "afb7b1c", "安装 DispatchDock、冒烟测试记录、路线图、文档地图"],
+    ["19:12", "ffeebed", "方法层与产物层的拆分方式"],
+    ["19:22", "cdb3215 · c293552", "提交格式改为带正文和尾注；仓库改名为 video-studio"],
+    ["19:36", "2433849", "路线图去掉评估清单"]
+  ];
+  var cy = top + 3 * rowH + rowH / 2;
+  commits.forEach(function (c) {
+    var cx = x(toMin(c[0]));
+    var dot = el("rect", { x: cx - 5, y: cy - 5, width: 10, height: 10, transform: "rotate(45 " + cx + " " + cy + ")", fill: "var(--ink-2)", stroke: "var(--surface)", "stroke-width": 2, "aria-label": c[1] + "，" + c[0] });
+    bindLane(dot, "<b>" + c[1] + "</b><br>" + c[0] + "<br>" + c[2]);
+    lanes.appendChild(dot);
+  });
+
+  var ctx = document.getElementById("ctx");
+  var bindCtx = tipFor(document.getElementById("ctx-figure"));
+  var pts = [["16:57", 37], ["16:59", 79], ["17:02", 82], ["17:05", 149], ["17:10", 185], ["17:17", 223], ["17:23", 255], ["17:48", 261], ["17:56", 283], ["18:22", 324], ["18:47", 358], ["18:55", 403], ["19:00", 431], ["19:12", 439], ["19:22", 454], ["19:33", 464], ["19:38", 474]];
+  var cTop = 26, CH = 250, cBottom = CH - 30, yMax = 500;
+  var cyv = function (v) { return cBottom - v / yMax * (cBottom - cTop); };
+  fit(ctx, W, CH, 680);
+  ctx.appendChild(el("rect", { x: x(toMin("17:02")), y: cTop, width: x(toMin("17:10")) - x(toMin("17:02")), height: cBottom - cTop, "class": "band" }));
+  ctx.appendChild(el("text", { x: x(toMin("17:10")) + 6, y: cBottom - 8, "class": "band-text" }, "17:02–17:10 读 27 张图"));
+  [0, 100, 200, 300, 400, 500].forEach(function (v) {
+    ctx.appendChild(el("line", { x1: left, x2: W - right, y1: cyv(v), y2: cyv(v), "class": "grid-line" }));
+    ctx.appendChild(el("text", { x: left - 10, y: cyv(v) + 4, "text-anchor": "end", "class": "axis-label" }, String(v)));
+  });
+  ticks.forEach(function (t) {
+    ctx.appendChild(el("text", { x: x(toMin(t)), y: CH - 8, "text-anchor": "middle", "class": "tick-label" }, t));
+  });
+  var mx = x(toMin("18:47"));
+  ctx.appendChild(el("line", { x1: mx, x2: mx, y1: 10, y2: cBottom, "class": "marker-line" }));
+  ctx.appendChild(el("text", { x: mx - 6, y: 18, "text-anchor": "end", "class": "marker-text" }, "18:47 用户：会话信息太多，彩排换新会话"));
+  ctx.appendChild(el("polyline", { points: pts.map(function (p) { return x(toMin(p[0])) + "," + cyv(p[1]); }).join(" "), fill: "none", stroke: "var(--s-feature)", "stroke-width": 2 }));
+  pts.forEach(function (p) {
+    var c = el("circle", { cx: x(toMin(p[0])), cy: cyv(p[1]), r: 4, fill: "var(--s-feature)", stroke: "var(--surface)", "stroke-width": 1.5, "aria-label": p[0] + "，上下文 " + p[1] + " 千 token" });
+    bindCtx(c, "<b>" + p[0] + "</b><br>上下文约 " + p[1] + " 千 token");
+    ctx.appendChild(c);
+  });
+  ctx.appendChild(el("text", { x: x(toMin("19:38")) - 4, y: cyv(474) - 10, "text-anchor": "end", "class": "bar-value" }, "47.4 万"));
+  ctx.appendChild(el("text", { x: x(toMin("17:23")) + 6, y: cyv(255) + 16, "class": "bar-value" }, "25.5 万"));
+
+  var phases = [
+    ["1 拆解参考", 25.9, 96, 126, 15900192, 236017, 84001],
+    ["2 对齐仓库形态", 1.9, 8, 8, 2150647, 15533, 10011],
+    ["3 技能融合", 3.0, 10, 10, 3001984, 42051, 18047],
+    ["4 补充技能与 GitHub", 2.4, 5, 6, 1651774, 26981, 17945],
+    ["5 落地", 12.6, 43, 50, 17258295, 75692, 56257],
+    ["6 三个疑问", 0.7, 3, 4, 1309840, 5381, 7681],
+    ["7 两处修正", 1.9, 9, 15, 4080863, 16909, 13523],
+    ["8 交接", 5.0, 5, 3, 2341873, 9492, 11305]
+  ];
+  var rows = document.getElementById("phase-rows");
+  var sum = [0, 0, 0, 0, 0, 0];
+  phases.forEach(function (p) {
+    var tr = document.createElement("tr");
+    tr.innerHTML = "<td>" + p[0] + '</td><td class="num">' + p[1].toFixed(1) + ' 分钟</td><td class="num">' + p[2] + '</td><td class="num">' + p[3] + '</td><td class="num">' + fmt(p[4]) + '</td><td class="num">' + fmt(p[5]) + '</td><td class="num">' + fmt(p[6]) + "</td>";
+    rows.appendChild(tr);
+    for (var i = 0; i < 6; i++) sum[i] += p[i + 1];
+  });
+  var total = document.createElement("tr");
+  total.className = "total";
+  total.innerHTML = '<td>合计</td><td class="num">约 53 分钟</td><td class="num">' + sum[1] + '</td><td class="num">' + sum[2] + '</td><td class="num">' + fmt(sum[3]) + '</td><td class="num">' + fmt(sum[4]) + '</td><td class="num">' + fmt(sum[5]) + "</td>";
+  rows.appendChild(total);
+
+  var ph = document.getElementById("phases");
+  var PW = 720, pLeft = 150, pRight = 150, pTop = 6, pRow = 30, pBar = 18, pMax = 18;
+  var PH = pTop + phases.length * pRow + 24;
+  var px = function (v) { return pLeft + v / pMax * (PW - pLeft - pRight); };
+  fit(ph, PW, PH, 520);
+  [0, 6, 12, 18].forEach(function (v) {
+    ph.appendChild(el("line", { x1: px(v), x2: px(v), y1: pTop, y2: PH - 20, "class": "grid-line" }));
+    ph.appendChild(el("text", { x: px(v), y: PH - 6, "text-anchor": "middle", "class": "axis-label" }, String(v)));
+  });
+  phases.forEach(function (p, i) {
+    var y = pTop + i * pRow;
+    var big = p[0].indexOf("1 ") === 0 || p[0].indexOf("5 ") === 0;
+    ph.appendChild(el("text", { x: pLeft - 10, y: y + pRow / 2 + 4, "text-anchor": "end", "class": "row-label" }, p[0]));
+    ph.appendChild(el("rect", { x: px(0), y: y + (pRow - pBar) / 2, width: Math.max(2, px(p[4] / 1e6) - px(0)), height: pBar, rx: 3, fill: big ? "var(--s-feature)" : "var(--s-prev)" }));
+    ph.appendChild(el("text", { x: px(p[4] / 1e6) + 6, y: y + pRow / 2 + 4, "class": "bar-value" }, (p[4] / 1e6).toFixed(1) + " · " + p[2] + " 次调用"));
+  });
+
+  var decisions = [
+    ["仓库形态：工作室仓库", "agent", "和模板仓库、工具包比较后推荐，一轮采纳", 1],
+    ["目录与归属、按句定时", "agent", "一轮采纳", 1],
+    ["第一阶段先复刻开场", "agent", "推荐并给出备选，一轮采纳", 1],
+    ["DispatchDock 只用技能", "用户", "agent 补上代价：没有托管模式，Codex 运行时不能关会话", 1],
+    ["三套技能怎么配合", "用户", "6 处冲突 → 补装技能 → 去留表 → 用户按自己的判断删了 8 个", 3],
+    ["角色不混淆", "agent", "用户：派活时告知身份、写进规范；合成三层做法", 2],
+    ["工单放在哪", "agent", "本地 markdown → 用户要 GitHub → GitHub 加本地快照 → 用户实测 Codex 能联网 → GitHub 只存一份", 3],
+    ["执行方式", "agent", "用户：从 implement-spec 提取有用的部分 → studio-tickets", 2],
+    ["包管理器 pnpm", "用户", "用户自己换的，agent 建议删掉旧锁文件", 1],
+    ["仓库名、提交邮箱", "agent", "用户整体放权，agent 定了 video-studio 和 noreply 邮箱并报备", 1],
+    ["彩排换干净会话", "用户", "后来推广为拆完工单就开新会话执行", 1],
+    ["本地目录名", "agent", "建远程仓库时没改本地目录，用户发现后改名", 2],
+    ["提交格式", "agent", "照搬\"[设计] 一句中文\" → 用户：会丢信息 → 类型、范围、正文、尾注", 2],
+    ["以后怎么拆", "用户", "提问 → 写成「以后拆分」一节，依赖方向后来进了 pnpm verify", 1],
+    ["路线图会不会影响新会话", "用户", "提问 → agent 指出 4 处 → 用户取 3 处", 1]
+  ];
+  var drows = document.getElementById("decision-rows");
+  decisions.forEach(function (d) {
+    var tr = document.createElement("tr");
+    var dots = "";
+    for (var i = 0; i < d[3]; i++) dots += "<i></i>";
+    var who = d[1] === "用户" ? "user" : "agent";
+    tr.innerHTML = "<td>" + d[0] + '</td><td><span class="who ' + who + '">' + d[1] + "</span></td><td>" + d[2] + '</td><td class="num"><span class="rounds" aria-label="' + d[3] + ' 轮">' + dots + "</span> " + d[3] + "</td>";
+    drows.appendChild(tr);
+  });
+})();
+</script>
+
+</body>
+</html>
