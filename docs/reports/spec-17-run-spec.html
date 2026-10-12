@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spec #17 执行汇报</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
+<style>
+/* Layout: one reading column of briefing sections; charts and tables scroll inside their own frames. */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #141820;
+  --ink-2: #485164;
+  --muted: #737d90;
+  --line: #dde2ea;
+  --accent: #2f45b5;
+  --accent-soft: #e6e9fa;
+  --s-feature: #2a78d6;
+  --s-rework: #eb6834;
+  --s-review: #1baf7a;
+  --s-prev: #9aa3b3;
+  --good: #1a7f37;
+  --warn: #9a5b00;
+  --font-display: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101319; --surface: #171b23; --ink: #eceef4; --ink-2: #b6bdcc; --muted: #8b93a5;
+    --line: #2a303c; --accent: #9eabff; --accent-soft: #232a4a;
+    --s-feature: #3987e5; --s-rework: #d95926; --s-review: #199e70; --s-prev: #5c6576;
+    --good: #4cc46a; --warn: #f0a347; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101319; --surface: #171b23; --ink: #eceef4; --ink-2: #b6bdcc; --muted: #8b93a5;
+  --line: #2a303c; --accent: #9eabff; --accent-soft: #232a4a;
+  --s-feature: #3987e5; --s-rework: #d95926; --s-review: #199e70; --s-prev: #5c6576;
+  --good: #4cc46a; --warn: #f0a347; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.75; margin: 0; }
+table { font-size: inherit; }
+.page { max-width: 960px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.35; }
+h1 { font-size: clamp(26px, 4.4vw, 38px); }
+h2 { font-size: 22px; }
+h3 { font-size: 16px; font-family: var(--font-body); font-weight: 700; }
+p { margin: 0; max-width: 46em; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, .mono { font-family: var(--font-data); font-size: 0.86em; }
+code { background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--font-data); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 18px; min-width: 0; }
+.section-head { display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 20px; }
+.lede { font-size: 17px; color: var(--ink-2); }
+.muted { color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); }
+
+header.hero { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 1px 10px; border-radius: 999px; border: 1px solid currentColor; }
+.status.pending { color: var(--warn); }
+.status.done { color: var(--good); }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 2px; min-width: 0; }
+.kpi .num { font-family: var(--font-data); font-size: 26px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.kpi .num small { font-size: 14px; color: var(--muted); font-weight: 400; }
+.kpi .label { font-size: 13px; color: var(--ink-2); }
+@media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.deliver { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 28px; margin: 0; padding: 0; list-style: none; }
+.deliver li { display: grid; gap: 2px; min-width: 0; }
+.deliver b { font-weight: 700; }
+@media (max-width: 720px) { .deliver { grid-template-columns: 1fr; } }
+
+.flow { display: grid; gap: 10px; }
+.step { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+.step .n { font-family: var(--font-data); font-size: 13px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); color: var(--ink-2); margin-top: 2px; }
+.step .body { display: grid; gap: 2px; min-width: 0; }
+.step .title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-weight: 700; }
+.step .desc { font-size: 14px; color: var(--ink-2); }
+.who { font-size: 11px; font-weight: 500; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); }
+.who.user { border-color: var(--accent); color: var(--accent); }
+.who.codex { border-color: var(--s-review); }
+.who.script { border-color: var(--s-feature); }
+.loop { border: 1px dashed var(--accent); border-radius: 10px; padding: 14px 14px 10px; display: grid; gap: 10px; position: relative; }
+.loop-label { font-size: 12px; color: var(--accent); font-weight: 500; }
+
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.compare > div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; display: grid; gap: 8px; align-content: start; }
+.compare ol { margin: 0; padding-left: 1.3em; font-size: 13px; color: var(--ink-2); display: grid; gap: 2px; }
+.compare .cmd { font-family: var(--font-data); font-size: 13px; background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; display: grid; gap: 4px; overflow-x: auto; }
+@media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 10px; min-width: 0; position: relative; }
+.chart-scroll { overflow-x: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+svg text { font-family: var(--font-body); }
+.tick-label, .row-label { fill: var(--ink-2); font-size: 12px; }
+.axis-label { fill: var(--muted); font-size: 11px; }
+.grid-line { stroke: var(--line); stroke-width: 1; }
+.marker-line { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.marker-text { fill: var(--accent); font-size: 12px; }
+.bar-value { fill: var(--ink); font-size: 12px; font-family: var(--font-data); }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; line-height: 1.6; padding: 8px 10px; border-radius: 6px; max-width: 260px; z-index: 2; }
+.tip b { font-weight: 700; }
+.ratio { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; }
+.ratio .big { font-family: var(--font-data); font-size: 30px; font-variant-numeric: tabular-nums; }
+
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.04em; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.total td { font-weight: 700; }
+.kind { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chip { display: inline-block; font-size: 12px; padding: 0 8px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+
+.items { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.items li { display: grid; gap: 2px; padding-left: 14px; border-left: 2px solid var(--line); }
+.items li.mine { border-left-color: var(--s-rework); }
+.items .head { font-weight: 700; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.items p { color: var(--ink-2); font-size: 14px; }
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+@media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="page">
+
+<header class="hero">
+  <div class="eyebrow">Spec #17 · 设计负责人 → 用户 · 2026-10-12</div>
+  <h1>工单脚本补齐与技能改名（run-spec）</h1>
+  <p class="lede">执行技能改名为 <code>run-spec</code>，每张工程工单从近 10 步手工操作变成 <code>dispatch</code>、<code>land</code> 两条命令，这个 spec 自己从 #21 起就用它们执行。按批审查第一次交给 Codex，四次审查查出 9 条问题，全部修完。设计负责人的 token 用量降到 spec #1 的四成左右。</p>
+  <div class="meta">
+    <a href="https://github.com/JinhaoFang/video-studio/issues/17">spec #17</a>
+    <a href="https://github.com/JinhaoFang/video-studio/pull/31">PR #31</a>
+    <span class="status pending">待用户审核合并</span>
+    <span>集成分支 <span class="mono">spec/17-run-spec</span></span>
+  </div>
+</header>
+
+<div class="kpis" aria-label="关键数字">
+  <div class="kpi"><span class="num">15 <small>次</small></span><span class="label">Codex 派发：11 张工程工单、4 次审查，合计 90.2 分钟</span></div>
+  <div class="kpi"><span class="num">8 <small>张</small></span><span class="label">从 #21 起的工程工单，全部用 <code>dispatch</code> 派发、<code>land</code> 合并</span></div>
+  <div class="kpi"><span class="num">9 <small>条</small></span><span class="label">审查发现，全部修完，没有接受不修的</span></div>
+  <div class="kpi"><span class="num">−58%</span><span class="label">设计负责人缓存读取，对比 spec #1</span></div>
+</div>
+
+<section id="flow">
+  <div class="section-head">
+    <div class="eyebrow">合并以后</div>
+    <h2>执行一个 spec 的流程</h2>
+  </div>
+  <p>步骤只写在执行技能 <code>run-spec</code> 里，本仓库特有的值在 <code>docs/agents/run-spec.md</code>。下面是合并以后，从想法到合并的完整路径。</p>
+  <div class="flow">
+    <div class="step"><span class="n">1</span><div class="body"><div class="title">想清楚、写 spec、拆工单 <span class="who user">用户触发</span></div><div class="desc"><code>/grill-with-docs</code> → <code>/to-spec</code> → <code>/to-tickets</code>，在讨论用的会话里完成。</div></div></div>
+    <div class="step"><span class="n">2</span><div class="body"><div class="title">开新会话，说"执行 spec #S" <span class="who user">用户触发</span></div><div class="desc">设计负责人进入集成分支 <code>spec/&lt;S&gt;-&lt;短名&gt;</code>。新会话让设计负责人的上下文保持小。</div></div></div>
+    <div class="loop">
+      <div class="loop-label">每一轮，直到所有工单关闭</div>
+      <div class="step"><span class="n">3</span><div class="body"><div class="title">选出可做的工单 <span class="who script">脚本</span></div><div class="desc"><code>frontier &lt;S&gt;</code> 把工单分成可做、被阻塞、已关闭三组。</div></div></div>
+      <div class="step"><span class="n">4</span><div class="body"><div class="title">分流与派发 <span class="who">设计负责人</span> <span class="who codex">Codex</span></div><div class="desc">设计工单自己做、提交；工程工单用 <code>dispatch &lt;T&gt;</code> 在后台派出，Codex 在自己的 worktree 里做，几张工单并行，做完会通知。</div></div></div>
+      <div class="step"><span class="n">5</span><div class="body"><div class="title">验收 <span class="who">设计负责人</span></div><div class="desc">读 Codex 的汇报，自己跑验证、看验收产物，逐条处理 TODO(design) 和推断清单。</div></div></div>
+      <div class="step"><span class="n">6</span><div class="body"><div class="title">合并、写回 <span class="who script">脚本</span></div><div class="desc"><code>land &lt;T&gt;</code> 合进集成分支并收拾 worktree；<code>accept &lt;T&gt;</code> 写验收评论，自动附上用时和 token，通过就关闭。</div></div></div>
+      <div class="step"><span class="n">7</span><div class="body"><div class="title">按批审查 <span class="who codex">Codex</span></div><div class="desc">这一轮的工单都合并后，派 Codex 审查；要修的开返工工单，回到第 3 步。审查期间可以继续派发，但不合并。</div></div></div>
+    </div>
+    <div class="step"><span class="n">8</span><div class="body"><div class="title">收尾 <span class="who codex">Codex</span> <span class="who">设计负责人</span></div><div class="desc">Codex 审查整个分支 → 返工做完 → 开 PR → 写 HTML 汇报并发布链接 → <code>cleanup &lt;S&gt;</code> 清理本地中间产物。</div></div></div>
+    <div class="step"><span class="n">9</span><div class="body"><div class="title">审核汇报和 PR，合并 <span class="who user">用户</span></div><div class="desc">只用 merge commit，每个提交和它的 <code>Refs</code> 都留在 <code>main</code> 上。</div></div></div>
+  </div>
+
+  <div class="compare">
+    <div>
+      <h3>改之前：一张工程工单，手工近 10 步</h3>
+      <ol>
+        <li>起英文短名，建 worktree 和分支</li>
+        <li>接两个软链接</li>
+        <li>装依赖</li>
+        <li>拼一条带 worktree 说明的长派发命令</li>
+        <li>从进度文件抄用时和 token</li>
+        <li>rebase 到集成分支</li>
+        <li>跑验证</li>
+        <li>快进合并、推送</li>
+        <li>复制派发记录和验收产物</li>
+        <li>删 worktree 和分支</li>
+      </ol>
+    </div>
+    <div>
+      <h3>改之后：三条命令</h3>
+      <div class="cmd"><span>tickets.ts dispatch &lt;T&gt;</span><span>tickets.ts land &lt;T&gt;</span><span>tickets.ts accept &lt;T&gt; …</span></div>
+      <p class="note">名字由脚本决定，不用起短名；<code>land</code> 中途停下，修好后重跑同一条命令就能接着做；收尾用 <code>cleanup &lt;S&gt;</code> 一次清理。</p>
+    </div>
+  </div>
+</section>
+
+<section id="deliver">
+  <div class="section-head">
+    <div class="eyebrow">交付</div>
+    <h2>做了什么</h2>
+  </div>
+  <ul class="deliver">
+    <li><b>两条命令走完一张工单</b><span class="muted"><code>dispatch</code> 建 worktree、接软链接、装依赖、派给 Codex 并等它结束；<code>land</code> 依次 rebase、验证、快进合并、推送、复制记录、删 worktree。</span></li>
+    <li><b>过程数据自动留在 GitHub</b><span class="muted"><code>accept</code> 把每次派发的用时和 token 写进验收评论，清理本地以后写汇报照样有数据。</span></li>
+    <li><b>收尾一条命令</b><span class="muted"><code>cleanup &lt;S&gt;</code> 只删本 spec 的记录、产物、worktree 和分支，其他记录保留。</span></li>
+    <li><b>文档不会悄悄过时</b><span class="muted">规则文档里写了不存在的 <code>pnpm</code> 脚本或 <code>node</code> 路径，<code>pnpm verify</code> 和 CI 都会失败。</span></li>
+    <li><b>可迁移</b><span class="muted">技能目录不再引用 <code>tools/</code>；本仓库特有的值在 <code>run-spec.json</code> 和 <code>run-spec.md</code>，后者写了迁移步骤。</span></li>
+    <li><b>汇报改成可视化页面</b><span class="muted">你审核 PR 时提出的要求：汇报从这一期起是 HTML 页面，要求写进了汇报规范。</span></li>
+  </ul>
+</section>
+
+<section id="timeline">
+  <div class="section-head">
+    <div class="eyebrow">时间线 · 23:55 → 01:07</div>
+    <h2>15 次派发，最多 3 路并行</h2>
+  </div>
+  <p>每条横条是一次 Codex 派发，长度是实际用时。悬停或用 Tab 键聚焦横条，可以看用时和 token。从 00:16 起，派发和合并都改用新命令。</p>
+  <div class="figure" id="gantt-figure">
+    <div class="legend">
+      <span><i class="swatch" style="background: var(--s-feature)"></i>功能工单</span>
+      <span><i class="swatch" style="background: var(--s-rework)"></i>审查返工</span>
+      <span><i class="swatch" style="background: var(--s-review)"></i>Codex 审查</span>
+      <span><i class="swatch" style="background: var(--accent)"></i>设计负责人提交</span>
+    </div>
+    <div class="chart-scroll"><svg id="gantt" role="img" aria-label="派发时间线：15 次 Codex 派发的开始时间和用时"></svg></div>
+    <div class="tip" id="tip" hidden></div>
+  </div>
+</section>
+
+<section id="cost">
+  <div class="section-head">
+    <div class="eyebrow">成本与效率</div>
+    <h2>设计负责人的用量降了近六成</h2>
+  </div>
+  <p>复盘定下的两条做法都见效了：执行放在新会话，审查交给 Codex。这一期的工作量比 spec #1 稍大，Codex 的输入多了约三成。设计负责人这边的数字截至开 PR 时：主会话 142 次调用，没有开子代理。</p>
+  <div class="two-col">
+    <div class="figure">
+      <h3>token 用量（百万）</h3>
+      <div class="legend">
+        <span><i class="swatch" style="background: var(--s-prev)"></i>spec #1</span>
+        <span><i class="swatch" style="background: var(--s-feature)"></i>spec #17</span>
+      </div>
+      <div class="chart-scroll"><svg id="tokens" role="img" aria-label="token 用量对比：设计负责人缓存读取 49.2 百万降到 20.8 百万；Codex 输入 12.0 百万升到 15.5 百万"></svg></div>
+    </div>
+    <div class="figure">
+      <h3>设计负责人缓存读取 ÷ Codex 输入</h3>
+      <div class="ratio"><span class="big">4.1</span><span class="muted">spec #1</span><span class="big">→ 1.3</span><span class="muted">spec #17</span></div>
+      <table>
+        <tr><th></th><th class="num">spec #1</th><th class="num">spec #17</th></tr>
+        <tr><td>设计负责人输出</td><td class="num">244,672</td><td class="num">87,799</td></tr>
+        <tr><td>结束时上下文</td><td class="num">约 47 万</td><td class="num">约 25 万</td></tr>
+        <tr><td>审查在设计负责人这边</td><td class="num">约 89 万</td><td class="num">0</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h3>逐次派发</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>派发</th><th>内容</th><th class="num">开始</th><th class="num">用时</th><th class="num">输入（其中缓存）</th><th class="num">输出</th></tr></thead>
+      <tbody id="dispatch-rows"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="quality">
+  <div class="section-head">
+    <div class="eyebrow">质量</div>
+    <h2>新命令在真实执行中经过了检验</h2>
+  </div>
+  <ul class="items">
+    <li><div class="head">测试 192 → 243 项</div><p>CI 在集成分支的每次推送上都通过。</p></li>
+    <li><div class="head"><code>land</code> 两次遇到 rebase 冲突，重跑都接着做完了</div><p>一次是 #22 和 #23 改了同一处文件头；一次是 #28 新增的文件要跨过 #25 的改名。</p></li>
+    <li><div class="head">工具执行了它自己</div><p>#21 用自己新写的 <code>land</code> 合并了自己；#25 改名时挪走了正在运行的脚本，各步照常完成。</p></li>
+    <li><div class="head">文档命令护栏实测</div><p>规则文档里临时写一个不存在的 <code>pnpm</code> 命令，<code>pnpm verify</code> 以 1 退出并报出文件和行号。</p></li>
+  </ul>
+  <h3>审查发现 9 条，全部修完</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>审查</th><th>发现</th><th>处理</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip">第一批</span></td><td>pnpm 命令白名单不全，会误报 <code>pnpm why</code></td><td><a href="https://github.com/JinhaoFang/video-studio/issues/26">#26</a></td></tr>
+        <tr><td><span class="chip">第二批</span></td><td><code>land</code> 合并后失败不能续做；查找集成分支写了两份</td><td><a href="https://github.com/JinhaoFang/video-studio/issues/27">#27</a></td></tr>
+        <tr><td><span class="chip">第二批</span></td><td>技能里的分支名和 <code>land</code> 对不上</td><td><a href="https://github.com/JinhaoFang/video-studio/issues/24">#24</a> 改写技能时解决</td></tr>
+        <tr><td><span class="chip">第三批</span></td><td>记录归属判断写了三份，扩展名已经不一致</td><td><a href="https://github.com/JinhaoFang/video-studio/issues/28">#28</a></td></tr>
+        <tr><td><span class="chip">收尾</span></td><td>派发指令读不到工单正文；安装失败后重跑不补装</td><td><a href="https://github.com/JinhaoFang/video-studio/issues/29">#29</a></td></tr>
+        <tr><td><span class="chip">收尾</span></td><td>审查命令写死派发脚本路径；迁移说明漏了忽略规则</td><td><a href="https://github.com/JinhaoFang/video-studio/issues/30">#30</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="decisions">
+  <div class="section-head">
+    <div class="eyebrow">决定</div>
+    <h2>谁定了什么</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>谁</th><th>决定</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip">用户</span></td><td>改名 <code>run-spec</code>；本仓库的值放进配置；执行步骤只写在技能里；文档命令护栏放在改名之前，改名放在最后</td></tr>
+        <tr><td><span class="chip">用户</span></td><td>汇报改成 HTML 可视化页面并写进流程，只存在仓库里、不发布（审核 PR 时提出，#32）</td></tr>
+        <tr><td><span class="chip">用户</span></td><td>汇报里列出的三项遗留在本 PR 修完（#33）</td></tr>
+        <tr><td><span class="chip">设计负责人</span></td><td>审查期间照常派发已解除阻塞的工单，只是不合并，写进技能第 6 步</td></tr>
+        <tr><td><span class="chip">设计负责人</span></td><td>最后一批（#25、#27、#28）不单独审查，由收尾审查覆盖</td></tr>
+        <tr><td><span class="chip">设计负责人</span></td><td>P3 的重复代码也开返工（#27、#28）：这几处正是串号、漏删会出问题的地方</td></tr>
+        <tr><td><span class="chip">设计负责人</span></td><td>先 <code>land</code> 再 <code>accept</code>：rebase 会改提交号，评论里写合并后的提交号</td></tr>
+        <tr><td><span class="chip">设计负责人</span></td><td>接受不修：技能自带的辅助代码和 <code>tools/</code> 重复约 25 行；两个提交的范围写成了 <code>tools</code>；verify 里一步的名字是中文</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="issues">
+  <div class="section-head">
+    <div class="eyebrow">问题与处理</div>
+    <h2>包括我自己的失误</h2>
+  </div>
+  <ul class="items">
+    <li class="mine"><div class="head">读工单的命令一直是错的，我漏看了信号 <span class="chip">已修 #29</span></div><p>派发指令和工程负责人角色文档写的是 <code>gh issue view &lt;号&gt; --comments</code>，在 gh 2.83 上它只输出评论，不输出正文。spec #1 起的每次派发都受影响，Codex 每次都自己改用 JSON 读取，所以没出事。会话一开始我就遇到过一次空输出，#21 的汇报也在「偏离说明」里写了，我都没追，直到收尾审查才查出来。教训：汇报里的「偏离说明」要当作信号来查。</p></li>
+    <li class="mine"><div class="head">验收评论里写错了两个数字 <span class="chip">已更正</span></div><p>#21 的用时误写成进度日志里的时间戳（约 23 分钟），实际是 7.1 分钟；#23 的缓存数少了千位分隔符。这也说明让 <code>accept</code> 自动取数（#22）是对的。</p></li>
+    <li class="mine"><div class="head">审查期间往集成分支提交了 #24 <span class="chip">无影响</span></div><p>违反了"审查跑完前不合并"。第三批审查把起点时的提交定为终点，#24 没有混进这一批，由收尾审查覆盖。</p></li>
+    <li><div class="head">本机 pnpm 的版本看起来对不上 <span class="chip">已查清</span></div><p>本机全局装的是 pnpm 12.9.1，进入仓库后按 <code>packageManager</code> 切换到 10.34.6；<code>pnpm help --all</code> 由全局的 12.9.1 处理，所以报错。这是正常的版本切换，不用处理。</p></li>
+  </ul>
+</section>
+
+<section id="findings">
+  <div class="section-head">
+    <div class="eyebrow">流程发现</div>
+    <h2>这次学到的</h2>
+  </div>
+  <ul class="items">
+    <li><div class="head">执行放新会话、审查交给 Codex，两条都有效</div><p>设计负责人的缓存读取降了约六成，结束时上下文约 25 万。剩下的大头是验收时读汇报、看 diff。</p></li>
+    <li><div class="head">工具用来执行自己，问题暴露得早</div><p><code>land</code> 合并了自己，改名挪走了正在用的脚本，两次 rebase 冲突都是真实场景。</p></li>
+    <li><div class="head">工程工单顺手改技能文档，会留下过渡期的不一致</div><p>#21～#23 各改了几行技能文档，第二批审查报了步骤不一致；#24 整体改写后消除。只要改写工单排在后面就没问题。</p></li>
+    <li><div class="head">审查指令里列出已安排的问题，能避免重复报告</div><p>第三批和收尾审查都这样做了，报告里没有重复项。</p></li>
+  </ul>
+</section>
+
+<section id="review-additions">
+  <div class="section-head">
+    <div class="eyebrow">审核后补充</div>
+    <h2>你审核 PR 时提出的两件事</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>工单</th><th>内容</th><th>执行</th><th class="num">用时</th><th class="num">输入（其中缓存）</th><th class="num">输出</th></tr></thead>
+      <tbody>
+        <tr><td><a href="https://github.com/JinhaoFang/video-studio/issues/32">#32</a></td><td>汇报改为 HTML 可视化页面，写进汇报规范；只存在仓库里，不发布</td><td>设计负责人</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>
+        <tr><td><a href="https://github.com/JinhaoFang/video-studio/issues/33">#33</a></td><td>三项遗留修完：<code>cleanup</code> 清掉续做状态文件；<code>dispatch</code> 安装成功只打一行；pnpm 白名单版本和 <code>packageManager</code> 不一致时 verify 失败</td><td><span class="kind"><i class="swatch" style="background: var(--s-rework)"></i>Codex</span></td><td class="num">5.5 分钟</td><td class="num">1,065,029（982,656）</td><td class="num">9,369</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">测试 243 → 249 项。上面的时间线和用量对比只统计开 PR 之前的执行过程。</p>
+</section>
+
+<section id="next">
+  <div class="section-head">
+    <div class="eyebrow">遗留与下一步</div>
+    <h2>还剩什么</h2>
+  </div>
+  <div class="two-col">
+    <div>
+      <h3>遗留</h3>
+      <ul class="items">
+        <li><div class="head">无 <span class="chip">已在本 PR 修完</span></div><p>原先列出的三项由 #33 修完；本机 pnpm 的版本问题查清为正常的版本切换。</p></li>
+      </ul>
+    </div>
+    <div>
+      <h3>下一步</h3>
+      <ul class="items">
+        <li><div class="head">用户审核并合并 PR #31</div></li>
+        <li><div class="head">迁移初始化技能 <span class="chip">已列入路线图</span></div><p>第一次真正迁移到别的仓库时单独开 spec，先定技能从哪里分发。手工迁移用的包在本机，不进 git。</p></li>
+        <li><div class="head">建仓过程复盘</div><p>素材位置见路线图。</p></li>
+        <li><div class="head">第一阶段：复刻开场 0:00～0:46</div><p>按路线图先开讨论。</p></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<p class="note">数据来源：Codex 的派发记录与验收评论；设计负责人主会话记录里每次调用的用量，按消息去重。</p>
+</main>
+
+<script>
+(function () {
+  var dispatches = [
+    ["#18", "工单脚本重构", "feature", "23:56:43", 5.9, 805036, 745600, 10269],
+    ["#19", "文档命令护栏", "feature", "23:56:46", 7.8, 1343018, 1280512, 13133],
+    ["#20", "dispatch", "feature", "00:04:30", 10.3, 1253086, 1171328, 16295],
+    ["审查", "第一批（#18、#19）", "review", "00:06:04", 3.6, 535724, 498048, 3690],
+    ["#21", "land", "feature", "00:16:11", 7.1, 962719, 890624, 14448],
+    ["#26", "返工：pnpm 命令白名单", "rework", "00:16:13", 7.2, 1560962, 1495936, 8084],
+    ["审查", "第二批（#20、#21、#26）", "review", "00:25:40", 4.3, 805765, 730112, 6478],
+    ["#22", "accept 派发数据", "feature", "00:26:07", 6.4, 1164046, 1095808, 11597],
+    ["#23", "cleanup", "feature", "00:26:09", 5.6, 876127, 812800, 10998],
+    ["审查", "第三批（#22、#23）", "review", "00:35:01", 4.0, 767994, 703360, 5086],
+    ["#27", "返工：land 续做", "rework", "00:35:08", 7.9, 1265765, 1180288, 13304],
+    ["#25", "改名 run-spec", "feature", "00:44:28", 4.1, 1062793, 992896, 7626],
+    ["#28", "返工：记录归属", "rework", "00:44:29", 6.0, 1140492, 1078016, 10360],
+    ["审查", "收尾（整个分支）", "review", "00:51:41", 5.7, 1383728, 1309184, 5930],
+    ["#29", "返工：读正文、补装", "rework", "00:58:00", 4.3, 556737, 497664, 6626]
+  ];
+  var designCommits = [["#24 技能改写", "00:37:55"], ["#30 文档返工", "00:59:06"], ["PR #31", "01:04:23"]];
+  var kindVar = { feature: "--s-feature", rework: "--s-rework", review: "--s-review" };
+  var kindName = { feature: "功能工单", rework: "审查返工", review: "Codex 审查" };
+  var fmt = function (n) { return n.toLocaleString("en-US"); };
+  var NS = "http://www.w3.org/2000/svg";
+  var el = function (name, attrs, text) {
+    var node = document.createElementNS(NS, name);
+    for (var k in attrs) {
+      if ((k === "fill" || k === "stroke") && String(attrs[k]).indexOf("var(") === 0) node.style[k] = attrs[k];
+      else node.setAttribute(k, attrs[k]);
+    }
+    if (text != null) node.textContent = text;
+    return node;
+  };
+  var toMin = function (hms) {
+    var p = hms.split(":").map(Number);
+    var h = p[0] < 12 ? p[0] + 24 : p[0];
+    return (h - 23) * 60 + p[1] + (p[2] || 0) / 60 - 50;
+  };
+
+  var rows = document.getElementById("dispatch-rows");
+  var sum = [0, 0, 0, 0];
+  dispatches.forEach(function (d) {
+    var tr = document.createElement("tr");
+    tr.innerHTML = '<td><span class="kind"><i class="swatch" style="background: var(' + kindVar[d[2]] + ')"></i>' + d[0] + '</span></td><td>' + d[1] + '</td><td class="num">' + d[3].slice(0, 5) + '</td><td class="num">' + d[4].toFixed(1) + ' 分钟</td><td class="num">' + fmt(d[5]) + '（' + fmt(d[6]) + '）</td><td class="num">' + fmt(d[7]) + '</td>';
+    rows.appendChild(tr);
+    sum[0] += d[4]; sum[1] += d[5]; sum[2] += d[6]; sum[3] += d[7];
+  });
+  var total = document.createElement("tr");
+  total.className = "total";
+  total.innerHTML = '<td>合计</td><td>15 次</td><td class="num"></td><td class="num">' + sum[0].toFixed(1) + ' 分钟</td><td class="num">' + fmt(sum[1]) + '（' + fmt(sum[2]) + '）</td><td class="num">' + fmt(sum[3]) + '</td>';
+  rows.appendChild(total);
+
+  var figure = document.getElementById("gantt-figure");
+  var tip = document.getElementById("tip");
+  var showTip = function (evt, html, anchor) {
+    tip.innerHTML = html;
+    tip.hidden = false;
+    var box = figure.getBoundingClientRect();
+    var x, y;
+    if (evt && evt.clientX != null) { x = evt.clientX - box.left + 14; y = evt.clientY - box.top + 14; }
+    else { var r = anchor.getBoundingClientRect(); x = r.left - box.left; y = r.bottom - box.top + 8; }
+    x = Math.min(x, box.width - tip.offsetWidth - 8);
+    tip.style.left = Math.max(8, x) + "px";
+    tip.style.top = y + "px";
+  };
+  var hideTip = function () { tip.hidden = true; };
+
+  var gantt = document.getElementById("gantt");
+  var W = 880, left = 184, right = 24, top = 30, rowH = 24, barH = 14;
+  var laneCount = dispatches.length + 1;
+  var H = top + laneCount * rowH + 34;
+  var domain = [0, 80];
+  var plotW = W - left - right;
+  var x = function (m) { return left + (m - domain[0]) / (domain[1] - domain[0]) * plotW; };
+  gantt.setAttribute("viewBox", "0 0 " + W + " " + H);
+  gantt.setAttribute("width", W);
+  gantt.style.minWidth = "640px";
+  gantt.style.width = "100%";
+  gantt.style.height = "auto";
+  var tickLabels = ["23:50", "00:00", "00:10", "00:20", "00:30", "00:40", "00:50", "01:00", "01:10"];
+  tickLabels.forEach(function (t, i) {
+    var xx = x(i * 10);
+    gantt.appendChild(el("line", { x1: xx, x2: xx, y1: top - 6, y2: H - 30, "class": "grid-line" }));
+    gantt.appendChild(el("text", { x: xx, y: H - 12, "text-anchor": "middle", "class": "tick-label" }, t));
+  });
+  var switchX = x(toMin("00:16:11"));
+  gantt.appendChild(el("line", { x1: switchX, x2: switchX, y1: 12, y2: H - 30, "class": "marker-line" }));
+  gantt.appendChild(el("text", { x: switchX + 6, y: 20, "class": "marker-text" }, "改用 dispatch / land"));
+
+  dispatches.forEach(function (d, i) {
+    var y = top + i * rowH;
+    var label = d[0] === "审查" ? "审查 · " + d[1].replace(/（.*）/, "") : d[0] + " " + d[1];
+    gantt.appendChild(el("text", { x: left - 10, y: y + rowH / 2 + 4, "text-anchor": "end", "class": "row-label" }, label));
+    var start = toMin(d[3]);
+    var bar = el("rect", {
+      x: x(start), y: y + (rowH - barH) / 2, width: Math.max(4, x(start + d[4]) - x(start)), height: barH, rx: 3,
+      fill: "var(" + kindVar[d[2]] + ")", stroke: "var(--surface)", "stroke-width": 1, tabindex: 0,
+      "aria-label": label + "，" + d[3].slice(0, 5) + " 开始，用时 " + d[4] + " 分钟"
+    });
+    var html = "<b>" + (d[0] === "审查" ? "Codex 审查 · " + d[1] : d[0] + " " + d[1]) + "</b><br>" + kindName[d[2]] + " · " + d[3].slice(0, 5) + " 开始 · " + d[4].toFixed(1) + " 分钟<br>输入 " + fmt(d[5]) + "（缓存 " + fmt(d[6]) + "）<br>输出 " + fmt(d[7]);
+    bar.addEventListener("pointermove", function (e) { showTip(e, html, bar); });
+    bar.addEventListener("pointerleave", hideTip);
+    bar.addEventListener("focus", function () { showTip(null, html, bar); });
+    bar.addEventListener("blur", hideTip);
+    gantt.appendChild(bar);
+  });
+  var laneY = top + dispatches.length * rowH;
+  gantt.appendChild(el("text", { x: left - 10, y: laneY + rowH / 2 + 4, "text-anchor": "end", "class": "row-label" }, "设计负责人提交"));
+  designCommits.forEach(function (c) {
+    var cx = x(toMin(c[1])), cy = laneY + rowH / 2;
+    var dot = el("rect", { x: cx - 5, y: cy - 5, width: 10, height: 10, transform: "rotate(45 " + cx + " " + cy + ")", fill: "var(--accent)", stroke: "var(--surface)", "stroke-width": 2, tabindex: 0, "aria-label": c[0] + "，" + c[1].slice(0, 5) });
+    var html = "<b>" + c[0] + "</b><br>" + c[1].slice(0, 5);
+    dot.addEventListener("pointermove", function (e) { showTip(e, html, dot); });
+    dot.addEventListener("pointerleave", hideTip);
+    dot.addEventListener("focus", function () { showTip(null, html, dot); });
+    dot.addEventListener("blur", hideTip);
+    gantt.appendChild(dot);
+  });
+
+  var tokens = document.getElementById("tokens");
+  var groups = [["设计负责人缓存读取", 49.245761, 20.779527], ["Codex 输入", 12.0102, 15.483992]];
+  var TW = 420, tLeft = 12, tRight = 56, tTop = 8, groupH = 92, tBarH = 22;
+  var TH = tTop + groups.length * groupH + 26;
+  var tMax = 50;
+  var tx = function (v) { return tLeft + v / tMax * (TW - tLeft - tRight); };
+  tokens.setAttribute("viewBox", "0 0 " + TW + " " + TH);
+  tokens.style.width = "100%";
+  tokens.style.minWidth = "300px";
+  tokens.style.height = "auto";
+  [0, 10, 20, 30, 40, 50].forEach(function (v) {
+    tokens.appendChild(el("line", { x1: tx(v), x2: tx(v), y1: tTop, y2: TH - 22, "class": "grid-line" }));
+    tokens.appendChild(el("text", { x: tx(v), y: TH - 6, "text-anchor": "middle", "class": "axis-label" }, String(v)));
+  });
+  groups.forEach(function (g, i) {
+    var gy = tTop + i * groupH;
+    tokens.appendChild(el("text", { x: tLeft, y: gy + 16, "class": "row-label" }, g[0]));
+    [[g[1], "--s-prev"], [g[2], "--s-feature"]].forEach(function (s, j) {
+      var by = gy + 24 + j * (tBarH + 4);
+      tokens.appendChild(el("rect", { x: tx(0), y: by, width: tx(s[0]) - tx(0), height: tBarH, rx: 3, fill: "var(" + s[1] + ")" }));
+      tokens.appendChild(el("text", { x: tx(s[0]) + 6, y: by + tBarH / 2 + 4, "class": "bar-value" }, s[0].toFixed(1)));
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
