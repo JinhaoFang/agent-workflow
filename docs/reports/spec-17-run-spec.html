@@ -1,3 +1,6 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Spec #17 执行汇报</title>
@@ -132,7 +135,8 @@ tr.total td { font-weight: 700; }
 @media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
-
+</head>
+<body>
 <main class="page">
 
 <header class="hero">
@@ -305,7 +309,7 @@ tr.total td { font-weight: 700; }
       <thead><tr><th>谁</th><th>决定</th></tr></thead>
       <tbody>
         <tr><td><span class="chip">用户</span></td><td>改名 <code>run-spec</code>；本仓库的值放进配置；执行步骤只写在技能里；文档命令护栏放在改名之前，改名放在最后</td></tr>
-        <tr><td><span class="chip">用户</span></td><td>汇报改成 HTML 可视化页面，写进流程（审核 PR 时提出，#32）</td></tr>
+        <tr><td><span class="chip">用户</span></td><td>汇报改成 HTML 可视化页面并写进流程，只存在仓库里、不发布（审核 PR 时提出，#32）</td></tr>
         <tr><td><span class="chip">设计负责人</span></td><td>审查期间照常派发已解除阻塞的工单，只是不合并，写进技能第 6 步</td></tr>
         <tr><td><span class="chip">设计负责人</span></td><td>最后一批（#25、#27、#28）不单独审查，由收尾审查覆盖</td></tr>
         <tr><td><span class="chip">设计负责人</span></td><td>P3 的重复代码也开返工（#27、#28）：这几处正是串号、漏删会出问题的地方</td></tr>
@@ -514,3 +518,6 @@ tr.total td { font-weight: 700; }
   });
 })();
 </script>
+
+</body>
+</html>
