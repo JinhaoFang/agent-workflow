@@ -3,6 +3,8 @@
  * gh on PATH, checking its argument arrays. A configured fake dispatcher emits
  * records and commits in the target worktree. Run with pnpm verify or node --test
  * on this file. No GitHub writes, network access or repository helpers are used.
+ * Comment requests capture temporary-file bodies and simulate write failures;
+ * prompts, rework names, dry-run behavior and push permissions are observable.
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -77,7 +79,9 @@ for (let i = 2; fs.existsSync(path.join(".codex-runs", name + ".progress.log"));
 const progress = path.resolve(".codex-runs", name + ".progress.log");
 fs.writeFileSync(progress, "=== 开始 ===\\n");
 console.log("记录名：" + name + "\\n进度：" + progress);
-fs.writeFileSync(path.join(".codex-runs", name + ".json"), JSON.stringify({cwd:process.cwd(), args}));
+const commentLog = path.join(process.env.DISPATCH_FIXTURE_ROOT, "gh-comments.jsonl");
+const comments = fs.existsSync(commentLog) ? fs.readFileSync(commentLog, "utf8").trim().split("\\n").map(JSON.parse) : [];
+fs.writeFileSync(path.join(".codex-runs", name + ".json"), JSON.stringify({cwd:process.cwd(), args, comments}));
 fs.writeFileSync(path.join(".codex-runs", name + ".md"), "工程汇报");
 const code = Number(process.env.DISPATCH_FIXTURE_EXIT || 0);
 fs.writeFileSync(name + ".txt", name);
@@ -121,12 +125,21 @@ const args = process.argv.slice(2);
 const previous = fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\\n").length : 0;
 fs.appendFileSync(log, JSON.stringify(args) + "\\n");
 const response = JSON.parse(fs.readFileSync(path.join(root,"responses.json"),"utf8"))[previous];
-if (!response || JSON.stringify(args) !== JSON.stringify(response.args)) process.exit(91);
+const fileIndex = args.indexOf("--body-file");
+const comparable = args.map((arg, index) => fileIndex >= 0 && index === fileIndex + 1 ? "<temporary>" : arg);
+if (!response || JSON.stringify(comparable) !== JSON.stringify(response.args)) process.exit(91);
+if (fileIndex >= 0) fs.appendFileSync(path.join(root, "gh-comments.jsonl"), JSON.stringify({file: args[fileIndex + 1], body: fs.readFileSync(args[fileIndex + 1], "utf8")}) + "\\n");
+if (response.error) { process.stderr.write(response.error); process.exit(1); }
 process.stdout.write(JSON.stringify(response.value));
 `,
     { mode: 0o755 },
   );
-  const responses = (state = "open", engineering = true) => [
+  const responses = (
+    state = "open",
+    engineering = true,
+    comment = false,
+    commentError = false,
+  ) => [
     {
       args: ["repo", "view", "--json", "nameWithOwner"],
       value: { nameWithOwner: repo },
@@ -143,6 +156,23 @@ process.stdout.write(JSON.stringify(response.value));
       args: ["api", "--method", "GET", `repos/${repo}/issues/21/parent`],
       value: { number: 17 },
     },
+    ...(comment
+      ? [
+          {
+            args: [
+              "issue",
+              "comment",
+              "21",
+              "--repo",
+              repo,
+              "--body-file",
+              "<temporary>",
+            ],
+            value: {},
+            error: commentError ? "permission denied" : undefined,
+          },
+        ]
+      : []),
   ];
   const run = (
     args: string[] = [],
@@ -151,14 +181,27 @@ process.stdout.write(JSON.stringify(response.value));
       engineering?: boolean;
       exit?: number;
       installExit?: number;
+      commentError?: boolean;
       cwd?: string;
     } = {},
   ) => {
     rmSync(join(temporary, "gh-calls.jsonl"), { force: true });
-    writeFileSync(
-      join(temporary, "responses.json"),
-      JSON.stringify(responses(options.state, options.engineering)),
+    rmSync(join(temporary, "gh-comments.jsonl"), { force: true });
+    const noteIndex = args.indexOf("--note");
+    const fileIndex = args.indexOf("--note-file");
+    const note =
+      noteIndex >= 0
+        ? args[noteIndex + 1]
+        : fileIndex >= 0 && existsSync(args[fileIndex + 1])
+          ? readFileSync(args[fileIndex + 1], "utf8")
+          : "";
+    const expected = responses(
+      options.state,
+      options.engineering,
+      Boolean(note) && !args.includes("--dry-run"),
+      options.commentError,
     );
+    writeFileSync(join(temporary, "responses.json"), JSON.stringify(expected));
     const result = spawnSync(
       process.execPath,
       [cli, "dispatch", "21", ...args],
@@ -184,12 +227,23 @@ process.stdout.write(JSON.stringify(response.value));
           .map((line) => JSON.parse(line))
       : [];
     assert.deepEqual(
-      calls,
-      responses(options.state, options.engineering)
-        .slice(0, calls.length)
-        .map((response) => response.args),
+      calls.map((args) => {
+        const index = args.indexOf("--body-file");
+        return args.map((arg, position) =>
+          index >= 0 && position === index + 1 ? "<temporary>" : arg,
+        );
+      }),
+      expected.slice(0, calls.length).map((response) => response.args),
     );
-    return { ...result, calls };
+    const commentLog = join(temporary, "gh-comments.jsonl");
+    const comments: { file: string; body: string }[] = existsSync(commentLog)
+      ? readFileSync(commentLog, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+      : [];
+    for (const comment of comments) assert.ok(!existsSync(comment.file));
+    return { ...result, calls, comments };
   };
   return {
     root,
@@ -256,6 +310,8 @@ test("dispatch creates worktree, links and installs, then forwards prompt and re
       "登记表只加自己的一项； literal $(touch forbidden) `touch forbidden`";
     const result = f.run(["--note", note]);
     assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.comments.length, 1);
+    assert.equal(result.comments[0].body, `## 派发补充说明：gh-21\n\n${note}`);
     assert.equal(f.git(["branch", "--show-current"], f.worktree), "ticket/21");
     assert.equal(
       f.git(["rev-list", "--count", "spec/17-test..ticket/21"]),
@@ -278,6 +334,7 @@ test("dispatch creates worktree, links and installs, then forwards prompt and re
       readFileSync(join(f.worktree, ".codex-runs/gh-21.json"), "utf8"),
     );
     assert.equal(record.cwd, f.worktree);
+    assert.deepEqual(record.comments, result.comments);
     for (const number of [21, 17])
       assert.ok(
         record.args[0].includes(
@@ -388,6 +445,12 @@ test("dispatch reuses a clean worktree, reads note-file, skips install and makes
     assert.match(record.args[1], /另起提交/);
     assert.match(record.args[1], /返工原因\n保留换行/);
     assert.match(result.stdout, /记录名：gh-21-2/);
+    assert.equal(
+      result.comments[0].body,
+      "## 派发补充说明：gh-21-2\n\n返工原因\n保留换行",
+    );
+    assert.deepEqual(record.comments, result.comments);
+    assert.equal(record.args[record.args.indexOf("--name") + 1], "gh-21-2");
     writeFileSync(join(f.worktree, "dirty.txt"), "dirty");
     const rejected = f.run();
     assert.equal(rejected.status, 1);
@@ -540,6 +603,13 @@ test("dispatch dry-run prints complete plan without modifying git, creating arti
     const before = f.git(["status", "--porcelain"]);
     const result = f.run(["--dry-run", "--note", "补充说明"]);
     assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.comments, []);
+    assert.equal(result.calls.length, 3);
+    assert.ok(
+      result.stdout.includes(
+        "工单 #21 评论预览：\n## 派发补充说明：gh-21\n\n补充说明",
+      ),
+    );
     for (const text of [
       "spec/17-test",
       "ticket/21",
@@ -604,6 +674,148 @@ test("dispatch fails on absent or ambiguous integration branches, wrong worktree
     assert.equal(result.status, 1);
     assert.match(result.stderr, /worktree 分支必须是 ticket\/21/);
     assert.ok(!existsSync(join(f.worktree, ".codex-runs")));
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("dispatch only grants ticket branch push permission with --allow-push and skips comments without notes", () => {
+  const f = fixture();
+  try {
+    const emptyFile = join(f.temporary, "empty note.txt");
+    writeFileSync(emptyFile, "");
+    for (const [index, args] of [
+      [],
+      ["--allow-push"],
+      ["--note", ""],
+      ["--note-file", emptyFile],
+    ].entries()) {
+      const result = f.run(args);
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.calls.length, 3);
+      assert.deepEqual(result.comments, []);
+      const name = index === 0 ? "gh-21" : `gh-21-${index + 1}`;
+      const record = JSON.parse(
+        readFileSync(join(f.worktree, `.codex-runs/${name}.json`), "utf8"),
+      );
+      if (args.includes("--allow-push")) {
+        assert.match(
+          record.args[1],
+          /只允许把本工单分支 ticket\/21 推送到远端，不开 PR，不推送其他分支/,
+        );
+        assert.doesNotMatch(record.args[1], /不要推送/);
+      } else assert.match(record.args[1], /不要推送/);
+      assert.match(record.args[1], /不要切换分支/);
+      assert.match(record.args[1], /不要改动主工作区/);
+    }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("dispatch comment failures block initial and rework dispatch and clean up the body file", () => {
+  for (const rework of [false, true]) {
+    const f = fixture();
+    try {
+      if (rework) assert.equal(f.run().status, 0);
+      const note = "失败后不得派发\r\n$(touch forbidden) `touch forbidden`\n";
+      const result = f.run(["--note", note, "--allow-push"], {
+        commentError: true,
+      });
+      const name = rework ? "gh-21-2" : "gh-21";
+      assert.equal(result.status, 2, result.stderr);
+      assert.match(result.stderr, /^出错：gh 调用失败/);
+      assert.equal(result.calls.length, 4);
+      assert.equal(
+        result.comments[0].body,
+        `## 派发补充说明：${name}\n\n${note}`,
+      );
+      assert.ok(
+        !existsSync(join(f.worktree, `.codex-runs/${name}.progress.log`)),
+      );
+      assert.ok(!existsSync(join(f.worktree, "forbidden")));
+      assert.equal(
+        f.git(["rev-list", "--count", "spec/17-test..ticket/21"]),
+        rework ? "1" : "0",
+      );
+      const retried = f.run(["--note", note]);
+      assert.equal(retried.status, 0, retried.stderr);
+      assert.equal(retried.comments[0].body, result.comments[0].body);
+      assert.match(retried.stdout, new RegExp(`记录名：${name}\\n`));
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
+test("dispatch dry-run previews file notes and exact rework names including records copied to main", () => {
+  const f = fixture();
+  try {
+    assert.equal(f.run().status, 0);
+    mkdirSync(join(f.root, ".codex-runs"));
+    writeFileSync(
+      join(f.root, ".codex-runs/gh-21-2.md"),
+      "copied earlier report",
+    );
+    const noteFile = join(f.temporary, "multiline note.txt");
+    const note = "  补充说明\r\n保留空白与换行\n";
+    writeFileSync(noteFile, note);
+    const result = f.run([
+      "--note-file",
+      noteFile,
+      "--allow-push",
+      "--dry-run",
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.calls.length, 3);
+    assert.deepEqual(result.comments, []);
+    assert.ok(
+      result.stdout.includes(
+        `工单 #21 评论预览：\n## 派发补充说明：gh-21-3\n\n${note}`,
+      ),
+    );
+    assert.match(
+      result.stdout,
+      /只允许把本工单分支 ticket\/21 推送到远端，不开 PR，不推送其他分支/,
+    );
+    assert.ok(
+      !existsSync(join(f.worktree, ".codex-runs/gh-21-3.progress.log")),
+    );
+    const actual = f.run(["--note-file", noteFile, "--allow-push"]);
+    assert.equal(actual.status, 0, actual.stderr);
+    assert.equal(
+      actual.comments[0].body,
+      `## 派发补充说明：gh-21-3\n\n${note}`,
+    );
+    const record = JSON.parse(
+      readFileSync(join(f.worktree, ".codex-runs/gh-21-3.json"), "utf8"),
+    );
+    assert.equal(record.args[record.args.indexOf("--name") + 1], "gh-21-3");
+    assert.deepEqual(record.comments, actual.comments);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("dispatch help documents push permission, comments, failure handling and dry-run", () => {
+  const f = fixture();
+  try {
+    const result = f.run(["--help"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.calls, []);
+    for (const text of [
+      "--allow-push",
+      "不要推送",
+      "不开 PR",
+      "不推送其他分支",
+      "记录名",
+      "返工也评论",
+      "无说明时不评论",
+      "评论失败以 2 退出",
+      "不评论",
+      "不派发",
+    ])
+      assert.ok(result.stdout.includes(text), text);
   } finally {
     f.cleanup();
   }

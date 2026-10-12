@@ -7,19 +7,26 @@
  * Newly created worktrees carry a pending-preparation marker in their private
  * git directory until links and install succeed. Reruns with that marker
  * finish preparation; existing unmarked worktrees reuse completed installation.
+ * --allow-push grants push permission only for the ticket branch. Nonempty
+ * notes are commented via a temporary UTF-8 file before dispatch; failure stops
+ * dispatch. Select an unused record name across both checkouts for correlation.
+ * Dry runs preview the same name, prompt and comment without writes.
  */
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import {
   entry,
@@ -27,6 +34,7 @@ import {
   dispatchConfig,
   git,
   github,
+  recordName,
   ticketIntegration,
   usageError,
   type Command,
@@ -57,7 +65,7 @@ const dispatch = (values: Values, numbers: number[]): void => {
       };
     });
   const root = trees[0].path;
-  const { endpoint, issue } = github(true);
+  const { repo, endpoint, issue, write } = github(Boolean(values["dry-run"]));
   const ticket = numbers[0];
   const child = issue(ticket) as Issue & { labels?: { name: string }[] };
   if (child.state !== "open")
@@ -131,14 +139,29 @@ const dispatch = (values: Values, numbers: number[]): void => {
     String(ticket),
   );
   const task = `完成 GitHub 工单 #${ticket}（父 spec #${spec}）。先运行 gh issue view ${ticket} --json title,body,comments 和 gh issue view ${spec} --json title,body,comments 读取全文，按工单的边界和验收标准完成、验证并提交，最后按角色文档的格式汇报。验证命令参数数组：${JSON.stringify(config.verificationCommand)}。`;
+  const pushInstruction = values["allow-push"]
+    ? `只允许把本工单分支 ${branch} 推送到远端，不开 PR，不推送其他分支`
+    : "不要推送";
   const extra = [
-    `你在 git worktree ${worktree} 里工作，分支是 ${branch}。提交留在这个分支上，不要切换分支、不要推送，不要改动主工作区 ${root} 和其他 worktree。`,
+    `你在 git worktree ${worktree} 里工作，分支是 ${branch}。提交留在这个分支上，不要切换分支，${pushInstruction}，不要改动主工作区 ${root} 和其他 worktree。`,
     `以下目录是指向主工作区的软链接，只读使用：${config.symlinkDirectories.join("、") || "无"}。验收产物写到本 worktree 的 ${artifacts} 下，汇报里用绝对路径。`,
     existing && !needsPreparation ? "这是返工派发：请另起提交。" : "",
     note,
   ]
     .filter(Boolean)
     .join("\n");
+  const usedNames = new Set(
+    [root, worktree].flatMap((checkout) => {
+      const directory = join(checkout, ".codex-runs");
+      return existsSync(directory)
+        ? readdirSync(directory).map(recordName)
+        : [];
+    }),
+  );
+  let name = `gh-${ticket}`;
+  for (let suffix = 2; usedNames.has(name); suffix++)
+    name = `gh-${ticket}-${suffix}`;
+  const comment = note ? `## 派发补充说明：${name}\n\n${note}` : "";
   const args = [
     script,
     task,
@@ -146,7 +169,7 @@ const dispatch = (values: Values, numbers: number[]): void => {
     "--role",
     "engineering",
     "--name",
-    `gh-${ticket}`,
+    name,
     "--sandbox",
     config.codexSandbox,
   ];
@@ -166,9 +189,8 @@ const dispatch = (values: Values, numbers: number[]): void => {
     if (needsPreparation)
       console.log(`安装命令：${JSON.stringify(config.installCommand)}`);
     console.log(`验收产物：${artifacts}`);
-    console.log(
-      `记录名前缀：gh-${ticket}；实际记录名和进度文件由派发脚本启动时打印（重名自动错开）。`,
-    );
+    console.log(`记录名：${name}`);
+    if (comment) console.log(`工单 #${ticket} 评论预览：\n${comment}`);
     console.log(
       `派发工作目录：${worktree}\n派发参数：${JSON.stringify([process.execPath, ...args])}\n标准指令：${task}\nworktree 与补充说明：\n${extra}`,
     );
@@ -207,6 +229,27 @@ const dispatch = (values: Values, numbers: number[]): void => {
     console.log("安装命令已完成");
   }
   mkdirSync(artifacts, { recursive: true });
+  if (comment) {
+    const directory = mkdtempSync(join(tmpdir(), "studio-dispatch-"));
+    try {
+      const file = join(directory, "comment.md");
+      writeFileSync(file, comment, "utf8");
+      write(
+        [
+          "issue",
+          "comment",
+          String(ticket),
+          "--repo",
+          repo,
+          "--body-file",
+          file,
+        ],
+        `已记录派发补充说明：${name}`,
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
   const result = spawnSync(process.execPath, args, {
     cwd: worktree,
     stdio: "inherit",
@@ -217,12 +260,21 @@ const dispatch = (values: Values, numbers: number[]): void => {
 };
 
 export const dispatchCommand: Command = {
-  options: { note: { type: "string" }, "note-file": { type: "string" } },
+  options: {
+    note: { type: "string" },
+    "note-file": { type: "string" },
+    "allow-push": { type: "boolean" },
+  },
   positionals: 1,
   execute: dispatch,
-  help: `${entry} dispatch <工单> [--note <文字> | --note-file <文件>] [--dry-run]
+  help: `${entry} dispatch <工单> [--note <文字> | --note-file <文件>] [--allow-push] [--dry-run]
 读取 docs/agents/run-spec.json，为工程工单准备或复用干净的 worktree，
 在该目录前台运行派发脚本，透传记录名、进度路径和退出码。
-补充说明支持 UTF-8 文件；返工自动要求另起提交。
---dry-run 只读 GitHub 和 git 并打印计划，不安装、不建目录、不派发。`,
+--allow-push 只允许把本工单分支推送到远端，不开 PR，不推送其他分支；
+不带时指令仍为「不要推送」。
+补充说明支持 UTF-8 文件；非空说明先评论到工单，标题含本次记录名，
+正文保留原文；返工也评论并自动要求另起提交。无说明时不评论。
+评论失败以 2 退出，不派发，已准备的 worktree 保留供重试。
+--dry-run 只读 GitHub 和 git 并打印计划及评论内容，不评论、不安装、
+不建目录、不派发。`,
 };
