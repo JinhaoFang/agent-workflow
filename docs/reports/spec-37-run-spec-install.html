@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spec #37 执行汇报</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
+<style>
+/* Layout: one reading column of briefing sections; charts and tables scroll inside their own frames. */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #141820;
+  --ink-2: #485164;
+  --muted: #737d90;
+  --line: #dde2ea;
+  --accent: #2f45b5;
+  --accent-soft: #e6e9fa;
+  --s-feature: #2a78d6;
+  --s-rework: #eb6834;
+  --s-review: #1baf7a;
+  --s-prev: #9aa3b3;
+  --s-trial: #b7791f;
+  --good: #1a7f37;
+  --warn: #9a5b00;
+  --font-display: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101319; --surface: #171b23; --ink: #eceef4; --ink-2: #b6bdcc; --muted: #8b93a5;
+    --line: #2a303c; --accent: #9eabff; --accent-soft: #232a4a;
+    --s-feature: #3987e5; --s-rework: #d95926; --s-review: #199e70; --s-prev: #5c6576; --s-trial: #e0a93b;
+    --good: #4cc46a; --warn: #f0a347; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101319; --surface: #171b23; --ink: #eceef4; --ink-2: #b6bdcc; --muted: #8b93a5;
+  --line: #2a303c; --accent: #9eabff; --accent-soft: #232a4a;
+  --s-feature: #3987e5; --s-rework: #d95926; --s-review: #199e70; --s-prev: #5c6576; --s-trial: #e0a93b;
+  --good: #4cc46a; --warn: #f0a347; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.75; margin: 0; }
+table { font-size: inherit; }
+.page { max-width: 960px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.35; }
+h1 { font-size: clamp(26px, 4.4vw, 38px); }
+h2 { font-size: 22px; }
+h3 { font-size: 16px; font-family: var(--font-body); font-weight: 700; }
+p { margin: 0; max-width: 46em; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, .mono { font-family: var(--font-data); font-size: 0.86em; }
+code { background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--font-data); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 18px; min-width: 0; }
+.section-head { display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 20px; }
+.lede { font-size: 17px; color: var(--ink-2); }
+.muted { color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); }
+
+header.hero { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 1px 10px; border-radius: 999px; border: 1px solid currentColor; }
+.status.pending { color: var(--warn); }
+.status.done { color: var(--good); }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 2px; min-width: 0; }
+.kpi .num { font-family: var(--font-data); font-size: 26px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.kpi .num small { font-size: 14px; color: var(--muted); font-weight: 400; }
+.kpi .label { font-size: 13px; color: var(--ink-2); }
+@media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.deliver { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 28px; margin: 0; padding: 0; list-style: none; }
+.deliver li { display: grid; gap: 2px; min-width: 0; }
+.deliver b { font-weight: 700; }
+@media (max-width: 720px) { .deliver { grid-template-columns: 1fr; } }
+
+.flow { display: grid; gap: 10px; }
+.step { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+.step .n { font-family: var(--font-data); font-size: 13px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); color: var(--ink-2); margin-top: 2px; }
+.step .body { display: grid; gap: 2px; min-width: 0; }
+.step .title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-weight: 700; }
+.step .desc { font-size: 14px; color: var(--ink-2); }
+.who { font-size: 11px; font-weight: 500; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); }
+.who.user { border-color: var(--accent); color: var(--accent); }
+.who.codex { border-color: var(--s-review); }
+.who.script { border-color: var(--s-feature); }
+.loop { border: 1px dashed var(--accent); border-radius: 10px; padding: 14px 14px 10px; display: grid; gap: 10px; position: relative; }
+.loop-label { font-size: 12px; color: var(--accent); font-weight: 500; }
+
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.compare > div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; display: grid; gap: 8px; align-content: start; }
+.compare ol { margin: 0; padding-left: 1.3em; font-size: 13px; color: var(--ink-2); display: grid; gap: 2px; }
+.compare .cmd { font-family: var(--font-data); font-size: 13px; background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; display: grid; gap: 4px; overflow-x: auto; }
+@media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 10px; min-width: 0; position: relative; }
+.chart-scroll { overflow-x: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+svg text { font-family: var(--font-body); }
+.tick-label, .row-label { fill: var(--ink-2); font-size: 12px; }
+.axis-label { fill: var(--muted); font-size: 11px; }
+.grid-line { stroke: var(--line); stroke-width: 1; }
+.marker-line { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.marker-text { fill: var(--accent); font-size: 12px; }
+.bar-value { fill: var(--ink); font-size: 12px; font-family: var(--font-data); }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; line-height: 1.6; padding: 8px 10px; border-radius: 6px; max-width: 260px; z-index: 2; }
+.tip b { font-weight: 700; }
+.ratio { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; }
+.ratio .big { font-family: var(--font-data); font-size: 30px; font-variant-numeric: tabular-nums; }
+
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.04em; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.total td { font-weight: 700; }
+.kind { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chip { display: inline-block; font-size: 12px; padding: 0 8px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+
+.items { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.items li { display: grid; gap: 2px; padding-left: 14px; border-left: 2px solid var(--line); }
+.items li.mine { border-left-color: var(--s-rework); }
+.items .head { font-weight: 700; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.items p { color: var(--ink-2); font-size: 14px; }
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+@media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="page">
+
+<header class="hero">
+  <div class="eyebrow">Spec #37 · 设计负责人 → 用户 · 2026-10-12</div>
+  <h1>run-spec 可安装：修复彩排问题、初始化技能、design-system 试用</h1>
+  <p class="lede">别的仓库接入这套流程，从照着十几步手工迁移，变成一条安装命令加 <code>/setup-run-spec</code>。design-system 彩排发现的缺口都修了；新加的能力在执行这个 spec 时就用上了。design-system 已经换成安装版本，接入用了 11 分钟。代价是设计负责人这边的用量：这次执行放在对齐用的长会话里，用量比 spec #17 高出近两倍。</p>
+  <div class="meta">
+    <a href="https://github.com/JinhaoFang/video-studio/issues/37">spec #37</a>
+    <a href="https://github.com/JinhaoFang/video-studio/pull/50">PR #50</a><span class="status done">已合并</span>
+    <a href="https://github.com/JinhaoFang/video-studio/pull/52">PR #52</a><span class="status pending">待用户审核合并</span>
+    <a href="https://github.com/JinhaoFang/design-system/pull/41">design-system PR #41</a><span class="status done">已合并</span>
+  </div>
+</header>
+
+<div class="kpis" aria-label="关键数字">
+  <div class="kpi"><span class="num">13 <small>张</small></span><span class="label">工单全部关闭：8 张工程（含 2 张返工）、4 张设计、1 张由用户合并</span></div>
+  <div class="kpi"><span class="num">11 <small>次</small></span><span class="label">Codex 运行：8 张工单、2 次审查、1 次冒烟测试，合计 77.9 分钟，最多 4 路并行</span></div>
+  <div class="kpi"><span class="num">249→283</span><span class="label">测试数</span></div>
+  <div class="kpi"><span class="num">11 <small>分钟</small></span><span class="label">design-system 用 <code>/setup-run-spec</code> 换成安装版本，用户回答 2 次</span></div>
+</div>
+
+<section id="flow">
+  <div class="section-head">
+    <div class="eyebrow">合并以后</div>
+    <h2>别的仓库怎样接入</h2>
+  </div>
+  <div class="compare">
+    <div>
+      <h3>改之前：复制本机的迁移包，手工十几步</h3>
+      <ol>
+        <li>复制技能目录，确认它进 git</li>
+        <li>照示例写执行配置，逐项改值</li>
+        <li>复制配置说明，删掉来源仓库特有的内容</li>
+        <li>把工单约定追加进工单文档</li>
+        <li>加忽略规则（软链接目录不能带斜杠，迁移包里没写原因）</li>
+        <li>建执行角色标签</li>
+        <li>对齐规则文档</li>
+        <li>按自检清单手工逐项核对</li>
+      </ol>
+      <p class="note">迁移包是一份快照，来源仓库改进以后要重新打包、重新复制。第一次手工迁移碰到 14 个问题。</p>
+    </div>
+    <div>
+      <h3>改之后：一条命令，加一个技能</h3>
+      <div class="cmd"><span>npx skills add JinhaoFang/video-studio \</span><span>  --skill run-spec --skill setup-run-spec -a claude-code -y</span><span>/setup-run-spec</span></div>
+      <p class="note">两个技能只装进 Claude Code 的技能目录，不进 git，Codex 看不到。<code>/setup-run-spec</code> 只能由用户手动运行：先自检、查看、讲清步骤，用户确认后再写配置、工单约定、忽略规则、标签和合并设置；规则文档在对话里一起改；最后自检，派 Codex 做冒烟测试。更新就是重新运行安装命令。</p>
+    </div>
+  </div>
+  <h3>执行一个 spec 时多了什么</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>步骤</th><th>新增</th><th>来自彩排的哪个问题</th></tr></thead>
+      <tbody>
+        <tr><td>派发</td><td><code>--allow-push</code>：Codex 只能推送本工单分支；补充说明先自动评论到工单再派发</td><td>验收要 CI 链接，指令却写死"不要推送"；派发时的决定只留在本机</td></tr>
+        <tr><td>合并</td><td><code>land</code> 每次 rebase 后先重装依赖再验证</td><td>前一张工单加了依赖，后一张验证必然失败</td></tr>
+        <tr><td>审查</td><td><code>review</code> 把结论评论到 spec，附上审查和子代理的用量；最后一批直接做收尾审查</td><td>审查用量不进任何记录；最后一批的审查和收尾审查重合</td></tr>
+        <tr><td>收尾</td><td><code>cleanup</code> 删除推送过的远端工单分支；GitHub 合并后自动删除集成分支</td><td>远端分支没人删</td></tr>
+        <tr><td>随时</td><td><code>doctor</code> 只读自检：git 与属主、版本、标签、合并设置、技能隔离、配置、忽略规则、规则文档</td><td>第一次迁移的问题大多能机械查出</td></tr>
+        <tr><td>CI</td><td>开 PR、推送工单分支、手动触发时跑；集成分支推送不跑；同一个 PR 的新运行取消旧运行</td><td>design-system 一个 spec 跑了 19 次 CI、约 110 分钟</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="deliver">
+  <div class="section-head">
+    <div class="eyebrow">交付</div>
+    <h2>做了什么，对你意味着什么</h2>
+  </div>
+  <ul class="deliver">
+    <li><b>新仓库接入几乎不用动手</b><span class="muted">装好技能后输入 <code>/setup-run-spec</code>，你只需要回答它问的几个值、确认它讲的步骤。</span></li>
+    <li><b>改进能分发出去</b><span class="muted">video-studio 改了技能、合进 <code>main</code>，各仓库重新运行安装命令就能拿到，不会停在不同的快照上。</span></li>
+    <li><b>出问题先跑一条命令</b><span class="muted"><code>doctor</code> 逐项写明哪里不对、怎么修，包括第一次迁移时手工才查出来的软链接忽略规则、技能被 Codex 看到。</span></li>
+    <li><b>CI 预计少花约六成</b><span class="muted">集成分支每合并一张工单就跑一次 CI 的做法去掉了；PR 上推送多次只保留最新那次。按 design-system spec #32 的 19 次运行估算，其中集成分支推送约占六成。</span></li>
+    <li><b>工单脚本拆成模块</b><span class="muted">一个子命令一个文件，四张工单能同时改，这次只在入口登记表上冲突过一次。</span></li>
+    <li><b>文档少了一类过时</b><span class="muted">验证步骤只写在 <code>tools/verify.ts</code>，CI 触发只写在工作流「护栏」里，其他地方都是指针。</span></li>
+  </ul>
+</section>
+
+<section id="timeline">
+  <div class="section-head">
+    <div class="eyebrow">时间线 · 19:20 → 21:40</div>
+    <h2>11 次 Codex 运行，最多 4 路并行</h2>
+  </div>
+  <p>19:20～19:48 对齐、写 spec、拆单（两轮问题，再确认测试接缝和拆单）。下图从开始执行算起。每条横条是一次 Codex 运行，长度是实际用时；菱形是设计负责人和用户的节点。悬停或用 Tab 键聚焦，可以看用时和 token。21:01 第一个 PR 合并，技能发布到 <code>main</code>，之后进入 design-system 试用。</p>
+  <div class="figure" id="gantt-figure">
+    <div class="legend">
+      <span><i class="swatch" style="background: var(--s-feature)"></i>功能工单</span>
+      <span><i class="swatch" style="background: var(--s-rework)"></i>审查返工</span>
+      <span><i class="swatch" style="background: var(--s-review)"></i>Codex 审查</span>
+      <span><i class="swatch" style="background: var(--s-trial)"></i>试用中的冒烟测试</span>
+      <span><i class="swatch" style="background: var(--accent)"></i>设计负责人和用户</span>
+    </div>
+    <div class="chart-scroll"><svg id="gantt" role="img" aria-label="派发时间线：11 次 Codex 运行的开始时间和用时"></svg></div>
+    <div class="tip" id="tip" hidden></div>
+  </div>
+</section>
+
+<section id="cost">
+  <div class="section-head">
+    <div class="eyebrow">成本与效率</div>
+    <h2>Codex 用得比上一期少，设计负责人用得多</h2>
+  </div>
+  <p>Codex 这边，8 张工单加两次审查、一次冒烟测试，输入比 spec #17 少约一成；这次的审查用量第一次算上了它开的子代理（约 250 万）。设计负责人这边的缓存读取涨到 spec #17 的 2.9 倍，原因是执行没有放在新会话：对齐、写 spec、拆单、执行、试用都在同一个会话里，每次调用都要重读约 22～54 万的上下文。设计负责人没有开子代理。</p>
+  <div class="two-col">
+    <div class="figure">
+      <h3>token 用量（百万），执行阶段</h3>
+      <div class="legend">
+        <span><i class="swatch" style="background: var(--s-prev)"></i>spec #17</span>
+        <span><i class="swatch" style="background: var(--s-feature)"></i>spec #37</span>
+      </div>
+      <div class="chart-scroll"><svg id="tokens" role="img" aria-label="token 用量对比：设计负责人缓存读取 20.8 百万升到 60.1 百万；Codex 输入 15.5 百万降到 13.5 百万"></svg></div>
+    </div>
+    <div class="figure">
+      <h3>设计负责人缓存读取 ÷ Codex 输入</h3>
+      <div class="ratio"><span class="big">1.3</span><span class="muted">spec #17</span><span class="big">→ 4.5</span><span class="muted">spec #37</span></div>
+      <table>
+        <tr><th></th><th class="num">spec #17</th><th class="num">spec #37</th></tr>
+        <tr><td>执行阶段调用次数</td><td class="num">142</td><td class="num">138</td></tr>
+        <tr><td>设计负责人输出</td><td class="num">87,799</td><td class="num">116,636</td></tr>
+        <tr><td>结束时上下文</td><td class="num">约 25 万</td><td class="num">约 54 万</td></tr>
+      </table>
+      <p class="note">spec #37 另有：对齐阶段 32 次调用、缓存读取 895 万、输出 7.9 万；design-system 的 <code>/setup-run-spec</code> 会话 34 次调用、缓存读取 278 万、输出 2.1 万。数字截至写汇报时。</p>
+    </div>
+  </div>
+
+  <h3>逐次运行</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>运行</th><th>内容</th><th class="num">开始</th><th class="num">用时</th><th class="num">输入（其中缓存）</th><th class="num">输出</th></tr></thead>
+      <tbody id="dispatch-rows"></tbody>
+    </table>
+  </div>
+  <p class="note">审查的输入和输出包含它开的两个子代理（Standards、Spec 两条线），用时是审查本身。CI：集成分支在 #43 合并前推送了 6 次；之后的推送都没有触发，只有 <code>ticket/43</code> 的一次推送和两个 PR 上的运行。</p>
+</section>
+
+<section id="quality">
+  <div class="section-head">
+    <div class="eyebrow">质量</div>
+    <h2>新能力在执行这个 spec 时就用上了</h2>
+  </div>
+  <ul class="items">
+    <li><div class="head">测试 249 → 283 项</div><p>每张工单合并前，<code>land</code> 都在 rebase 后跑一遍 <code>pnpm verify</code>，全部通过。</p></li>
+    <li><div class="head">工具执行了它自己</div><p>#40 合并以后，之后 5 次 <code>land</code> 都先重装依赖；#43 用 #39 的 <code>--allow-push</code> 派发，补充说明自动评论到了工单；第一批审查的结论用 #41 的 <code>review</code> 评论，用量和 Codex 会话记录逐项对得上；#43 合并以后，推送集成分支不再触发 CI。</p></li>
+    <li><div class="head">CI 的三种触发都实测过</div><p>工单分支推送触发并通过；集成分支推送不触发；PR 上第二次推送后，旧运行被取消。手动触发没有实测。</p></li>
+    <li><div class="head"><code>doctor</code> 的正例和反例</div><p>video-studio、design-system 全部通过；故意做坏的克隆查出 4 项（没装 DispatchDock 的技能和派发脚本、技能进了 Codex 的目录、带斜杠的忽略规则），每项带修法，以 1 退出。</p></li>
+    <li><div class="head">安装与更新</div><p>从私有仓库安装可行；安装后只在 Claude Code 的目录；重新运行安装命令能就地更新。<code>npx skills update</code> 和按锁文件恢复会把技能装进 Codex 能看到的目录（拆单前实测发现，已写进文档）。</p></li>
+  </ul>
+  <h3>审查与试用发现的问题</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>谁发现</th><th>问题</th><th>处理</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip">第一批审查</span></td><td>配置的软链接目录写成 <code>references/</code> 时，自检把原样路径交给 git，误判退出</td><td><a href="https://github.com/JinhaoFang/video-studio/issues/48">#48</a></td></tr>
+        <tr><td><span class="chip">第一批审查</span></td><td>合并和派发里"运行安装命令"的代码重复</td><td>接受不修：两处失败的语义不同</td></tr>
+        <tr><td><span class="chip">Codex 做 #48 时</span></td><td>同样的写法下，派发建软链接直接失败；审查原以为派发能处理</td><td><a href="https://github.com/JinhaoFang/video-studio/issues/49">#49</a>，在读取配置时统一规范化</td></tr>
+        <tr><td><span class="chip">收尾审查</span></td><td>0 项</td><td>—</td></tr>
+        <tr><td><span class="chip">design-system 试用</span></td><td>那边的技能恢复命令遍历锁文件里的全部技能，锁文件多了两项以后会报 pathspec 不匹配</td><td>试用会话改成只恢复 Matt 的技能（design-system PR #41）</td></tr>
+        <tr><td><span class="chip">design-system 试用</span></td><td>初始化技能要求用锁文件的哈希核对本地改动，做不到，只能写"未知"</td><td><a href="https://github.com/JinhaoFang/video-studio/issues/51">#51</a>，改成重装后逐文件比对</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="decisions">
+  <div class="section-head">
+    <div class="eyebrow">决定</div>
+    <h2>谁定了什么</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>谁</th><th>决定</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip">用户</span></td><td>初始化技能交给这个会话的设计负责人负责，对齐和执行都在这个会话里做</td></tr>
+        <tr><td><span class="chip">用户</span></td><td>试用只在 design-system 做，不新建练习仓库；确认删除本机的手工迁移包</td></tr>
+        <tr><td><span class="chip">用户（按推荐）</span></td><td><code>run-spec</code> 改进和初始化技能合成一个 spec；从 video-studio 直接安装；初始化技能只检查前提、配置自己写、规则文档在对话里改；护栏不随技能分发；集成分支推送不跑 CI；<code>/setup-run-spec</code> 只能手动运行；design-system 的遗留并进试用的 PR</td></tr>
+        <tr><td><span class="chip">设计负责人</span></td><td>先拆工单脚本（#38），让 #39～#42 能并行</td></tr>
+        <tr><td><span class="chip">设计负责人</span></td><td>先开一个只发布、不关闭 spec 的 PR（#46），试用用真实命令从 <code>main</code> 安装；spec 由第二个 PR 关闭</td></tr>
+        <tr><td><span class="chip">设计负责人</span></td><td>自检做成工单脚本的子命令，初始化技能只查它管不到的</td></tr>
+        <tr><td><span class="chip">设计负责人</span></td><td>#49 在读取配置时统一规范化，而不是每个子命令各修一次</td></tr>
+        <tr><td><span class="chip">设计负责人</span></td><td>第二个 PR 只有一张文档小工单，不另做收尾审查</td></tr>
+        <tr><td><span class="chip">试用会话</span></td><td>把预先放在分支上的两个提交并进 design-system PR #41（问过用户）；不再建议彩排，直接执行 spec #1</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="issues">
+  <div class="section-head">
+    <div class="eyebrow">问题与处理</div>
+    <h2>包括我自己的失误</h2>
+  </div>
+  <ul class="items">
+    <li class="mine"><div class="head">spec 里写了"更新用 <code>npx skills update</code>" <span class="chip">拆单前更正</span></div><p>依据只是它显示"Updating for: Claude Code"，没有等来源真的变了再测。拆单前把锁文件的哈希改旧做了模拟，发现它会把技能装进 Codex 能看到的目录。已在 #37 下评论更正，正确做法写进 #45。</p></li>
+    <li class="mine"><div class="head">派发 #43 时补充说明里的双引号截断了参数 <span class="chip">已改技能</span></div><p>脚本在解析参数时就以 2 退出，没有建 worktree、没有评论。改用补充说明文件重派；执行技能第 4 步加了"有引号或换行时用 <code>--note-file</code>"。</p></li>
+    <li class="mine"><div class="head">更新 design-system 的本地 <code>main</code> 时删掉了 <code>run-spec</code> <span class="chip">已恢复，#51</span></div><p>先切到还跟踪 <code>run-spec</code> 的旧本地 <code>main</code> 再拉取，git 把它从磁盘上删了。这正是那边文档里写的情况。用安装命令恢复，自检全部通过；#51 把"先 <code>git fetch origin main:main</code> 再切换"写进初始化技能和安装说明。</p></li>
+    <li class="mine"><div class="head">向你汇报试用发现时没讲清楚 <span class="chip">已重讲</span></div><p>三条发现缺少背景，第三条其实不是问题也列了进去。补讲了第三方技能不进 git 的背景，逐条说明。</p></li>
+    <li><div class="head">审查的一条判断是错的 <span class="chip">#49</span></div><p>第一批审查说派发能处理带斜杠的目录。Codex 做 #48 时在临时目录实测，发现派发会失败，超出工单范围就只报告、没有改，所以开了 #49。</p></li>
+    <li><div class="head">GitHub 接口偶发 502、504 <span class="chip">重试即可</span></div><p>Codex 读工单、设计负责人列工单各碰到过一次，重试都成功。</p></li>
+  </ul>
+</section>
+
+<section id="findings">
+  <div class="section-head">
+    <div class="eyebrow">流程发现</div>
+    <h2>这次学到的</h2>
+  </div>
+  <ul class="items">
+    <li><div class="head">执行要放在新会话里，哪怕是同一个人接着做</div><p>工单里已经写清了上下文，执行不需要对齐时的对话。放在长会话里，设计负责人的缓存读取约为 Codex 输入的 4.5 倍，新会话（spec #17）只有 1.3 倍。路线图「下一步」已写明。</p></li>
+    <li><div class="head">纸面推断，三次被实测推翻</div><p>更新命令会保留"只给 Claude Code"、审查认为派发能处理带斜杠的目录、初始化技能能用哈希核对改动，三处都在实测时被推翻。交出去的命令和判断，要先测过再写。</p></li>
+    <li><div class="head">先拆模块再并行，冲突几乎没有</div><p>四张工单同时改工单脚本，只在入口登记表上冲突了一次，两边都保留就行。</p></li>
+    <li><div class="head">"先发布、再试用"的两段式可行</div><p>第一个 PR 不关闭 spec，GitHub 合并后自动删除集成分支，<code>run-spec</code> 再从 <code>main</code> 重新建同名分支继续，没有遇到问题。</p></li>
+    <li><div class="head">退出 git 跟踪留下的坑，会反复出现</div><p>Matt 的技能、<code>run-spec</code> 先后退出跟踪，每次都有人在切换分支时把它们删掉。初始化技能现在会提醒，但只能靠人记住"先 fetch 再切换"。</p></li>
+  </ul>
+</section>
+
+<section id="next">
+  <div class="section-head">
+    <div class="eyebrow">遗留与下一步</div>
+    <h2>还剩什么</h2>
+  </div>
+  <div class="two-col">
+    <div>
+      <h3>遗留</h3>
+      <ul class="items">
+        <li><div class="head">design-system 的工作流文档还没写"合并后先 fetch 再切换"</div><p>那边下一次收尾更新文档时补上。</p></li>
+        <li><div class="head">CI 的手动触发没有实测</div><p>第一次需要时顺便确认。</p></li>
+        <li><div class="head">安装代码的重复</div><p>审查 P3，接受不修。</p></li>
+      </ul>
+    </div>
+    <div>
+      <h3>下一步</h3>
+      <ul class="items">
+        <li><div class="head">用户审核并合并 PR #52，关闭 #37</div></li>
+        <li><div class="head">design-system：执行 spec #1</div><p>新会话说"你的角色是设计负责人。先读 docs/roadmap.md，然后执行 spec #1"。</p></li>
+        <li><div class="head">video-studio：第一阶段，复刻开场 0:00～0:46</div><p>按路线图先对齐，执行放在新会话里。</p></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<p class="note">数据来源：工单验收评论和 spec 评论里的派发与审查数据；Codex 本机会话记录；设计负责人两个会话的记录，每次调用的用量按消息去重；GitHub Actions。</p>
+</main>
+
+<script>
+(function () {
+  var dispatches = [
+    ["#38", "拆分工单脚本", "feature", "19:49:15", 6.8, 1096464, 1025792, 11767],
+    ["#39", "派发：推送授权、说明留档", "feature", "19:58:28", 7.4, 1101474, 1024000, 10511],
+    ["#40", "合并重装、清理远端分支", "feature", "19:58:42", 7.9, 1411973, 1335680, 12483],
+    ["#41", "审查评论附用量", "feature", "19:58:59", 12.0, 1474746, 1392256, 18029],
+    ["#42", "自检 doctor", "feature", "19:59:16", 10.8, 865559, 799616, 18886],
+    ["#43", "CI 触发", "feature", "20:09:51", 7.9, 1063263, 1014272, 5857],
+    ["审查", "第一批（#38～#42）", "review", "20:12:44", 6.2, 2268376, 2077696, 11267],
+    ["#48", "返工：自检的斜杠", "rework", "20:19:47", 5.2, 830636, 716928, 7190],
+    ["#49", "返工：配置读取规范化", "rework", "20:28:02", 5.5, 726849, 666496, 7076],
+    ["审查", "收尾（整个分支）", "review", "20:35:23", 5.8, 2453816, 2228608, 9436],
+    ["冒烟", "design-system 试用", "trial", "21:15:15", 2.4, 204994, 180736, 2816]
+  ];
+  var designCommits = [
+    ["开始执行 spec #37", "19:48:47"], ["#44 规则文档", "20:23:03"], ["#45 初始化技能", "20:25:32"],
+    ["开 PR #50", "20:41:35"], ["用户合并 PR #50", "21:01:34"], ["用户运行 /setup-run-spec", "21:08:06"],
+    ["用户合并 design-system PR #41", "21:26:49"], ["#51 返工", "21:35:06"]
+  ];
+  var kindVar = { feature: "--s-feature", rework: "--s-rework", review: "--s-review", trial: "--s-trial" };
+  var kindName = { feature: "功能工单", rework: "审查返工", review: "Codex 审查", trial: "试用中的冒烟测试" };
+  var fmt = function (n) { return n.toLocaleString("en-US"); };
+  var NS = "http://www.w3.org/2000/svg";
+  var el = function (name, attrs, text) {
+    var node = document.createElementNS(NS, name);
+    for (var k in attrs) {
+      if ((k === "fill" || k === "stroke") && String(attrs[k]).indexOf("var(") === 0) node.style[k] = attrs[k];
+      else node.setAttribute(k, attrs[k]);
+    }
+    if (text != null) node.textContent = text;
+    return node;
+  };
+  var toMin = function (hms) {
+    var p = hms.split(":").map(Number);
+    return (p[0] - 19) * 60 + p[1] + (p[2] || 0) / 60 - 45;
+  };
+
+  var rows = document.getElementById("dispatch-rows");
+  var sum = [0, 0, 0, 0];
+  dispatches.forEach(function (d) {
+    var tr = document.createElement("tr");
+    tr.innerHTML = '<td><span class="kind"><i class="swatch" style="background: var(' + kindVar[d[2]] + ')"></i>' + d[0] + '</span></td><td>' + d[1] + '</td><td class="num">' + d[3].slice(0, 5) + '</td><td class="num">' + d[4].toFixed(1) + ' 分钟</td><td class="num">' + fmt(d[5]) + '（' + fmt(d[6]) + '）</td><td class="num">' + fmt(d[7]) + '</td>';
+    rows.appendChild(tr);
+    sum[0] += d[4]; sum[1] += d[5]; sum[2] += d[6]; sum[3] += d[7];
+  });
+  var total = document.createElement("tr");
+  total.className = "total";
+  total.innerHTML = '<td>合计</td><td>' + dispatches.length + ' 次</td><td class="num"></td><td class="num">' + sum[0].toFixed(1) + ' 分钟</td><td class="num">' + fmt(sum[1]) + '（' + fmt(sum[2]) + '）</td><td class="num">' + fmt(sum[3]) + '</td>';
+  rows.appendChild(total);
+
+  var figure = document.getElementById("gantt-figure");
+  var tip = document.getElementById("tip");
+  var showTip = function (evt, html, anchor) {
+    tip.innerHTML = html;
+    tip.hidden = false;
+    var box = figure.getBoundingClientRect();
+    var x, y;
+    if (evt && evt.clientX != null) { x = evt.clientX - box.left + 14; y = evt.clientY - box.top + 14; }
+    else { var r = anchor.getBoundingClientRect(); x = r.left - box.left; y = r.bottom - box.top + 8; }
+    x = Math.min(x, box.width - tip.offsetWidth - 8);
+    tip.style.left = Math.max(8, x) + "px";
+    tip.style.top = y + "px";
+  };
+  var hideTip = function () { tip.hidden = true; };
+  var bind = function (node, html) {
+    node.addEventListener("pointermove", function (e) { showTip(e, html, node); });
+    node.addEventListener("pointerleave", hideTip);
+    node.addEventListener("focus", function () { showTip(null, html, node); });
+    node.addEventListener("blur", hideTip);
+  };
+
+  var gantt = document.getElementById("gantt");
+  var W = 880, left = 184, right = 24, top = 30, rowH = 24, barH = 14;
+  var laneCount = dispatches.length + 1;
+  var H = top + laneCount * rowH + 34;
+  var domain = [0, 120];
+  var plotW = W - left - right;
+  var x = function (m) { return left + (m - domain[0]) / (domain[1] - domain[0]) * plotW; };
+  gantt.setAttribute("viewBox", "0 0 " + W + " " + H);
+  gantt.setAttribute("width", W);
+  gantt.style.minWidth = "640px";
+  gantt.style.width = "100%";
+  gantt.style.height = "auto";
+  var tickLabels = ["19:45", "20:00", "20:15", "20:30", "20:45", "21:00", "21:15", "21:30", "21:45"];
+  tickLabels.forEach(function (t, i) {
+    var xx = x(i * 15);
+    gantt.appendChild(el("line", { x1: xx, x2: xx, y1: top - 6, y2: H - 30, "class": "grid-line" }));
+    gantt.appendChild(el("text", { x: xx, y: H - 12, "text-anchor": "middle", "class": "tick-label" }, t));
+  });
+  var switchX = x(toMin("21:01:34"));
+  gantt.appendChild(el("line", { x1: switchX, x2: switchX, y1: 12, y2: H - 30, "class": "marker-line" }));
+  gantt.appendChild(el("text", { x: switchX + 6, y: 20, "class": "marker-text" }, "发布到 main，开始试用"));
+
+  dispatches.forEach(function (d, i) {
+    var y = top + i * rowH;
+    var label = d[0] === "审查" || d[0] === "冒烟" ? d[0] + " · " + d[1].replace(/（.*）/, "") : d[0] + " " + d[1];
+    gantt.appendChild(el("text", { x: left - 10, y: y + rowH / 2 + 4, "text-anchor": "end", "class": "row-label" }, label));
+    var start = toMin(d[3]);
+    var bar = el("rect", {
+      x: x(start), y: y + (rowH - barH) / 2, width: Math.max(4, x(start + d[4]) - x(start)), height: barH, rx: 3,
+      fill: "var(" + kindVar[d[2]] + ")", stroke: "var(--surface)", "stroke-width": 1, tabindex: 0,
+      "aria-label": label + "，" + d[3].slice(0, 5) + " 开始，用时 " + d[4] + " 分钟"
+    });
+    bind(bar, "<b>" + d[0] + " · " + d[1] + "</b><br>" + kindName[d[2]] + " · " + d[3].slice(0, 5) + " 开始 · " + d[4].toFixed(1) + " 分钟<br>输入 " + fmt(d[5]) + "（缓存 " + fmt(d[6]) + "）<br>输出 " + fmt(d[7]));
+    gantt.appendChild(bar);
+  });
+  var laneY = top + dispatches.length * rowH;
+  gantt.appendChild(el("text", { x: left - 10, y: laneY + rowH / 2 + 4, "text-anchor": "end", "class": "row-label" }, "设计负责人和用户"));
+  designCommits.forEach(function (c) {
+    var cx = x(toMin(c[1])), cy = laneY + rowH / 2;
+    var dot = el("rect", { x: cx - 5, y: cy - 5, width: 10, height: 10, transform: "rotate(45 " + cx + " " + cy + ")", fill: "var(--accent)", stroke: "var(--surface)", "stroke-width": 2, tabindex: 0, "aria-label": c[0] + "，" + c[1].slice(0, 5) });
+    bind(dot, "<b>" + c[0] + "</b><br>" + c[1].slice(0, 5));
+    gantt.appendChild(dot);
+  });
+
+  var tokens = document.getElementById("tokens");
+  var groups = [["设计负责人缓存读取", 20.779527, 60.131342], ["Codex 输入", 15.483992, 13.49815]];
+  var TW = 420, tLeft = 12, tRight = 56, tTop = 8, groupH = 92, tBarH = 22;
+  var TH = tTop + groups.length * groupH + 26;
+  var tMax = 70;
+  var tx = function (v) { return tLeft + v / tMax * (TW - tLeft - tRight); };
+  tokens.setAttribute("viewBox", "0 0 " + TW + " " + TH);
+  tokens.style.width = "100%";
+  tokens.style.minWidth = "300px";
+  tokens.style.height = "auto";
+  [0, 10, 20, 30, 40, 50, 60, 70].forEach(function (v) {
+    tokens.appendChild(el("line", { x1: tx(v), x2: tx(v), y1: tTop, y2: TH - 22, "class": "grid-line" }));
+    tokens.appendChild(el("text", { x: tx(v), y: TH - 6, "text-anchor": "middle", "class": "axis-label" }, String(v)));
+  });
+  groups.forEach(function (g, i) {
+    var gy = tTop + i * groupH;
+    tokens.appendChild(el("text", { x: tLeft, y: gy + 16, "class": "row-label" }, g[0]));
+    [[g[1], "--s-prev"], [g[2], "--s-feature"]].forEach(function (s, j) {
+      var by = gy + 24 + j * (tBarH + 4);
+      tokens.appendChild(el("rect", { x: tx(0), y: by, width: tx(s[0]) - tx(0), height: tBarH, rx: 3, fill: "var(" + s[1] + ")" }));
+      tokens.appendChild(el("text", { x: tx(s[0]) + 6, y: by + tBarH / 2 + 4, "class": "bar-value" }, s[0].toFixed(1)));
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

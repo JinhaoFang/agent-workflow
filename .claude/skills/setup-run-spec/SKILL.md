@@ -73,6 +73,7 @@ disable-model-invocation: true
 1. `git rm -r --cached .claude/skills/run-spec`，去掉 `.gitignore` 里为它开的例外；
 2. 运行第 5 步的安装命令重装；
 3. 核对暂存区，然后不带路径提交。只提交指定路径时，git 按磁盘上的现状提交，会把文件重新加回去。
+4. 提醒用户：PR 合并后更新本地 `main`，先 `git fetch origin main:main` 再切过去。先切到还停在旧提交的本地 `main` 再拉取，git 会把 `run-spec` 从磁盘上删掉；删了就重新运行安装命令。
 
 完成标准：文件已提交，标签和 GitHub 设置已生效，PR 已开。
 
