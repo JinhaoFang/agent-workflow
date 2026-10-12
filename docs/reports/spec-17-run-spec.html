@@ -310,6 +310,7 @@ tr.total td { font-weight: 700; }
       <tbody>
         <tr><td><span class="chip">用户</span></td><td>改名 <code>run-spec</code>；本仓库的值放进配置；执行步骤只写在技能里；文档命令护栏放在改名之前，改名放在最后</td></tr>
         <tr><td><span class="chip">用户</span></td><td>汇报改成 HTML 可视化页面并写进流程，只存在仓库里、不发布（审核 PR 时提出，#32）</td></tr>
+        <tr><td><span class="chip">用户</span></td><td>汇报里列出的三项遗留在本 PR 修完（#33）</td></tr>
         <tr><td><span class="chip">设计负责人</span></td><td>审查期间照常派发已解除阻塞的工单，只是不合并，写进技能第 6 步</td></tr>
         <tr><td><span class="chip">设计负责人</span></td><td>最后一批（#25、#27、#28）不单独审查，由收尾审查覆盖</td></tr>
         <tr><td><span class="chip">设计负责人</span></td><td>P3 的重复代码也开返工（#27、#28）：这几处正是串号、漏删会出问题的地方</td></tr>
@@ -346,6 +347,23 @@ tr.total td { font-weight: 700; }
   </ul>
 </section>
 
+<section id="review-additions">
+  <div class="section-head">
+    <div class="eyebrow">审核后补充</div>
+    <h2>你审核 PR 时提出的两件事</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>工单</th><th>内容</th><th>执行</th><th class="num">用时</th><th class="num">输入（其中缓存）</th><th class="num">输出</th></tr></thead>
+      <tbody>
+        <tr><td><a href="https://github.com/JinhaoFang/video-studio/issues/32">#32</a></td><td>汇报改为 HTML 可视化页面，写进汇报规范；只存在仓库里，不发布</td><td>设计负责人</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>
+        <tr><td><a href="https://github.com/JinhaoFang/video-studio/issues/33">#33</a></td><td>三项遗留修完：<code>cleanup</code> 清掉续做状态文件；<code>dispatch</code> 安装成功只打一行；pnpm 白名单版本和 <code>packageManager</code> 不一致时 verify 失败</td><td><span class="kind"><i class="swatch" style="background: var(--s-rework)"></i>Codex</span></td><td class="num">5.5 分钟</td><td class="num">1,065,029（982,656）</td><td class="num">9,369</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">测试 243 → 249 项。上面的时间线和用量对比只统计开 PR 之前的执行过程。</p>
+</section>
+
 <section id="next">
   <div class="section-head">
     <div class="eyebrow">遗留与下一步</div>
@@ -355,15 +373,14 @@ tr.total td { font-weight: 700; }
     <div>
       <h3>遗留</h3>
       <ul class="items">
-        <li><div class="head"><code>.git/run-spec-land/</code> 的续做状态文件不会被 <code>cleanup</code> 清理</div><p>每张工单几百字节。</p></li>
-        <li><div class="head"><code>dispatch</code> 把安装依赖的完整输出混进后台输出</div><p>每次多出约 20 行，设计负责人读输出时多占一点上下文。</p></li>
-        <li><div class="head">pnpm 命令白名单要在升级 pnpm 时手动更新</div><p>文件头写了更新方法，但升级时没有任何东西提醒。</p></li>
+        <li><div class="head">无 <span class="chip">已在本 PR 修完</span></div><p>原先列出的三项由 #33 修完；本机 pnpm 的版本问题查清为正常的版本切换。</p></li>
       </ul>
     </div>
     <div>
       <h3>下一步</h3>
       <ul class="items">
         <li><div class="head">用户审核并合并 PR #31</div></li>
+        <li><div class="head">迁移初始化技能 <span class="chip">待你确认</span></div><p>建议单独开 spec，第一次真正迁移到别的仓库时再做，先定技能从哪里分发。</p></li>
         <li><div class="head">建仓过程复盘</div><p>素材位置见路线图。</p></li>
         <li><div class="head">第一阶段：复刻开场 0:00～0:46</div><p>按路线图先开讨论。</p></li>
       </ul>
