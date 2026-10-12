@@ -4,7 +4,8 @@
  * settings, documentation and configuration. Never fix or write repository
  * state. Git ignore probes use a disposable work tree with copied applicable
  * .gitignore files and the original git directory/excludes; linked directories
- * are actual same-name symlinks, artifact/record directories are real directories.
+ * use normalized checkout-relative paths for same-name symlinks and git probes;
+ * artifact/record directories are real directories.
  * Skill isolation checks project/ancestor and user Codex/shared roots, following
  * real paths. Tracked source skills and installed skills are both accepted.
  * Missing prerequisites exit 1; unexpected probe/runtime errors exit 2.
@@ -388,7 +389,7 @@ const doctor = (values: Values): void => {
       ...config.symlinkDirectories.map(
         (directory): [string, string, boolean] => [
           "worktree 软链接目录",
-          directory,
+          relative(root, resolve(root, directory)),
           true,
         ],
       ),

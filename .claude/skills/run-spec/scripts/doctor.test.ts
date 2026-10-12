@@ -221,6 +221,56 @@ test("doctor accepts ignored installed skills and absent optional triage, and ch
   }
 });
 
+test("doctor normalizes configured linked directories before ignore probes and output", () => {
+  for (const [configured, directory] of [
+    ["references/", "references"],
+    ["./references//", "references"],
+    ["./nested//refs///", "nested/refs"],
+  ]) {
+    const f = fixture();
+    try {
+      f.config.symlinkDirectories = [configured];
+      f.write("docs/agents/run-spec.json", JSON.stringify(f.config));
+      if (directory === "nested/refs") f.write("nested/.gitignore", "refs\n");
+      const result = f.run();
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.equal(result.stderr, "");
+      assert.ok(
+        result.stdout.includes(`通过：worktree 软链接目录忽略 ${directory}；`),
+        result.stdout,
+      );
+      assert.match(result.stdout, /同名软链接实测通过/);
+      assert.ok(!result.stdout.includes(configured), result.stdout);
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
+test("doctor rejects directory-only ignores with or without configured trailing slashes", () => {
+  for (const configured of ["references", "references/", "./references//"]) {
+    const f = fixture();
+    try {
+      f.config.symlinkDirectories = [configured];
+      f.write("docs/agents/run-spec.json", JSON.stringify(f.config));
+      f.write(".gitignore", "references/\n.agents\nout/\n.codex-runs/\n");
+      const result = f.run();
+      fails(
+        result,
+        "worktree 软链接目录忽略 references",
+        /同名软链接实测未被 git 忽略[\s\S]*不要带末尾斜杠/,
+      );
+      assert.ok(
+        result.stderr.includes("不通过：worktree 软链接目录忽略 references；"),
+        result.stderr,
+      );
+      assert.ok(!result.stderr.includes(`忽略 ${configured}/`), result.stderr);
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
 test("doctor detects trailing slashes, missing ignores, nested rules and tracked linked directories", () => {
   for (const directory of ["references", ".agents"]) {
     const f = fixture();
