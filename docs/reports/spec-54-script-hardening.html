@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spec #54 执行汇报</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
+<style>
+/* Layout: one reading column of briefing sections; charts and tables scroll inside their own frames. */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #141820;
+  --ink-2: #485164;
+  --muted: #737d90;
+  --line: #dde2ea;
+  --accent: #2f45b5;
+  --accent-soft: #e6e9fa;
+  --s-feature: #2a78d6;
+  --s-rework: #eb6834;
+  --s-review: #1baf7a;
+  --s-prev: #9aa3b3;
+  --s-trial: #b7791f;
+  --good: #1a7f37;
+  --warn: #9a5b00;
+  --font-display: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101319; --surface: #171b23; --ink: #eceef4; --ink-2: #b6bdcc; --muted: #8b93a5;
+    --line: #2a303c; --accent: #9eabff; --accent-soft: #232a4a;
+    --s-feature: #3987e5; --s-rework: #d95926; --s-review: #199e70; --s-prev: #5c6576; --s-trial: #e0a93b;
+    --good: #4cc46a; --warn: #f0a347; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101319; --surface: #171b23; --ink: #eceef4; --ink-2: #b6bdcc; --muted: #8b93a5;
+  --line: #2a303c; --accent: #9eabff; --accent-soft: #232a4a;
+  --s-feature: #3987e5; --s-rework: #d95926; --s-review: #199e70; --s-prev: #5c6576; --s-trial: #e0a93b;
+  --good: #4cc46a; --warn: #f0a347; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.75; margin: 0; }
+table { font-size: inherit; }
+.page { max-width: 960px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.35; }
+h1 { font-size: clamp(26px, 4.4vw, 38px); }
+h2 { font-size: 22px; }
+h3 { font-size: 16px; font-family: var(--font-body); font-weight: 700; }
+p { margin: 0; max-width: 46em; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, .mono { font-family: var(--font-data); font-size: 0.86em; }
+code { background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--font-data); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 18px; min-width: 0; }
+.section-head { display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 20px; }
+.lede { font-size: 17px; color: var(--ink-2); }
+.muted { color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); }
+
+header.hero { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 1px 10px; border-radius: 999px; border: 1px solid currentColor; }
+.status.pending { color: var(--warn); }
+.status.done { color: var(--good); }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 2px; min-width: 0; }
+.kpi .num { font-family: var(--font-data); font-size: 26px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.kpi .num small { font-size: 14px; color: var(--muted); font-weight: 400; }
+.kpi .label { font-size: 13px; color: var(--ink-2); }
+@media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.deliver { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 28px; margin: 0; padding: 0; list-style: none; }
+.deliver li { display: grid; gap: 2px; min-width: 0; }
+.deliver b { font-weight: 700; }
+@media (max-width: 720px) { .deliver { grid-template-columns: 1fr; } }
+
+.flow { display: grid; gap: 10px; }
+.step { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+.step .n { font-family: var(--font-data); font-size: 13px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); color: var(--ink-2); margin-top: 2px; }
+.step .body { display: grid; gap: 2px; min-width: 0; }
+.step .title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-weight: 700; }
+.step .desc { font-size: 14px; color: var(--ink-2); }
+.who { font-size: 11px; font-weight: 500; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); }
+.who.user { border-color: var(--accent); color: var(--accent); }
+.who.codex { border-color: var(--s-review); }
+.who.script { border-color: var(--s-feature); }
+.loop { border: 1px dashed var(--accent); border-radius: 10px; padding: 14px 14px 10px; display: grid; gap: 10px; position: relative; }
+.loop-label { font-size: 12px; color: var(--accent); font-weight: 500; }
+
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.compare > div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; display: grid; gap: 8px; align-content: start; }
+.compare ol { margin: 0; padding-left: 1.3em; font-size: 13px; color: var(--ink-2); display: grid; gap: 2px; }
+.compare .cmd { font-family: var(--font-data); font-size: 13px; background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; display: grid; gap: 4px; overflow-x: auto; }
+@media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 10px; min-width: 0; position: relative; }
+.chart-scroll { overflow-x: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+svg text { font-family: var(--font-body); }
+.tick-label, .row-label { fill: var(--ink-2); font-size: 12px; }
+.axis-label { fill: var(--muted); font-size: 11px; }
+.grid-line { stroke: var(--line); stroke-width: 1; }
+.marker-line { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.marker-text { fill: var(--accent); font-size: 12px; }
+.bar-value { fill: var(--ink); font-size: 12px; font-family: var(--font-data); }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; line-height: 1.6; padding: 8px 10px; border-radius: 6px; max-width: 260px; z-index: 2; }
+.tip b { font-weight: 700; }
+.ratio { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; }
+.ratio .big { font-family: var(--font-data); font-size: 30px; font-variant-numeric: tabular-nums; }
+
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.04em; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.total td { font-weight: 700; }
+.kind { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chip { display: inline-block; font-size: 12px; padding: 0 8px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+
+.items { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.items li { display: grid; gap: 2px; padding-left: 14px; border-left: 2px solid var(--line); }
+.items li.mine { border-left-color: var(--s-rework); }
+.items .head { font-weight: 700; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.items p { color: var(--ink-2); font-size: 14px; }
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+@media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="page">
+
+<header class="hero">
+  <div class="eyebrow">Spec #54 · 设计负责人 → 用户 · 2026-10-13</div>
+  <h1>工单脚本加固：gh 失败重试一次，自检 .env 是否被忽略</h1>
+  <p class="lede">design-system 真实 spec #1 复盘时发现两个机械问题：gh 偶发失败要人停下来判断能不能重跑；带密钥的 <code>.env</code> 没被忽略，自检查不出来。这两个现在都交给脚本处理。一张工程工单，Codex 一轮做完，设计负责人只做了一处文字和帮助的微调，收尾审查 0 项发现。</p>
+  <div class="meta">
+    <a href="https://github.com/JinhaoFang/video-studio/issues/54">spec #54</a>
+    <a href="https://github.com/JinhaoFang/video-studio/pull/56">PR #56</a><span class="status pending">待用户审核合并，CI 在 PR 上运行</span>
+  </div>
+</header>
+
+<div class="kpis" aria-label="关键数字" id="kpis"></div>
+
+<section id="deliver">
+  <div class="section-head">
+    <div class="eyebrow">交付</div>
+    <h2>做了什么，对你意味着什么</h2>
+  </div>
+  <ul class="deliver">
+    <li><b>gh 偶发失败不再打断执行</b><span class="muted">所有子命令共用一处重试：失败后等 1 秒再试一次。design-system 那期碰到的两次失败（写验收评论、建关系），现在会自己恢复。</span></li>
+    <li><b>重试不会写出重复的东西</b><span class="muted">写评论前先查目标 issue 里有没有同样正文的评论，建关系前先查关系是否已存在；连这一步也查不到时就停下，保留原来的出错提示。</span></li>
+    <li><b><code>.env</code> 没被忽略时自检会报出来</b><span class="muted"><code>doctor</code> 用 git 实测仓库根目录的 <code>.env</code>，没被忽略就不通过，修法是"在 .gitignore 中加入 .env"。配合上一轮复盘加进忽略模板的规则，新仓库默认就忽略它。</span></li>
+    <li><b>说明集中在 <code>--help</code></b><span class="muted">技能正文只留一句指针，重试的细节在 <code>--help</code> 末尾出现一次。</span></li>
+  </ul>
+</section>
+
+<section id="timeline">
+  <div class="section-head">
+    <div class="eyebrow">时间线</div>
+    <h2>派发与关键节点</h2>
+  </div>
+  <div class="legend" id="legend"></div>
+  <div class="chart-scroll"><svg id="gantt" role="img" aria-label="派发时间线：一次工单派发和一次收尾审查"></svg></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>时刻</th><th>节点</th></tr></thead>
+      <tbody id="events"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="cost">
+  <div class="section-head">
+    <div class="eyebrow">成本与效率</div>
+    <h2>用了多少</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>运行</th><th>用时（分钟）</th><th>输入</th><th>其中缓存</th><th>输出</th></tr></thead>
+      <tbody id="dispatch-rows"></tbody>
+    </table>
+  </div>
+  <p class="note">审查的用时含两个审查子代理的累计用时（有并行重叠），进度记录里审查本身是 5.3 分钟。设计负责人主会话这段（从建 spec 到写汇报）共 42 次回复，缓存读取约 1,190 万、输出约 2.9 万 token；这段时间里同一会话还在推进 design-system 的角色文档和 spec #65，两者没有拆开，所以主会话用量偏高，不能直接和 Codex 比。</p>
+</section>
+
+<section id="quality">
+  <div class="section-head">
+    <div class="eyebrow">质量</div>
+    <h2>验证与审查</h2>
+  </div>
+  <ul class="deliver">
+    <li><b>测试 283 → 295</b><span class="muted">新增 12 项，逐条对应验收标准：读重试、连续失败、评论已写上不重复写、评论确认读多页、确认失败停写、关系重查、dry-run 不写不重试、<code>.env</code> 被忽略/未被忽略/被跟踪/不存在。设计负责人在 worktree 里重跑 <code>pnpm verify</code> 通过。</span></li>
+    <li><b>实测</b><span class="muted">临时仓库里 <code>.env</code> 未被忽略时，<code>doctor</code> 退出 1 并给出修法。</span></li>
+    <li><b>收尾审查 0 项</b><span class="muted">Standards、Spec 两条线都没有发现。按批审查没单独做：只有一张小工单，直接并入收尾审查。</span></li>
+  </ul>
+</section>
+
+<section id="decisions">
+  <div class="section-head">
+    <div class="eyebrow">决定</div>
+    <h2>谁定了什么</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>决定</th><th>谁</th></tr></thead>
+      <tbody>
+        <tr><td>脚本改动走一个小 spec，派给 Codex</td><td>设计负责人（用户说继续，按推荐）</td></tr>
+        <tr><td>只重试一次、不重试 git、不扫描其他密钥文件</td><td>设计负责人（写进 spec）</td></tr>
+        <tr><td>等待 1 秒；确认查询失败就停写；被 git 跟踪的 <code>.env</code> 判为未忽略</td><td>Codex 推断，设计负责人接受</td></tr>
+        <tr><td>接受不修：评论去重按正文逐字相等，历史上同样正文会被当作已写上</td><td>设计负责人（验收和审查评论都带提交号和用量，实际撞上的可能很小）</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="issues">
+  <div class="section-head">
+    <div class="eyebrow">问题与处理</div>
+    <h2>遇到什么</h2>
+  </div>
+  <ul class="deliver">
+    <li><b>工单要求反而让技能正文变长了</b><span class="muted">工单写了"技能里描述这两个行为的句子同步更新"，Codex 就把重试的全部细节写进了技能正文和自检说明，顶层 <code>--help</code> 还把同一句重复了 8 次。这正是复盘要消除的"读起来费劲"。设计负责人自己改掉：正文只留指针，帮助里只出现一次。根子在工单的写法，下次写"只在 <code>--help</code> 里说明，技能正文留指针"。</span></li>
+    <li><b>执行没放在新会话里</b><span class="muted">这个 spec 接在复盘的长会话后面执行，又和 design-system 的工作交替进行。小 spec 影响不大，但主会话用量因此没法单独核算。</span></li>
+  </ul>
+</section>
+
+<section id="next">
+  <div class="section-head">
+    <div class="eyebrow">遗留与下一步</div>
+    <h2>接下来</h2>
+  </div>
+  <ul class="deliver">
+    <li><b>用户</b><span class="muted">审核合并 PR #56。</span></li>
+    <li><b>design-system 重装技能</b><span class="muted">#56 合并后运行 <code>docs/agents/run-spec.md</code> 里的安装命令，再跑 <code>doctor</code>。</span></li>
+    <li><b>design-system spec #65</b><span class="muted">命令手册重排（#66 返工中）、分段截图和抽帧拼图（#67）。</span></li>
+  </ul>
+</section>
+
+<p class="note">数据来源：#55 验收评论和 spec #54 审查评论里的派发数据、<code>.codex-runs/</code> 进度记录、设计负责人会话记录（按回复去重、跳过子代理）、git 提交时间。</p>
+</main>
+
+<script>
+(function () {
+  var dispatches = [
+    ["#55", "gh 重试与 .env 自检", "feature", "23:20:33", 10.6, 1736405, 1646080, 13258],
+    ["审查", "收尾（整个分支，含 2 个子代理）", "review", "23:38:07", 9.76, 1245377, 1038336, 6627]
+  ];
+  var events = [
+    ["23:19", "建 spec #54 和工单 #55"], ["23:20", "派发 #55"], ["23:31", "Codex 交回"],
+    ["23:32", "设计负责人微调帮助和技能文字"], ["23:38", "合并、验收关闭 #55；派发收尾审查"],
+    ["23:44", "审查 0 项，开 PR #56"]
+  ];
+  var kindVar = { feature: "--s-feature", review: "--s-review" };
+  var kindName = { feature: "工程工单", review: "Codex 审查" };
+  var fmt = function (n) { return n.toLocaleString("en-US"); };
+  var toMin = function (hms) { var p = hms.split(":").map(Number); return p[0] * 60 + p[1] + (p[2] || 0) / 60; };
+  var NS = "http://www.w3.org/2000/svg";
+  var el = function (name, attrs, text) {
+    var node = document.createElementNS(NS, name);
+    for (var k in attrs) {
+      if ((k === "fill" || k === "stroke") && String(attrs[k]).indexOf("var(") === 0) node.style[k] = attrs[k];
+      else node.setAttribute(k, attrs[k]);
+    }
+    if (text != null) node.textContent = text;
+    return node;
+  };
+
+  var total = dispatches.reduce(function (a, d) { return [a[0] + d[4], a[1] + d[5], a[2] + d[6], a[3] + d[7]]; }, [0, 0, 0, 0]);
+  var tickets = dispatches.filter(function (d) { return d[2] === "feature"; }).length;
+  var kpis = [
+    [tickets + " <small>张</small>", "工程工单，一轮通过，无返工"],
+    [dispatches.length + " <small>次</small>", "Codex 运行，合计 " + total[0].toFixed(1) + " 分钟"],
+    ["283→295", "测试数"],
+    ["0 <small>项</small>", "收尾审查发现"]
+  ];
+  document.getElementById("kpis").innerHTML = kpis.map(function (k) {
+    return '<div class="kpi"><span class="num">' + k[0] + '</span><span class="label">' + k[1] + "</span></div>";
+  }).join("");
+
+  var rows = document.getElementById("dispatch-rows");
+  dispatches.concat([["合计", "", "", "", total[0], total[1], total[2], total[3]]]).forEach(function (d) {
+    var tr = document.createElement("tr");
+    [d[0] + (d[1] ? " " + d[1] : ""), d[4].toFixed(1), fmt(d[5]), fmt(d[6]), fmt(d[7])].forEach(function (v) {
+      var td = document.createElement("td"); td.textContent = v; tr.appendChild(td);
+    });
+    rows.appendChild(tr);
+  });
+
+  var ev = document.getElementById("events");
+  events.forEach(function (e) {
+    var tr = document.createElement("tr");
+    tr.innerHTML = "<td></td><td></td>"; tr.children[0].textContent = e[0]; tr.children[1].textContent = e[1];
+    ev.appendChild(tr);
+  });
+
+  document.getElementById("legend").innerHTML = Object.keys(kindName).map(function (k) {
+    return '<span><i class="swatch" style="background:var(' + kindVar[k] + ')"></i>' + kindName[k] + "</span>";
+  }).join("");
+
+  var starts = dispatches.map(function (d) { return toMin(d[3]); });
+  var ends = dispatches.map(function (d, i) { return starts[i] + d[4]; });
+  events.forEach(function (e) { starts.push(toMin(e[0])); ends.push(toMin(e[0])); });
+  var t0 = Math.floor(Math.min.apply(null, starts) / 5) * 5;
+  var t1 = Math.ceil(Math.max.apply(null, ends) / 5) * 5;
+  var W = 720, left = 150, right = 20, rowH = 34, top = 24, H = top + dispatches.length * rowH + 10;
+  var x = function (m) { return left + (m - t0) / (t1 - t0) * (W - left - right); };
+  var svg = document.getElementById("gantt");
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("width", W);
+  for (var m = t0; m <= t1; m += 5) {
+    svg.appendChild(el("line", { x1: x(m), x2: x(m), y1: top - 6, y2: H - 6, "class": "grid-line" }));
+    var hh = Math.floor(m / 60) % 24, mm = m % 60;
+    svg.appendChild(el("text", { x: x(m), y: 14, "text-anchor": "middle", "class": "axis-label" }, hh + ":" + (mm < 10 ? "0" : "") + mm));
+  }
+  dispatches.forEach(function (d, i) {
+    var y = top + i * rowH;
+    svg.appendChild(el("text", { x: left - 8, y: y + 16, "text-anchor": "end", "class": "row-label" }, d[0] + " " + d[1].slice(0, 8)));
+    svg.appendChild(el("rect", { x: x(toMin(d[3])), y: y + 4, width: Math.max(2, x(toMin(d[3]) + d[4]) - x(toMin(d[3]))), height: 18, rx: 3, fill: "var(" + kindVar[d[2]] + ")" }));
+    svg.appendChild(el("text", { x: x(toMin(d[3]) + d[4]) + 6, y: y + 17, "class": "bar-value" }, d[4].toFixed(1) + " 分"));
+  });
+})();
+</script>
+</body>
+</html>

@@ -413,10 +413,24 @@ test("review empty conclusions fail and failed comments never close specs", () =
     const queue = responses
       .slice(0, index + 1)
       .map((response, i) => ({ ...response, fail: i === index }));
+    if (index === 2)
+      queue.push({
+        args: [
+          "api",
+          "--method",
+          "GET",
+          "repos/owner/repo/issues/17/comments",
+          "--paginate",
+          "--slurp",
+        ],
+        value: [[]],
+        fail: false,
+      });
+    queue.push({ ...responses[index], fail: true });
     const result = run(argumentsForReview, files(), queue);
     assert.equal(result.status, 2);
     assert.match(result.stderr, /^出错：gh 调用失败/);
-    assert.equal(result.calls.length, index + 1);
+    assert.equal(result.calls.length, queue.length);
     if (index === 2)
       assert.equal(existsSync(result.calls[2].args.at(-1)!), false);
   }

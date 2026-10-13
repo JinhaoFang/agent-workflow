@@ -4,6 +4,8 @@
  * arrays and acceptance file contents. No test calls GitHub or uses the network.
  * Temporary directories and bounded child processes use only Node built-ins,
  * keeping these tests runnable after copying the skill to another repository.
+ * Retry fixtures can persist a comment before reporting failure and expose it
+ * through a subsequent paginated read, covering ambiguous write completion.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -25,6 +27,8 @@ type Response = {
   value?: unknown;
   output?: string;
   error?: string;
+  writeBeforeError?: boolean;
+  readComments?: boolean;
 };
 type Call = { args: string[]; body?: string };
 const temporaryDirectory = (): string =>
@@ -154,6 +158,8 @@ if (fileIndex >= 0) call.body = fs.readFileSync(args[fileIndex + 1], "utf8");
 fs.appendFileSync(log, JSON.stringify(call) + "\\n");
 const response = JSON.parse(fs.readFileSync(path.join(root, "responses.json"), "utf8"))[previous];
 const comparable = args.map((arg, index) => index === fileIndex + 1 && fileIndex >= 0 ? "<temporary>" : arg);
+const stored = path.join(root, "posted-comments.json");
+if (response?.writeBeforeError) fs.writeFileSync(stored, JSON.stringify([[{body: call.body, html_url: "https://example.test/comment/1"}]]));
 if (!response || JSON.stringify(comparable) !== JSON.stringify(response.args)) {
   process.stderr.write("unexpected fake gh call: " + JSON.stringify(args));
   process.exitCode = 91;
@@ -162,6 +168,7 @@ else if (response.error) {
   process.stderr.write(response.error);
   process.exitCode = 1;
 }
+else if (response.readComments) process.stdout.write(fs.existsSync(stored) ? fs.readFileSync(stored, "utf8") : "[[]]");
 else if (response.output !== undefined) process.stdout.write(response.output);
 else if (response.value !== undefined) process.stdout.write(JSON.stringify(response.value));
 `,
@@ -708,11 +715,16 @@ test("query and write failures return nonzero; failed acceptance comment never c
       args: ["frontier", "1"],
       responses: [
         { ...repository, error: "not authenticated\nlogin required" },
+        { ...repository, error: "not authenticated\nlogin required" },
       ],
     },
     {
       args: ["frontier", "1"],
-      responses: [repository, { ...children([[]]), error: "missing spec" }],
+      responses: [
+        repository,
+        { ...children([[]]), error: "missing spec" },
+        { ...children([[]]), error: "missing spec" },
+      ],
     },
     {
       args: ["link", "1", "4"],
@@ -726,6 +738,11 @@ test("query and write failures return nonzero; failed acceptance comment never c
           ...post(1, "sub_issues", "sub_issue_id", item(4).id),
           error: "permission denied",
         },
+        children([[]]),
+        {
+          ...post(1, "sub_issues", "sub_issue_id", item(4).id),
+          error: "permission denied",
+        },
       ],
     },
     {
@@ -733,6 +750,8 @@ test("query and write failures return nonzero; failed acceptance comment never c
       responses: [
         repository,
         get(4),
+        { ...comment, error: "permission denied" },
+        list(4, "comments", [[]]),
         { ...comment, error: "permission denied" },
       ],
     },
@@ -743,6 +762,7 @@ test("query and write failures return nonzero; failed acceptance comment never c
         get(4),
         comment,
         { ...close, error: "permission denied" },
+        { ...close, error: "permission denied" },
       ],
     },
   ];
@@ -752,5 +772,159 @@ test("query and write failures return nonzero; failed acceptance comment never c
     assert.equal(result.calls.length, scenario.responses.length);
     assert.match(result.stderr, /^出错：gh 调用失败/);
     assert.equal(result.stderr.trim().split("\n").length, 1);
+    const operation = scenario.responses.at(-1)!.args[0];
+    assert.equal(
+      result.stderr,
+      `出错：gh 调用失败（${operation}），请检查 gh 安装、认证、仓库权限和网络。\n`,
+    );
   }
+});
+
+test("gh reads retry once after a delay and print only the successful result, including dry-run", () => {
+  for (const dryRun of [false, true]) {
+    const responses = [
+      { ...repository, error: "transient failure" },
+      repository,
+      { ...children([[item(2, "closed")]]), error: "transient failure" },
+      children([[item(2, "closed")]]),
+    ];
+    const started = Date.now();
+    const result = run(
+      ["frontier", "1", ...(dryRun ? ["--dry-run"] : [])],
+      responses,
+    );
+    success(result, responses);
+    assert.ok(Date.now() - started >= 2000);
+    assert.equal(result.stderr, "");
+    assert.equal((result.stdout.match(/#2 工单 2/g) ?? []).length, 1);
+  }
+});
+
+test("gh comments retry only when no exact body exists and closure retries once", () => {
+  const responses = [
+    repository,
+    get(4),
+    { ...comment, error: "transient failure" },
+    list(4, "comments", [
+      [{ body: expectedBody.trim() }],
+      [{ body: `${expectedBody}different` }],
+    ]),
+    { ...comment, output: "https://example.test/comment/2\n" },
+    { ...close, error: "transient failure" },
+    close,
+  ];
+  const result = run(["accept", "4", "--result", "通过", ...fields], responses);
+  success(result, responses);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout, "https://example.test/comment/2\n#4 已关闭\n");
+  assert.equal(result.calls[2].body, result.calls[4].body);
+});
+
+test("gh comments reporting failure after writing are not posted twice", () => {
+  const responses = [
+    repository,
+    get(4),
+    { ...comment, error: "response lost", writeBeforeError: true },
+    { ...list(4, "comments", [[]]), readComments: true },
+    close,
+  ];
+  const result = run(["accept", "4", "--result", "通过", ...fields], responses);
+  success(result, responses);
+  assert.equal(result.stdout, "https://example.test/comment/1\n#4 已关闭\n");
+  assert.equal(result.stderr, "");
+  assert.equal(
+    result.calls.filter((call) => call.args[1] === "comment").length,
+    1,
+  );
+});
+
+test("gh comment checks retry reads and match exact bodies on later pages", () => {
+  const responses = [
+    repository,
+    get(4),
+    { ...comment, error: "response lost" },
+    { ...list(4, "comments", [[]]), error: "temporary read failure" },
+    list(4, "comments", [
+      [{ body: "different" }],
+      [{ body: expectedBody, html_url: "https://example.test/existing" }],
+    ]),
+    close,
+  ];
+  const result = run(["accept", "4", "--result", "通过", ...fields], responses);
+  success(result, responses);
+  assert.equal(result.stdout, "https://example.test/existing\n#4 已关闭\n");
+  assert.equal(
+    result.calls.filter((call) => call.args[1] === "comment").length,
+    1,
+  );
+});
+
+test("gh failed comment confirmation stops writes and preserves the original error", () => {
+  const responses = [
+    repository,
+    get(4),
+    { ...comment, error: "response lost" },
+    { ...list(4, "comments", [[]]), error: "read failure" },
+    { ...list(4, "comments", [[]]), error: "read failure" },
+  ];
+  const result = run(["accept", "4", "--result", "通过", ...fields], responses);
+  assert.equal(result.status, 2);
+  assert.equal(result.calls.length, responses.length);
+  assert.equal(result.stdout, "");
+  assert.equal(
+    result.stderr,
+    "出错：gh 调用失败（issue），请检查 gh 安装、认证、仓库权限和网络。\n",
+  );
+  assert.equal(
+    result.calls.filter((call) => call.args[1] === "comment").length,
+    1,
+  );
+});
+
+test("gh relationship retries recheck both edge types and skip writes already applied", () => {
+  for (const applied of [false, true]) {
+    const parentWrite = post(1, "sub_issues", "sub_issue_id", item(4).id);
+    const blockerWrite = post(
+      4,
+      "dependencies/blocked_by",
+      "issue_id",
+      item(2).id,
+    );
+    const responses = [
+      repository,
+      get(1),
+      get(4),
+      children([[]]),
+      dependencies(4, [[]]),
+      get(2),
+      { ...parentWrite, error: "response lost" },
+      children([applied ? [item(4)] : []]),
+      ...(applied ? [] : [parentWrite]),
+      { ...blockerWrite, error: "response lost" },
+      dependencies(4, [applied ? [item(2)] : []]),
+      ...(applied ? [] : [blockerWrite]),
+    ];
+    const result = run(["link", "1", "4", "--blocked-by", "2"], responses);
+    success(result, responses);
+    assert.equal(result.stderr, "");
+    assert.equal(
+      result.stdout,
+      "#4 的父子关系已建立\n#4 被 #2 阻塞的关系已建立\n",
+    );
+  }
+});
+
+test("gh dry-run never calls writes or their retry confirmation reads", () => {
+  const responses = [repository, get(4)];
+  const result = run(
+    ["accept", "4", "--result", "通过", ...fields, "--dry-run"],
+    responses,
+  );
+  success(result, responses);
+  assert.equal(dryWrites(result.stdout).length, 2);
+  assert.ok(
+    result.calls.every(
+      (call) => call.args[0] === "repo" || call.args[2] === "GET",
+    ),
+  );
 });
