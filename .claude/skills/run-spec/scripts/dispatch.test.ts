@@ -172,6 +172,34 @@ process.stdout.write(JSON.stringify(response.value));
             value: {},
             error: commentError ? "permission denied" : undefined,
           },
+          ...(commentError
+            ? [
+                {
+                  args: [
+                    "api",
+                    "--method",
+                    "GET",
+                    `repos/${repo}/issues/21/comments`,
+                    "--paginate",
+                    "--slurp",
+                  ],
+                  value: [[]],
+                },
+                {
+                  args: [
+                    "issue",
+                    "comment",
+                    "21",
+                    "--repo",
+                    repo,
+                    "--body-file",
+                    "<temporary>",
+                  ],
+                  value: {},
+                  error: "permission denied",
+                },
+              ]
+            : []),
         ]
       : []),
   ];
@@ -862,7 +890,7 @@ test("dispatch comment failures block initial and rework dispatch and clean up t
       const name = rework ? "gh-21-2" : "gh-21";
       assert.equal(result.status, 2, result.stderr);
       assert.match(result.stderr, /^出错：gh 调用失败/);
-      assert.equal(result.calls.length, 4);
+      assert.equal(result.calls.length, 6);
       assert.equal(
         result.comments[0].body,
         `## 派发补充说明：${name}\n\n${note}`,

@@ -10,6 +10,7 @@
  * Skill isolation checks project/ancestor and user Codex/shared roots, following
  * real paths. Tracked source skills and installed skills are both accepted.
  * Missing prerequisites exit 1; unexpected probe/runtime errors exit 2.
+ * Check an existing checkout-root .env with git check-ignore without reading it.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -31,6 +32,7 @@ import {
   dispatchConfig,
   entry,
   gh,
+  ghResult,
   git,
   usageError,
   type Command,
@@ -201,7 +203,7 @@ const doctor = (values: Values): void => {
     return process.versions.node;
   });
   check("gh 版本", "安装或升级 GitHub CLI 到 2.83.0 或更新版本。", () => {
-    const result = spawnSync("gh", ["--version"], { encoding: "utf8" });
+    const result = ghResult(["--version"]);
     const match = /gh version (\d+)\.(\d+)\.(\d+)/.exec(result.stdout ?? "");
     requireCheck(
       !result.error && result.status === 0 && !!match,
@@ -218,7 +220,7 @@ const doctor = (values: Values): void => {
     "gh 认证",
     "运行 gh auth login，并确认当前用户有目标仓库的读取权限。",
     () => {
-      const result = spawnSync("gh", ["auth", "status"], { encoding: "utf8" });
+      const result = ghResult(["auth", "status"]);
       requireCheck(
         !result.error && result.status === 0,
         "当前用户的 gh 认证不可用。",
@@ -424,6 +426,18 @@ const doctor = (values: Values): void => {
           : "同名目录产物实测通过，仓库未改动";
       },
     );
+  check("仓库根目录 .env 忽略", "在 .gitignore 中加入 .env", () => {
+    requireCheck(!!checkout, "git 检查未通过，无法确定仓库根目录。");
+    if (!hasEntry(join(checkout, ".env"))) return ".env 不存在";
+    const result = spawnSync("git", ["check-ignore", "-q", "--", ".env"], {
+      cwd: checkout,
+      encoding: "utf8",
+    });
+    if (result.error || (result.status !== 0 && result.status !== 1))
+      throw new Error("无法实测 .env 的 git 忽略规则，请检查 git 和文件权限。");
+    requireCheck(result.status === 0, ".env 未被 git 忽略。");
+    return "git 实测 .env 已被忽略";
+  });
   const agents = document("AGENTS.md");
   check(
     "AGENTS.md 角色一节",
@@ -479,6 +493,7 @@ Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签�
 codex-dispatch、run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；
 执行配置完整、主工作区派发脚本存在；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
 软链接目录用临时目录中的同名软链接实测，识别带末尾斜杠的无效规则；
+仓库根目录 .env 存在时用 git 实测被忽略，未被忽略的修法是在 .gitignore 中加入 .env；不存在时通过；
 AGENTS.md 的角色一节及提交格式中的 Refs、Role 尾注。
 全部通过退出 0；前提或配置不通过退出 1；参数错误或检查运行出错退出 2。`,
 };

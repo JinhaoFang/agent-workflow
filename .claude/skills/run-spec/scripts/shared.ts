@@ -12,6 +12,9 @@
  * Record ownership strips known extensions, then matches the exact
  * gh-<ticket>/review-<spec> name or a hyphen suffix for land, accept and cleanup.
  * All child processes receive argument arrays; no dependencies or shell evaluation.
+ * gh failures wait one second and retry once. Writes may supply an applied-state
+ * probe; comments compare exact bodies across all pages before a second write.
+ * Failed probes preserve the original diagnostic and prevent unsafe rewrites.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -66,8 +69,30 @@ export const reportError = (error: unknown): void => {
   process.exitCode = error instanceof CheckFailure ? 1 : 2;
 };
 
-export const gh = (args: string[]): string => {
+export const ghResult = (
+  args: string[],
+  alreadyApplied?: () => string | undefined,
+) => {
   const result = spawnSync("gh", args, { encoding: "utf8" });
+  if (!result.error && result.status === 0) return result;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+  if (alreadyApplied) {
+    try {
+      const output = alreadyApplied();
+      if (output !== undefined)
+        return { ...result, error: undefined, status: 0, stdout: output };
+    } catch {
+      return result;
+    }
+  }
+  return spawnSync("gh", args, { encoding: "utf8" });
+};
+
+export const gh = (
+  args: string[],
+  alreadyApplied?: () => string | undefined,
+): string => {
+  const result = ghResult(args, alreadyApplied);
   if (result.error || result.status !== 0) {
     throw new Error(
       `gh 调用失败（${args[0]}），请检查 gh 安装、认证、仓库权限和网络。`,
@@ -104,10 +129,37 @@ export const github = (dryRun: boolean) => {
         gh(["api", "--method", "GET", path, "--paginate", "--slurp"]),
       ) as Issue[][]
     ).flat();
-  const write = (args: string[], message?: string): void => {
+  const write = (
+    args: string[],
+    message?: string,
+    alreadyApplied?: () => string | undefined,
+  ): void => {
     if (dryRun) console.log(JSON.stringify(["gh", ...args]));
     else {
-      const output = gh(args);
+      const probe =
+        args[0] === "issue" && args[1] === "comment"
+          ? () => {
+              const body = readFileSync(
+                args[args.indexOf("--body-file") + 1],
+                "utf8",
+              );
+              const comments = JSON.parse(
+                gh([
+                  "api",
+                  "--method",
+                  "GET",
+                  `${endpoint(issueNumber(args[2]))}/comments`,
+                  "--paginate",
+                  "--slurp",
+                ]),
+              ) as { body: string; html_url: string }[][];
+              const existing = comments
+                .flat()
+                .find((comment) => comment.body === body);
+              return existing ? (existing.html_url ?? "") : undefined;
+            }
+          : alreadyApplied;
+      const output = gh(args, probe);
       if (message !== undefined) console.log(message);
       else if (output) console.log(output);
     }
@@ -235,7 +287,7 @@ export const ticketIntegration = (root: string, endpoint: string) => {
 export const runCommands = (commands: Record<string, Command>): void => {
   const [command, ...input] = process.argv.slice(2);
   const allHelp = Object.values(commands)
-    .map((item) => item.help)
+    .map((item) => `${item.help}\n${ghHelp}`)
     .join("\n\n");
   if (!command) throw usageError("缺少子命令。", allHelp);
   if (command === "--help") {
@@ -246,7 +298,7 @@ export const runCommands = (commands: Record<string, Command>): void => {
     throw usageError(`未知子命令：${command}`, allHelp);
   const definition = commands[command];
   if (input.includes("--help")) {
-    console.log(`用法：${definition.help}`);
+    console.log(`用法：${definition.help}\n${ghHelp}`);
     return;
   }
   let parsed;
@@ -265,7 +317,7 @@ export const runCommands = (commands: Record<string, Command>): void => {
   }
   const { values, positionals } = parsed;
   if (values.help) {
-    console.log(definition.help);
+    console.log(`${definition.help}\n${ghHelp}`);
     return;
   }
   if (positionals.length !== definition.positionals) {
@@ -275,3 +327,5 @@ export const runCommands = (commands: Record<string, Command>): void => {
 };
 
 export const entry = "node .claude/skills/run-spec/scripts/tickets.ts";
+const ghHelp =
+  "gh 调用失败后等待 1 秒重试一次；评论重试前查询目标 issue，已有完全相同正文时视为成功；查询失败则停止写入。关闭照常重试，建关系重试前检查是否已存在。--dry-run 不执行或重试写操作；连续失败保留原出错提示和退出码。";

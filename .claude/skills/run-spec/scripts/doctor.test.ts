@@ -4,6 +4,8 @@
  * each missing prerequisite, error/usage exits, source and installed skill
  * layouts, main-worktree fallback and ignore probes without repository writes.
  * Run with node --test on this file or pnpm verify. No network or GitHub writes.
+ * Root .env cases use git's effective ignore behavior without reading secrets;
+ * direct version/auth probes exercise the same bounded gh retry as API calls.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -82,6 +84,8 @@ const fixture = () => {
       delete_branch_on_merge: true,
     },
     apiExit: 0,
+    versionFailures: 0,
+    authFailures: 0,
   };
   const ghCalls = join(temporary, "gh-calls.jsonl");
   writeFileSync(
@@ -89,10 +93,11 @@ const fixture = () => {
     `#!${process.execPath}
 const fs = require("node:fs");
 const args = process.argv.slice(2);
+const previous = fs.existsSync(process.env.DOCTOR_CALLS) ? fs.readFileSync(process.env.DOCTOR_CALLS, "utf8").trim().split("\\n").map(JSON.parse).filter(call => JSON.stringify(call) === JSON.stringify(args)).length : 0;
 fs.appendFileSync(process.env.DOCTOR_CALLS, JSON.stringify(args) + "\\n");
 const data = JSON.parse(fs.readFileSync(process.env.DOCTOR_RESPONSES,"utf8"));
-if (JSON.stringify(args) === JSON.stringify(["--version"])) console.log(data.version);
-else if (JSON.stringify(args) === JSON.stringify(["auth","status"])) process.exitCode = data.auth;
+if (JSON.stringify(args) === JSON.stringify(["--version"])) { if (previous < data.versionFailures) process.exitCode = 1; else console.log(data.version); }
+else if (JSON.stringify(args) === JSON.stringify(["auth","status"])) process.exitCode = previous < data.authFailures ? 1 : data.auth;
 else if (JSON.stringify(args) === JSON.stringify(["repo","view","--json","nameWithOwner"])) console.log(JSON.stringify(data.repository));
 else if (args[0] === "api" && args[1] === "--method" && args[2] === "GET" && data.apiExit) process.exitCode = data.apiExit;
 else if (JSON.stringify(args) === JSON.stringify(["api","--method","GET","repos/${repo}/labels","--paginate","--slurp"])) console.log(JSON.stringify(data.labels));
@@ -548,6 +553,8 @@ test("doctor help lists all checks and incorrect arguments exit 2 without invoki
       "派发脚本",
       ".codex-runs",
       "末尾斜杠",
+      ".env",
+      "重试一次",
       "AGENTS.md",
       "Refs",
       "Role",
@@ -564,6 +571,103 @@ test("doctor help lists all checks and incorrect arguments exit 2 without invoki
       assert.match(result.stderr, /^出错：/);
       assert.deepEqual(result.calls, []);
     }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor passes when root .env does not exist and ignores nested env files", () => {
+  const f = fixture();
+  try {
+    f.write("nested/.env", "FIXTURE_SECRET=placeholder\n");
+    const result = f.run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /通过：仓库根目录 \.env 忽略；\.env 不存在/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor passes when git ignores root .env, including invocation from a subdirectory", () => {
+  const f = fixture();
+  try {
+    f.write(".env", "FIXTURE_SECRET=placeholder\n");
+    f.write(
+      ".gitignore",
+      `${readFileSync(join(f.root, ".gitignore"), "utf8")}\n.env\n`,
+    );
+    const result = f.run(["doctor"], { cwd: join(f.root, "docs") });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /通过：仓库根目录 \.env 忽略；git 实测 \.env 已被忽略/,
+    );
+    assert.doesNotMatch(
+      result.stdout + result.stderr,
+      /FIXTURE_SECRET|placeholder/,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor rejects root .env that is not ignored with the exact repair", () => {
+  const f = fixture();
+  try {
+    f.write(".env", "FIXTURE_SECRET=placeholder\n");
+    const result = f.run();
+    fails(result, "仓库根目录 .env 忽略", /修法：在 \.gitignore 中加入 \.env/);
+    assert.match(result.stderr, /\.env 未被 git 忽略/);
+    assert.doesNotMatch(
+      result.stdout + result.stderr,
+      /FIXTURE_SECRET|placeholder/,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor rejects tracked root .env even when an ignore pattern matches", () => {
+  const f = fixture();
+  try {
+    f.write(".env", "FIXTURE_SECRET=placeholder\n");
+    f.git(["add", ".env"]);
+    f.write(
+      ".gitignore",
+      `${readFileSync(join(f.root, ".gitignore"), "utf8")}\n.env\n`,
+    );
+    fails(f.run(), "仓库根目录 .env 忽略", /在 \.gitignore 中加入 \.env/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor version and auth gh probes retry once and keep existing failure exits", () => {
+  const f = fixture();
+  try {
+    f.responses.versionFailures = 1;
+    f.responses.authFailures = 1;
+    const recovered = f.run();
+    assert.equal(recovered.status, 0, recovered.stderr);
+    assert.equal(recovered.stderr, "");
+    assert.equal(
+      recovered.calls.filter((args) => args[0] === "--version").length,
+      2,
+    );
+    assert.equal(
+      recovered.calls.filter((args) => args[0] === "auth").length,
+      2,
+    );
+    f.responses.versionFailures = 2;
+    f.responses.authFailures = 2;
+    const failed = f.run();
+    fails(failed, "gh 版本", /无法读取 gh 版本/);
+    fails(failed, "gh 认证", /当前用户的 gh 认证不可用/);
+    assert.equal(
+      failed.calls.filter((args) => args[0] === "--version").length,
+      2,
+    );
+    assert.equal(failed.calls.filter((args) => args[0] === "auth").length, 2);
   } finally {
     f.cleanup();
   }

@@ -57,6 +57,12 @@ const link = (values: Values, numbers: number[]): void => {
         `sub_issue_id=${childIssue.id}`,
       ],
       `#${child} 的父子关系已建立`,
+      () =>
+        list(`${endpoint(parent)}/sub_issues`).some(
+          (item) => item.id === childIssue.id,
+        )
+          ? ""
+          : undefined,
     );
   for (const blocker of pending) {
     if (existing.some((item) => item.id === blocker.id))
@@ -72,6 +78,12 @@ const link = (values: Values, numbers: number[]): void => {
           `issue_id=${blocker.id}`,
         ],
         `#${child} 被 #${blocker.number} 阻塞的关系已建立`,
+        () =>
+          list(`${endpoint(child)}/dependencies/blocked_by`).some(
+            (item) => item.id === blocker.id,
+          )
+            ? ""
+            : undefined,
       );
   }
 };
