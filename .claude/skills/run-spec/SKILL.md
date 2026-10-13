@@ -7,7 +7,7 @@ description: 执行 GitHub 上的 spec 和工单：选出可做的工单，role:
 
 你是设计负责人（`docs/roles/design.md`）。工单约定见 `docs/agents/issue-tracker.md`：执行角色标签、边界、测试接缝、验收产物、集成分支。本仓库特有的值（验证命令、Codex 权限、汇报目录、实测用时等）见 `docs/agents/run-spec.md`。上下文只靠指针传递：派发时给 issue 号，不复述工单内容。
 
-机械步骤都由工单脚本 `node .claude/skills/run-spec/scripts/tickets.ts <子命令>` 完成：`frontier` 选单，`link` 建关系，`dispatch` 派发，`land` 合并，`accept` 写验收评论，`review` 把审查结论评论到 spec，`cleanup` 收尾清理，`doctor` 自检前提和配置（根目录 .env 存在时用 git 实测被忽略，未被忽略就提示在 .gitignore 中加入 .env；不存在时通过）。各子命令的参数看 `--help`；写操作和删除先加 `--dry-run` 核对，不执行或重试写操作。脚本的 gh 调用失败后等待 1 秒重试一次：读操作直接重试，评论重试前查询目标 issue，已有完全相同正文时视为成功，查询失败则停止写入；关闭照常重试，建关系重试前检查是否已存在；连续失败保留原出错提示和退出码。
+机械步骤都由工单脚本 `node .claude/skills/run-spec/scripts/tickets.ts <子命令>` 完成：`frontier` 选单，`link` 建关系，`dispatch` 派发，`land` 合并，`accept` 写验收评论，`review` 把审查结论评论到 spec，`cleanup` 收尾清理，`doctor` 自检前提和配置。各子命令的参数，以及 gh 偶发失败时的自动重试，看 `--help`；写操作和删除先加 `--dry-run` 核对。
 
 名字由脚本决定：集成分支 `spec/<S>-<英文短名>`，工单分支 `ticket/<T>`，worktree 在主工作区旁边的 `<仓库目录>.worktrees/<T>`，派发记录 `gh-<T>`，验收产物在配置的验收产物目录下的 `spec-<S>/<T>/`。
 

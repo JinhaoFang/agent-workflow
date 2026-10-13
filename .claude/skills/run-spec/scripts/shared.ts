@@ -286,9 +286,10 @@ export const ticketIntegration = (root: string, endpoint: string) => {
 
 export const runCommands = (commands: Record<string, Command>): void => {
   const [command, ...input] = process.argv.slice(2);
-  const allHelp = Object.values(commands)
-    .map((item) => `${item.help}\n${ghHelp}`)
-    .join("\n\n");
+  const allHelp = [
+    ...Object.values(commands).map((item) => item.help),
+    ghHelp,
+  ].join("\n\n");
   if (!command) throw usageError("缺少子命令。", allHelp);
   if (command === "--help") {
     console.log("用法：" + allHelp);
