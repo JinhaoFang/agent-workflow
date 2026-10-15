@@ -77,7 +77,7 @@
 
 1. **基线**【初始化】：统一包管理器，修到验证命令通过，补好 `.gitignore`。
 2. **远程**【初始化】：推送前检查要上传的文件里没有媒体和密钥；建远程仓库，建分诊标签和执行角色标签；合并方式锁成只用 merge commit，打开合并后自动删除分支。
-3. **规则**：先加载 `writing-for-agents`，再按 `dual-role-workflow` 写 `AGENTS.md`、两份角色文档、工作流总图和工单约定。角色文档按 `/setup-run-spec` 第 4 步核对两处：分工按决定和体量分，指向领域规则的指针按触发条件写。
+3. **规则**：先加载 `writing-for-agents`，再按 `dual-role-workflow` 写 `AGENTS.md`、两份角色文档、工作流总图和工单约定。角色文档按 `/setup-run-spec` 第 4 步核对三处：分工按决定和体量分，做决定的三条写在「工作流」一节，指向领域规则的指针按触发条件写。
 4. **DispatchDock**【初始化】：固定版本，只装到 `.claude/skills/`。安装命令见 `docs/research/dispatchdock-notes.md`。
 5. **执行技能**【初始化】：运行 `docs/agents/run-spec.md`「装到别的仓库」的安装命令，再由人输入 `/setup-run-spec`。它检查第 4 项，写执行配置和工单约定，并做第 6 项的冒烟测试。
 6. **冒烟测试**【初始化】：派一个只读任务给 Codex，确认五件事：认对角色、守住规则、能用 `gh`、汇报格式齐全、看不到设计负责人的技能。
