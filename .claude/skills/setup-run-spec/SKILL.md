@@ -84,10 +84,10 @@ disable-model-invocation: true
 
 1. 再运行自检命令。不通过的项按提示修好再跑，直到全部通过。
 2. 派一个只读任务给 Codex，派发脚本和权限用配置里的值，确认五件事：认对角色、守住规则、能用 `gh`、汇报格式齐全、看不到设计负责人的技能（`codex-dispatch`、`dual-role-workflow`、`run-spec`、`setup-run-spec`）。
-3. 告诉用户以后怎么更新这两个技能：重新运行安装命令
+3. 告诉用户这两个技能固定在哪个版本、怎么升级：安装命令里 `#` 后面是版本（`JinhaoFang/video-studio` 的 tag），升级就换成新版本再运行
 
    ```bash
-   npx skills add JinhaoFang/video-studio --skill run-spec --skill setup-run-spec -a claude-code -y
+   npx skills add JinhaoFang/video-studio#workflow-v1 --skill run-spec --skill setup-run-spec -a claude-code -y
    ```
 
    `npx skills update` 和按锁文件恢复的命令都会把它们装进 `.agents/skills/`，Codex 就能看到了。用 `update` 更新别的技能时点名技能，更新完运行自检。安装会改 `skills-lock.json` 里这两项的哈希，要提交；不提交的话主工作区不干净，`land` 会拒绝合并。

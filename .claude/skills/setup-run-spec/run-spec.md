@@ -5,10 +5,10 @@
 - `docs/agents/run-spec.json`：工单脚本要读的值；
 - 本文：配置项的含义，以及脚本用不到、但设计负责人执行时要知道的值。
 
-`run-spec` 和 `setup-run-spec` 从 `JinhaoFang/video-studio` 安装，不进 git。更新时重新运行安装命令：
+`run-spec` 和 `setup-run-spec` 从 `JinhaoFang/video-studio` 的版本 tag 安装，不进 git。升级时把命令里 `#` 后面的版本换成新 tag 再运行：
 
 ```bash
-npx skills add JinhaoFang/video-studio --skill run-spec --skill setup-run-spec -a claude-code -y
+npx skills add JinhaoFang/video-studio#workflow-v1 --skill run-spec --skill setup-run-spec -a claude-code -y
 ```
 
 不要用 `npx skills update` 或按锁文件恢复：它们会把这两个技能装进 `.agents/skills/`，Codex 就能看到了。更新完运行自检：`node .claude/skills/run-spec/scripts/tickets.ts doctor`，再提交 `skills-lock.json` 里变了的两项哈希，`land` 要求主工作区干净。
