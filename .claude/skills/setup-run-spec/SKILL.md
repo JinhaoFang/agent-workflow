@@ -1,6 +1,6 @@
 ---
 name: setup-run-spec
-description: 把双角色执行流程 run-spec 接进当前仓库：查看、讲清步骤、写配置和工单约定、建标签、设合并方式，最后自检和冒烟测试。每个仓库运行一次；已经接过的仓库再运行只报告差异。
+description: 把双角色执行流程 run-spec 接进当前仓库：读懂仓库、讲清步骤、按仓库生成角色文档、写配置和工单约定、建标签、设合并方式，最后自检和冒烟测试。每个仓库运行一次；已经接过的仓库再运行只报告差异。
 disable-model-invocation: true
 ---
 
@@ -16,24 +16,26 @@ disable-model-invocation: true
 
 再查自检命令管不到的，和它的结果一起整理成一张事实表：
 
-- **Matt 的技能**：装了哪些。
-- **DispatchDock**：`dual-role-workflow` 是否和 `codex-dispatch` 一样只在 `.claude/skills/`。Codex 能看到 `.agents/skills/` 下的全部技能。
+- **Matt 的技能**：装了哪些。装了 `implement-spec` 的，建议移除：它是另一套执行 spec 的流程（Claude 子代理、不分执行角色），和 `run-spec` 并存时两边的约定会混用。
+- **DispatchDock**：只需要 `codex-dispatch`，它只在 `.claude/skills/`。Codex 能看到 `.agents/skills/` 下的全部技能。装了 `dual-role-workflow` 的，建议卸掉：它的描述按审美分工写，每次会话都会加载；分工规则以 [roles.md](roles.md) 为准。
 - **规则文档**：`docs/roles/` 下有没有设计负责人和工程负责人两份角色文档。
-- **基线**：包管理器、锁文件和验证命令；用派发 Codex 的那个系统用户实际跑一遍验证命令；最近几次 CI 有没有间歇性失败。
+- **基线**：包管理器、锁文件和验证命令；用派发 Codex 的那个系统用户实际跑一遍验证命令，再在一个新的 worktree 里跑一遍，确认不依赖被忽略的目录（例如装在仓库里的工具链）；最近几次 CI 有没有间歇性失败。
 - **worktree 要用的目录**：哪些不进 git 的目录 Codex 要读（参考资料、第三方技能）。
 - **接过没有**：有 `docs/agents/run-spec.json`，或 `.claude/skills/run-spec/` 进了 git（早期手工迁移的做法）。
 - 仓库已经在开发（有提交历史、进行中的 spec）时，再按 [existing-repo.md](existing-repo.md) 多查几项。
 
-完成标准：事实表里每一项都是命令的实际输出或文件原文，查不到的写"未知"。
+然后读完方案或设计文档、术语表、ADR、进行中 spec 的全文，按 [roles.md](roles.md)「领域画像」整理一张画像，角色文档的生成部分都从这里来。只读目录或开头写出来的画像会和已定的决定冲突。
+
+完成标准：事实表里每一项都是命令的实际输出或文件原文，查不到的写"未知"；画像的每一项都标了【原文】（附出处）、【推断】或【未知】。
 
 ## 2. 汇报并讲清步骤
 
-把事实表给用户看，然后讲这次要走的步骤：哪些你来写，哪些要用户做，哪些在对话里一起改。用户确认以后再动手。
+把事实表和领域画像给用户看，画像里「守不住的规则」逐条附上保证它的办法（权限、CI 检查、脚本）。然后讲这次要走的步骤：哪些你来写，哪些要用户做，哪些在对话里一起改。用户确认以后再动手。
 
 前提缺了就停下，给出补齐的办法；用户同意后可以代为运行安装命令：
 
 - **Matt 的技能没装**：`npx skills add mattpocock/skills`，交互选择要装的技能。装好以后，`/setup-matt-pocock-skills` 只能由用户手动运行，工单选 GitHub。提醒用户运行，跑完再继续。
-- **DispatchDock 没装**：把 `https://github.com/LBEILC/DispatchDock` 克隆进参考资料目录，切到固定版本（当前 `v0.1.3`），在仓库根目录运行 `node <克隆目录>/installer/install.mjs --host claude-code --claude-dir "$PWD/.claude/skills" --no-config --yes`，只装进本仓库。
+- **DispatchDock 没装**：把 `https://github.com/LBEILC/DispatchDock` 克隆进参考资料目录，切到固定版本（当前 `v0.1.3`），在仓库根目录运行 `node <克隆目录>/installer/install.mjs --host claude-code --claude-dir "$PWD/.claude/skills" --skill codex-dispatch --no-config --yes`，只把派发技能装进本仓库。卸掉已装的 `dual-role-workflow`：同一条命令把 `--skill codex-dispatch --no-config` 换成 `--uninstall --skill dual-role-workflow`。
 
 完成标准：用户确认了步骤，前提齐全。
 
@@ -46,7 +48,10 @@ disable-model-invocation: true
 - 要软链接进 worktree 的目录；
 - 验收产物根目录；
 - Codex 的权限：推荐完全权限，Codex 要联网、用 `gh` 读 issue；
+- 独占资源；
 - 汇报目录。
+
+再问领域画像里标【推断】或【未知】、又会改变角色文档的项，一次一项，带推荐。不改变文档的不问。
 
 完成标准：每项都有答案，或用户接受了推荐。
 
@@ -56,7 +61,7 @@ disable-model-invocation: true
 
 - `docs/agents/run-spec.json` 和 `docs/agents/run-spec.md`：按模板 [run-spec.json](run-spec.json)、[run-spec.md](run-spec.md)。
 - 工单约定：把 [issue-tracker-conventions.md](issue-tracker-conventions.md) 追加进 `docs/agents/issue-tracker.md`，里面的例子换成本仓库的。
-- `.gitignore`：按 [gitignore.txt](gitignore.txt)。
+- `.gitignore`：按 [gitignore.txt](gitignore.txt)。`skills-lock.json` 进 git，别的机器按它装同一版本的技能。
 - `AGENTS.md` 的「Agent skills」一节加一小节：
 
   ```markdown
@@ -66,10 +71,7 @@ disable-model-invocation: true
   ```
 
 - GitHub：建 `role:engineering`、`role:design` 两个标签（`ready-for-human` 来自 Matt 的设置）；合并方式只允许 merge commit，打开合并后自动删除分支。
-- 规则文档：`AGENTS.md` 的角色一节和提交格式、两份角色文档，缺的或不全的按 `dual-role-workflow` 技能给出建议，和用户一起改，由用户定。仓库已有的命名和结构要改，先问。给建议时核对三处，设计负责人在对齐、写 spec、拆工单和执行时都靠它们：
-  - 设计负责人的分工：自己做的是决定和定稿，要靠整体判断验收的工作先做定稿；定稿之后同类的批量实现，照定稿派给工程负责人。分工清单和角色文档开头的原则说法要一致，清单写得比原则宽时，agent 会照清单做。
-  - 做决定的三条写在设计负责人角色文档的「工作流」一节，`run-spec` 只指向那里：范围、费用、审美方向和难回头的方向（推翻它要返工多张工单或已交付的成品）先给用户看，用户授权代行验收时也一样；其余的由设计负责人按推荐定，写进 spec 或工单，回复里单列；用户对工作方式的反馈写进规则文档或路线图的待定项，不只记在本机记忆里。只写「技术选型要问」而不写回头的代价，agent 会把每个技术细节都拿去问。
-  - 指向领域规则的指针按触发条件写，写成「做<某类工作>之前读 <文档>「<某节>」」。只写「整体流程见 …」的指针，做具体工作时不会被想起来。
+- 规则文档：`AGENTS.md` 的角色一节和提交格式、两份角色文档，按 [roles.md](roles.md) 生成：固定部分照写，生成部分用领域画像填。和用户一起改，由用户定；仓库已有的命名和结构要改，先问。已有角色文档的仓库，对照模板逐节报告差异，固定部分缺的补上，生成部分和画像对不上的提出来。
 
 已经接过的仓库：只报告当前文件和模板的差异，用户同意的才改，不覆盖已有配置。`run-spec` 进了 git 时，提议换成安装的版本：
 
@@ -83,11 +85,11 @@ disable-model-invocation: true
 ## 5. 自检和冒烟测试
 
 1. 再运行自检命令。不通过的项按提示修好再跑，直到全部通过。
-2. 派一个只读任务给 Codex，派发脚本和权限用配置里的值，确认五件事：认对角色、守住规则、能用 `gh`、汇报格式齐全、看不到设计负责人的技能（`codex-dispatch`、`dual-role-workflow`、`run-spec`、`setup-run-spec`）。
+2. 派一个只读任务给 Codex，派发脚本和权限用配置里的值，确认五件事：认对角色、守住规则、能用 `gh`、汇报格式齐全、看不到设计负责人的技能（`codex-dispatch`、`run-spec`、`setup-run-spec`）。
 3. 告诉用户这两个技能固定在哪个版本、怎么升级：安装命令里 `#` 后面是版本（`JinhaoFang/video-studio` 的 tag），升级就换成新版本再运行
 
    ```bash
-   npx skills add JinhaoFang/video-studio#workflow-v1 --skill run-spec --skill setup-run-spec -a claude-code -y
+   npx skills add JinhaoFang/video-studio#workflow-v2 --skill run-spec --skill setup-run-spec -a claude-code -y
    ```
 
    `npx skills update` 和按锁文件恢复的命令都会把它们装进 `.agents/skills/`，Codex 就能看到了。用 `update` 更新别的技能时点名技能，更新完运行自检。安装会改 `skills-lock.json` 里这两项的哈希，要提交；不提交的话主工作区不干净，`land` 会拒绝合并。
