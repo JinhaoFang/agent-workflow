@@ -8,7 +8,7 @@
 `run-spec` 和 `setup-run-spec` 从 `JinhaoFang/video-studio` 的版本 tag 安装，不进 git。升级时把命令里 `#` 后面的版本换成新 tag 再运行：
 
 ```bash
-npx skills add JinhaoFang/video-studio#workflow-v1 --skill run-spec --skill setup-run-spec -a claude-code -y
+npx skills add JinhaoFang/video-studio#workflow-v2 --skill run-spec --skill setup-run-spec -a claude-code -y
 ```
 
 不要用 `npx skills update` 或按锁文件恢复：它们会把这两个技能装进 `.agents/skills/`，Codex 就能看到了。更新完运行自检：`node .claude/skills/run-spec/scripts/tickets.ts doctor`，再提交 `skills-lock.json` 里变了的两项哈希，`land` 要求主工作区干净。
@@ -29,6 +29,7 @@ npx skills add JinhaoFang/video-studio#workflow-v1 --skill run-spec --skill setu
 ## 执行时要知道的其他值
 
 - **按批审查**：审查不走 `dispatch`，用 `dispatchScript` 指向的派发脚本直接派发，`--sandbox` 填 `codexSandbox`。
+- **独占资源**：`<值>`。同一时间只能给一张工单用的资源（例如单张 GPU），没有写"无"。用到它的工单正文写一行「独占资源：<名称>」，`run-spec` 第 2 步一次只派一张。
 - **汇报目录**：`<值>`。汇报的写法见 `run-spec` 技能里的 `report.md`。
 - **实测用时**：第一个 spec 跑完后补上：一张工程工单派发要多久、一次按批审查要多久、验证命令要多久。
 - **常见的共享登记处**：并行的工单都要往里加一项的地方（命令登记表、验证步骤表、CI 工作流等），派发的补充说明写"只加自己那一项"。遇到一处记一处。
