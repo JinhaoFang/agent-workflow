@@ -7,6 +7,8 @@
  * PATH git wrapper that fails only the requested deletion command.
  * Install/verify scripts append observable step records; install failures and
  * conflict retries demonstrate ordering without reading internal CLI functions.
+ * Protection cases create installation snapshots through dispatch, then assert
+ * kept paths/content and cleanup-safe summaries through the public land CLI.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -15,8 +17,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -223,6 +227,223 @@ const readSteps = (
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
+
+const dispatchInstallation = (f: ReturnType<typeof fixture>) => {
+  f.git(["worktree", "remove", f.worktree]);
+  f.git(["branch", "-D", "ticket/21"]);
+  f.commit(
+    ".gitignore",
+    ".codex-runs\nout\nnode_modules\nreferences\nclones\nextra-*\n",
+  );
+  f.commit(
+    "install.cjs",
+    `${readFileSync(join(f.root, "install.cjs"), "utf8")}\nfs.mkdirSync("node_modules/package", {recursive:true});\nfs.writeFileSync("node_modules/package/installed.txt", "dependency");\n`,
+  );
+  const script = join(f.temporary, "dispatcher.cjs");
+  writeFileSync(script, "process.exitCode = 0;\n");
+  f.commit(
+    "docs/agents/run-spec.json",
+    JSON.stringify({
+      ...f.config,
+      dispatchScript: script,
+      symlinkDirectories: ["references"],
+    }),
+  );
+  mkdirSync(join(f.root, "references"));
+  writeFileSync(join(f.root, "references/shared.txt"), "shared source");
+  const responsesFile = join(f.temporary, "responses.json");
+  const original = readFileSync(responsesFile, "utf8");
+  const responses = JSON.parse(original);
+  responses.splice(1, 0, {
+    args: ["api", "--method", "GET", "repos/fixture/repo/issues/21"],
+    value: {
+      number: 21,
+      state: "open",
+      labels: [{ name: "role:engineering" }],
+    },
+  });
+  writeFileSync(responsesFile, JSON.stringify(responses));
+  const result = spawnSync(process.execPath, [cli, "dispatch", "21"], {
+    cwd: f.root,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${f.temporary}${delimiter}${process.env.PATH}`,
+      LAND_FIXTURE_ROOT: f.temporary,
+    },
+  });
+  writeFileSync(responsesFile, original);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.git(["status", "--porcelain"], f.worktree), "");
+  f.commit("ticket.txt", "ticket implementation", f.worktree);
+};
+
+const saveEvidence = (name: string, output: string): void => {
+  const directory = process.env.TICKET_79_EVIDENCE;
+  if (!directory) return;
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, name), output);
+};
+
+test("land keeps new ignored directories and new files within installed directories without following symlinks", () => {
+  for (const scenario of ["new-directory", "existing-directory"]) {
+    const f = fixture();
+    try {
+      dispatchInstallation(f);
+      const relative =
+        scenario === "new-directory"
+          ? "out/media/clip.bin"
+          : "node_modules/package/generated.bin";
+      mkdirSync(join(f.worktree, relative, ".."), { recursive: true });
+      writeFileSync(join(f.worktree, relative), "ticket media");
+      const link = join(f.worktree, "out/source-link");
+      symlinkSync(join(f.root, "references"), link);
+      const preview = f.run(["21", "--dry-run"]);
+      assert.equal(preview.status, 0, preview.stderr);
+      assert.match(preview.stdout, /将移走被忽略的条目/);
+      assert.ok(
+        preview.stdout.includes(JSON.stringify(relative.split("/")[0])),
+      );
+      assert.ok(!existsSync(`${f.root}.worktrees/.kept/21`));
+      assert.equal(
+        readFileSync(join(f.worktree, relative), "utf8"),
+        "ticket media",
+      );
+      const result = f.run(["21"]);
+      assert.equal(result.status, 0, result.stderr);
+      const kept = `${f.root}.worktrees/.kept/21`;
+      assert.equal(readFileSync(join(kept, relative), "utf8"), "ticket media");
+      assert.equal(
+        readFileSync(join(kept, "out/verification.json"), "utf8"),
+        readFileSync(join(f.root, f.artifacts, "verification.json"), "utf8"),
+      );
+      assert.ok(!existsSync(join(kept, "node_modules/package/installed.txt")));
+      assert.ok(!existsSync(join(kept, "out/steps.jsonl")));
+      assert.ok(!existsSync(join(kept, "references")));
+      assert.equal(
+        readlinkSync(join(kept, "out/source-link")),
+        join(f.root, "references"),
+      );
+      assert.equal(
+        readFileSync(join(f.root, "references/shared.txt"), "utf8"),
+        "shared source",
+      );
+      assert.doesNotMatch(result.stdout, /没有原始安装产物快照/);
+      if (scenario === "new-directory")
+        assert.doesNotMatch(result.stdout, /"node_modules"/);
+      else assert.match(result.stdout, /"node_modules"：1 个文件/);
+      assert.ok(
+        result.stdout.indexOf("移走被忽略的条目") <
+          result.stdout.indexOf("已删除 worktree"),
+      );
+      saveEvidence(`land-${scenario}.log`, result.stdout + result.stderr);
+      saveEvidence(
+        `land-${scenario}-dry-run.log`,
+        preview.stdout + preview.stderr,
+      );
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
+test("land legacy worktrees keep all ignored files except configured symlinks and explain the fallback", () => {
+  const f = fixture();
+  try {
+    f.commit(".gitignore", ".codex-runs\nout\nreferences\n");
+    f.commit(
+      "docs/agents/run-spec.json",
+      JSON.stringify({ ...f.config, symlinkDirectories: ["references"] }),
+    );
+    f.git(["rebase", f.integration], f.worktree);
+    mkdirSync(join(f.root, "references"));
+    writeFileSync(join(f.root, "references/shared.txt"), "shared source");
+    symlinkSync(join(f.root, "references"), join(f.worktree, "references"));
+    writeFileSync(join(f.worktree, "out/legacy.txt"), "legacy media");
+    const result = f.run(["21"]);
+    assert.equal(result.status, 0, result.stderr);
+    const kept = `${f.root}.worktrees/.kept/21`;
+    assert.equal(
+      readFileSync(join(kept, "out/legacy.txt"), "utf8"),
+      "legacy media",
+    );
+    assert.ok(existsSync(join(kept, "out/steps.jsonl")));
+    assert.ok(existsSync(join(kept, ".codex-runs/gh-210.json")));
+    assert.ok(!existsSync(join(kept, "references")));
+    assert.equal(
+      readFileSync(join(f.root, "references/shared.txt"), "utf8"),
+      "shared source",
+    );
+    assert.match(result.stdout, /没有原始安装产物快照（旧 worktree）/);
+    saveEvidence("land-legacy.log", result.stdout + result.stderr);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("land installation retries never absorb artifacts created before installation or by failed verification", () => {
+  const f = fixture();
+  try {
+    dispatchInstallation(f);
+    writeFileSync(join(f.worktree, "out/before-install.txt"), "before");
+    const failed = f.run(["21"], 1);
+    assert.equal(failed.status, 1, failed.stderr);
+    writeFileSync(join(f.worktree, "out/after-failure.txt"), "after");
+    const result = f.run(["21"]);
+    assert.equal(result.status, 0, result.stderr);
+    const kept = `${f.root}.worktrees/.kept/21`;
+    for (const name of [
+      "before-install.txt",
+      "after-failure.txt",
+      "verification.json",
+    ])
+      assert.ok(existsSync(join(kept, "out", name)), name);
+    assert.ok(!existsSync(join(kept, "node_modules/package/installed.txt")));
+    assert.ok(!existsSync(join(kept, "out/steps.jsonl")));
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("land retains cloned repositories, empty directories and unusual paths, and truncates only the printed summary", () => {
+  const f = fixture();
+  try {
+    dispatchInstallation(f);
+    const clone = join(f.worktree, "clones/example");
+    mkdirSync(clone, { recursive: true });
+    f.git(["init", clone]);
+    writeFileSync(join(clone, "reference.txt"), "cloned reference");
+    mkdirSync(join(f.worktree, "out/empty"));
+    const name = 'out/ space\n"quote".txt';
+    writeFileSync(join(f.worktree, name), "unusual");
+    for (let index = 0; index < 25; index++)
+      writeFileSync(join(f.worktree, `extra-${index}`), String(index));
+    const result = f.run(["21"]);
+    assert.equal(result.status, 0, result.stderr);
+    const kept = `${f.root}.worktrees/.kept/21`;
+    assert.equal(readFileSync(join(kept, name), "utf8"), "unusual");
+    assert.ok(existsSync(join(kept, "out/empty")));
+    assert.equal(
+      readFileSync(join(kept, "clones/example/reference.txt"), "utf8"),
+      "cloned reference",
+    );
+    assert.ok(existsSync(join(kept, "clones/example/.git/HEAD")));
+    for (let index = 0; index < 25; index++)
+      assert.equal(
+        readFileSync(join(kept, `extra-${index}`), "utf8"),
+        String(index),
+      );
+    assert.match(result.stdout, /其余 7 个顶层路径已省略/);
+    assert.equal(
+      result.stdout
+        .split("\n")
+        .filter((line) => /^ {2}".*"：\d+ 个文件$/.test(line)).length,
+      20,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
 
 test("land rebases, installs quietly, verifies, fast-forwards, pushes local origin and copies records/QA before deletion", () => {
   const f = fixture();
@@ -699,6 +920,11 @@ test("land does not reuse a completed journal for new commits on a recreated tic
   const f = fixture();
   try {
     assert.equal(f.run(["21"]).status, 0);
+    const kept = `${f.root}.worktrees/.kept/21`;
+    const priorSteps = readFileSync(
+      join(kept, f.artifacts, "steps.jsonl"),
+      "utf8",
+    );
     f.git(["worktree", "add", "-b", "ticket/21", f.worktree, f.integration]);
     f.commit("follow-up.txt", "new ticket work", f.worktree);
     mkdirSync(join(f.worktree, f.artifacts), { recursive: true });
@@ -711,6 +937,19 @@ test("land does not reuse a completed journal for new commits on a recreated tic
     const result = f.run(["21"]);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /验证已通过.*已快进合并/s);
+    assert.match(result.stdout, /已有同名条目移到历史保留目录/);
+    const archives = readdirSync(kept).filter((name) =>
+      name.startsWith(".previous-"),
+    );
+    assert.equal(archives.length, 1);
+    assert.equal(
+      readFileSync(join(kept, archives[0], f.artifacts, "steps.jsonl"), "utf8"),
+      priorSteps,
+    );
+    assert.notEqual(
+      readFileSync(join(kept, f.artifacts, "steps.jsonl"), "utf8"),
+      priorSteps,
+    );
     assert.equal(
       readFileSync(join(f.root, "follow-up.txt"), "utf8"),
       "new ticket work",

@@ -9,6 +9,10 @@
  * survive worktree/branch deletion and never dirty the checkout.
  * Installation output is buffered and replayed on failure. No installation
  * journal state is needed: every unmerged attempt installs after rebase.
+ * Each installation attempt updates its private ignored-file snapshot without
+ * absorbing preexisting artifacts. Before tree removal, move unknown ignored
+ * leaves into the ticket's sibling .kept directory and print a bounded summary.
+ * Missing original snapshots retain all ignored leaves, including on retries.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -22,6 +26,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import {
+  keepIgnoredArtifacts,
+  prepareInstallationSnapshot,
+} from "./ignored-artifacts.ts";
 import {
   entry,
   CheckFailure,
@@ -166,6 +174,13 @@ const land = (values: Values, numbers: number[]): void => {
         `复制验收产物：${join(worktree, artifacts)} → ${join(root, artifacts)}`,
       );
     }
+    if (registered && existsSync(worktree))
+      keepIgnoredArtifacts(
+        worktree,
+        config.symlinkDirectories,
+        `${root}.worktrees/.kept/${ticket}`,
+        true,
+      );
     console.log(
       !registered && !existsSync(worktree)
         ? "删除 worktree 已完成，跳过"
@@ -199,6 +214,10 @@ const land = (values: Values, numbers: number[]): void => {
     if (rebase) runRebase(["--continue"]);
     runRebase([integration]);
     console.log(`已 rebase 到 ${integration}`);
+    const saveSnapshot = prepareInstallationSnapshot(
+      worktree,
+      config.symlinkDirectories,
+    );
     const [installProgram, ...installArgs] = config.installCommand;
     const installation = spawnSync(installProgram, installArgs, {
       cwd: worktree,
@@ -206,6 +225,7 @@ const land = (values: Values, numbers: number[]): void => {
       encoding: "utf8",
       maxBuffer: Infinity,
     });
+    saveSnapshot();
     if (
       installation.error ||
       installation.signal ||
@@ -268,6 +288,12 @@ const land = (values: Values, numbers: number[]): void => {
   if (!registered && !existsSync(worktree))
     console.log("删除 worktree 已完成，跳过");
   else {
+    keepIgnoredArtifacts(
+      worktree,
+      config.symlinkDirectories,
+      `${root}.worktrees/.kept/${ticket}`,
+      false,
+    );
     git(root, ["worktree", "remove", worktree]);
     console.log(`已删除 worktree：${worktree}`);
   }
@@ -287,8 +313,13 @@ export const landCommand: Command = {
 每次 rebase 完成后（含冲突解决后重跑），先运行配置的安装命令，再验证。
 安装成功只打印一行；失败回放输出、非零退出，保留现场，不验证也不合并。
 安装失败修好后重跑同一条命令会重新安装；验证通过后快进合并并推送 origin。
-复制本工单派发记录与验收产物后，删除 worktree 和工单分支。
+安装后记录文件粒度的忽略条目快照；重装不会把已有工单产物算成安装产物。
+复制本工单派发记录与验收产物后，将快照外的忽略条目移到
+<仓库目录>.worktrees/.kept/<工单>/，保持相对路径，再删除 worktree 和工单分支。
+配置的目录软链接照旧删除，不访问目标；没有原始快照的旧 worktree 全部保留。
+移走清单只列顶层路径和文件数，最多 20 项；需要的文件请拷回主工作区。
+保留目录已有同名条目时，旧副本自动归档到其中的 .previous-<随机后缀>/，不覆盖。
 冲突以 1 退出并保留现场；解决并暂存后重跑可继续。
 合并后失败可重跑续做，已完成的推送、复制和删除步骤跳过。
---dry-run 只查询 GitHub 和 git 并打印计划，不改分支、文件或远端。`,
+--dry-run 列出当前将移走的条目；不执行安装、验证或移动，不改分支、文件或远端。`,
 };

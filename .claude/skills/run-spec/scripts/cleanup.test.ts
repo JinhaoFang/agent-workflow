@@ -5,6 +5,8 @@
  * on this file or pnpm verify. A local bare origin and rejecting receive hook
  * cover remote previews, exact ownership and continued cleanup after failure.
  * All deletion stays inside temporary fixtures.
+ * Kept-directory checks cover exact child ownership, file-count previews and
+ * printing the full bounded plan before the first actual deletion.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -213,6 +215,69 @@ test("cleanup removes only spec records, QA, worktrees and exact ticket refs, in
       assert.ok(f.git(["branch", "--list", `ticket/${ticket}`]));
     const firstDeletion = result.stdout.indexOf("已删除");
     assert.ok(firstDeletion > result.stdout.indexOf("删除分支：ticket/2"));
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("cleanup lists kept child directories and file counts before deletion, while dry-run retains everything", () => {
+  const f = fixture();
+  try {
+    const kept = `${f.root}.worktrees/.kept`;
+    for (const ticket of [1, 2, 12, 20]) {
+      mkdirSync(join(kept, String(ticket), "out/media"), { recursive: true });
+      writeFileSync(
+        join(kept, String(ticket), "out/media/clip.bin"),
+        `ticket ${ticket}`,
+      );
+    }
+    const preview = f.run(["17", "--dry-run"]);
+    assert.equal(preview.status, 0, preview.stderr);
+    for (const ticket of [1, 2])
+      assert.ok(
+        preview.stdout.includes(
+          `删除保留目录：${join(kept, String(ticket))}\n`,
+        ),
+      );
+    assert.match(preview.stdout, /"out"：1 个文件/);
+    assert.doesNotMatch(preview.stdout, /已删除/);
+    for (const ticket of [1, 2, 12, 20])
+      assert.equal(
+        readFileSync(join(kept, String(ticket), "out/media/clip.bin"), "utf8"),
+        `ticket ${ticket}`,
+      );
+    const result = f.run();
+    assert.equal(result.status, 0, result.stderr);
+    for (const ticket of [1, 2]) {
+      assert.ok(!existsSync(join(kept, String(ticket))));
+      assert.ok(
+        result.stdout.indexOf(`删除保留目录：${join(kept, String(ticket))}\n`) <
+          result.stdout.indexOf("已删除"),
+      );
+    }
+    for (const ticket of [12, 20]) {
+      assert.equal(
+        readFileSync(join(kept, String(ticket), "out/media/clip.bin"), "utf8"),
+        `ticket ${ticket}`,
+      );
+      assert.ok(
+        !result.stdout.includes(
+          `删除保留目录：${join(kept, String(ticket))}\n`,
+        ),
+      );
+    }
+    const directory = process.env.TICKET_79_EVIDENCE;
+    if (directory) {
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        join(directory, "cleanup.log"),
+        result.stdout + result.stderr,
+      );
+      writeFileSync(
+        join(directory, "cleanup-dry-run.log"),
+        preview.stdout + preview.stderr,
+      );
+    }
   } finally {
     f.cleanup();
   }

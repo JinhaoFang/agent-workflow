@@ -11,6 +11,8 @@
  * notes are commented via a temporary UTF-8 file before dispatch; failure stops
  * dispatch. Select an unused record name across both checkouts for correlation.
  * Dry runs preview the same name, prompt and comment without writes.
+ * Every installation attempt records ignored leaves in the private git
+ * directory before dispatch, excluding configured directory symlinks.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -28,6 +30,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
+import { prepareInstallationSnapshot } from "./ignored-artifacts.ts";
 import {
   entry,
   CheckFailure,
@@ -213,6 +216,11 @@ const dispatch = (values: Values, numbers: number[]): void => {
     console.log(`已接好只读软链接：${relative(worktree, link.target)}`);
   }
   if (needsPreparation) {
+    const saveSnapshot = prepareInstallationSnapshot(
+      worktree,
+      config.symlinkDirectories,
+      true,
+    );
     const [program, ...installArgs] = config.installCommand;
     const result = spawnSync(program, installArgs, {
       cwd: worktree,
@@ -220,6 +228,7 @@ const dispatch = (values: Values, numbers: number[]): void => {
       encoding: "utf8",
       maxBuffer: Infinity,
     });
+    saveSnapshot();
     if (result.error || result.status !== 0) {
       if (result.stdout) process.stdout.write(result.stdout);
       if (result.stderr) process.stderr.write(result.stderr);

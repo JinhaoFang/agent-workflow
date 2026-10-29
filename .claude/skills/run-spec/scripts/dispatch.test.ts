@@ -5,6 +5,8 @@
  * on this file. No GitHub writes, network access or repository helpers are used.
  * Comment requests capture temporary-file bodies and simulate write failures;
  * prompts, rework names, dry-run behavior and push permissions are observable.
+ * Private installation snapshots contain ignored installation leaves, exclude
+ * linked sources and dispatch records, and stay unchanged on prepared rework.
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -426,6 +428,29 @@ test("dispatch successful install emits exactly one summary line and hides stdou
     assert.equal(result.stderr, "");
     assert.ok(!result.stdout.includes(installStdout));
     assert.ok(!result.stdout.includes(installStderr));
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("dispatch stores the file-level installation snapshot privately before dispatch and reuses it for rework", () => {
+  const f = fixture();
+  try {
+    const result = f.run();
+    assert.equal(result.status, 0, result.stderr);
+    const privateGit = f.git(["rev-parse", "--absolute-git-dir"], f.worktree);
+    const snapshot = join(privateGit, "run-spec-installation.json");
+    const content = readFileSync(snapshot, "utf8");
+    assert.deepEqual(JSON.parse(content).files, [
+      "install-attempts.jsonl",
+      "install-result.json",
+    ]);
+    assert.ok(!existsSync(join(f.worktree, "run-spec-installation.json")));
+    assert.equal(f.git(["status", "--porcelain"], f.worktree), "");
+    writeFileSync(join(f.worktree, "out/generated.txt"), "ticket output");
+    const rework = f.run();
+    assert.equal(rework.status, 0, rework.stderr);
+    assert.equal(readFileSync(snapshot, "utf8"), content);
   } finally {
     f.cleanup();
   }

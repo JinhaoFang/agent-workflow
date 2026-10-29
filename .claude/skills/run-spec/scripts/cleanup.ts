@@ -7,9 +7,12 @@
  * Query origin directly for exact child refs, without fetching. Remote deletion
  * failures name the branch, allow other cleanup to proceed and exit with 1.
  * --dry-run only lists the plan. Integration branches are never deleted here.
+ * Include exact child ticket .kept directories, listing bounded top-level file
+ * counts before any deletion. Unrelated ticket retention directories survive.
  */
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { printKeptDirectory } from "./ignored-artifacts.ts";
 import {
   entry,
   CheckFailure,
@@ -61,9 +64,15 @@ const cleanup = (values: Values, numbers: number[]): void => {
     git(checkout, ["rev-parse", "--git-common-dir"]),
     "run-spec-land",
   );
+  const kept: string[] = [];
   for (const ticket of tickets) {
     const journal = join(journals, `${ticket}.json`);
     if (existsSync(journal)) files.push(journal);
+    const directory = `${root}.worktrees/.kept/${ticket}`;
+    if (existsSync(directory)) {
+      kept.push(directory);
+      files.push(directory);
+    }
   }
   const branches = git(root, [
     "for-each-ref",
@@ -115,6 +124,7 @@ const cleanup = (values: Values, numbers: number[]): void => {
     `清理清单：spec #${spec}${values["dry-run"] ? "（仅预览）" : ""}`,
   );
   for (const file of files) console.log(`删除文件或目录：${file}`);
+  for (const directory of kept) printKeptDirectory(directory);
   for (const tree of removable) console.log(`删除 worktree：${tree}`);
   for (const branch of deletable) console.log(`删除分支：${branch}`);
   for (const branch of remoteBranches)
@@ -169,6 +179,8 @@ export const cleanupCommand: Command = {
 读取 spec 的全部子工单，先列清单再删除主工作区的本 spec 派发记录、
 审查记录、配置验收根目录下的 spec-<号>/、残留 worktree 和工单分支，
 以及 git 公共目录 run-spec-land/ 下这些子工单的续做状态文件。
+删除 <仓库目录>.worktrees/.kept/<工单>/ 中本 spec 子工单的保留目录；
+删除前列出顶层路径和文件数（每个目录最多 20 项），需要的文件请先拷回主工作区。
 直接查询 origin，清单列出并删除实际存在的本 spec 子工单远端 ticket/<号> 分支。
 远端没有的工单分支不报错；集成分支由 GitHub 合并 PR 后自动删除，本命令不管。
 远端分支删除失败会报出分支名，继续其他清理，最后以 1 退出。
