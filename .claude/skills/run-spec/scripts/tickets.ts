@@ -1,6 +1,7 @@
 /**
  * Designer-only ticket CLI: run `node .claude/skills/run-spec/scripts/tickets.ts
- * <frontier|link|accept|dispatch|slots|land|cleanup|review|doctor|watch> --help` from a clone.
+ * <frontier|link|review-spec|dispatch|slots|watch|verify|land|accept|review|pr-check|cleanup|doctor>
+ * --help` from a clone.
  * Register each command once; modules provide help, options, required/optional
  * numeric positional counts, optional raw `--` passthrough and a handler.
  * Shared helpers load optional configuration defaults/sources and run Claude
