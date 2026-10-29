@@ -13,21 +13,25 @@
  * absorbing preexisting artifacts. Before tree removal, move unknown ignored
  * leaves into the ticket's sibling .kept directory and print a bounded summary.
  * Missing original snapshots retain other ignored leaves, including on retries.
- * Completed copies are journaled by leaf path and excluded from retention;
- * dry runs assume planned copies succeed. Uncopied paths remain protected.
+ * Before retention, compare current record/QA leaves against the main copies.
+ * Refresh changed/missing copies, including new leaves on retries; failed
+ * refreshes remain protected. Dry runs compare the same leaves and report
+ * structural copy blockers, otherwise assuming planned copies succeed.
  */
 import { spawnSync } from "node:child_process";
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   artifactLeaves,
   keepIgnoredArtifacts,
@@ -152,6 +156,61 @@ const land = (values: Values, numbers: number[]): void => {
       ...names.map((name) => `.codex-runs/${name}`),
       artifacts,
     ]);
+  const checkedCopyPaths = (dryRun: boolean): string[] => {
+    const copied: string[] = [];
+    for (const path of copyPaths()) {
+      const source = join(worktree, path);
+      const target = join(root, path);
+      const matchesCopy = (): boolean => {
+        try {
+          const from = lstatSync(source);
+          const to = lstatSync(target);
+          if (from.isSymbolicLink())
+            return (
+              to.isSymbolicLink() &&
+              readlinkSync(source) === readlinkSync(target)
+            );
+          if (from.isDirectory()) return to.isDirectory();
+          return (
+            from.isFile() &&
+            to.isFile() &&
+            readFileSync(source).equals(readFileSync(target))
+          );
+        } catch {
+          return false;
+        }
+      };
+      if (matchesCopy()) {
+        copied.push(path);
+        continue;
+      }
+      try {
+        let parent = dirname(target);
+        while (!existsSync(parent)) parent = dirname(parent);
+        if (!lstatSync(parent).isDirectory())
+          throw new Error("主工作区副本的父路径不是目录");
+        if (
+          existsSync(target) &&
+          lstatSync(source).isDirectory() !== lstatSync(target).isDirectory()
+        )
+          throw new Error("主工作区副本与源条目的文件类型不一致");
+        if (!dryRun) {
+          mkdirSync(dirname(target), { recursive: true });
+          cpSync(source, target, { recursive: true, verbatimSymlinks: true });
+          if (!matchesCopy()) throw new Error("复制后内容仍不一致");
+        }
+        copied.push(path);
+        console.log(
+          `${dryRun ? "将重新复制" : "已重新复制"}：${path} → ${target}`,
+        );
+      } catch (error) {
+        console.log(
+          `重新复制失败，${dryRun ? "将移入" : "移入"}保留目录：${path}（${(error as Error).message}）`,
+        );
+      }
+    }
+    return copied;
+  };
   if (values["dry-run"]) {
     console.log(`合并计划：#${ticket} → ${integration}（主工作区 ${root}）`);
     if (merged)
@@ -189,7 +248,7 @@ const land = (values: Values, numbers: number[]): void => {
         config.symlinkDirectories,
         `${root}.worktrees/.kept/${ticket}`,
         true,
-        merged && journal!.copied ? (journal!.copiedPaths ?? []) : copyPaths(),
+        merged && journal!.copied ? checkedCopyPaths(true) : copyPaths(),
       );
     console.log(
       !registered && !existsSync(worktree)
@@ -305,7 +364,7 @@ const land = (values: Values, numbers: number[]): void => {
       config.symlinkDirectories,
       `${root}.worktrees/.kept/${ticket}`,
       false,
-      journal!.copiedPaths ?? [],
+      checkedCopyPaths(false),
     );
     git(root, ["worktree", "remove", worktree]);
     console.log(`已删除 worktree：${worktree}`);
@@ -327,13 +386,14 @@ export const landCommand: Command = {
 安装成功只打印一行；失败回放输出、非零退出，保留现场，不验证也不合并。
 安装失败修好后重跑同一条命令会重新安装；验证通过后快进合并并推送 origin。
 安装后记录文件粒度的忽略条目快照；重装不会把已有工单产物算成安装产物。
-已复制回主工作区的本工单派发记录与验收产物直接删除，不列入移走清单；
-未复制的条目照旧保留。复制完成后，将其余快照外的忽略条目移到
+删除前逐个比较本工单派发记录、验收产物和主工作区副本，内容一致才直接删除；
+有变化或缺少副本的条目重新复制并列出，复制失败则移入保留目录。
+复制完成后，将其余快照外的忽略条目移到
 <仓库目录>.worktrees/.kept/<工单>/，保持相对路径，再删除 worktree 和工单分支。
 配置的目录软链接照旧删除，不访问目标；没有原始快照的旧 worktree 保留其余全部条目。
 移走清单只列顶层路径和文件数，最多 20 项；需要的文件请拷回主工作区。
 保留目录已有同名条目时，旧副本自动归档到其中的 .previous-<随机后缀>/，不覆盖。
 冲突以 1 退出并保留现场；解决并暂存后重跑可继续。
-合并后失败可重跑续做，已完成的推送、复制和删除步骤跳过。
+合并后失败可重跑续做，跳过已完成的推送和删除；复制完成后仍核对当前内容。
 --dry-run 按计划复制成功列出当前将移走的条目；不执行安装、验证或移动，不改分支、文件或远端。`,
 };

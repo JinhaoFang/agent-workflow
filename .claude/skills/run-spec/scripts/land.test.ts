@@ -10,7 +10,8 @@
  * Protection cases create installation snapshots through dispatch, then assert
  * kept paths/content and cleanup-safe summaries through the public land CLI.
  * Every dispatch uses a fixture-local DispatchDock home, even when verification
- * inherits an occupied global registry. Copied records/QA never enter retention.
+ * inherits an occupied global registry. Removal retries compare current record/QA
+ * content, recopy changes and retain leaves when refreshing the main copy fails.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -312,7 +313,9 @@ const dispatchInstallation = (
 
 const saveEvidence = (name: string, output: string): void => {
   const directory =
-    process.env.TICKET_89_EVIDENCE ?? process.env.TICKET_79_EVIDENCE;
+    process.env.TICKET_90_EVIDENCE ??
+    process.env.TICKET_89_EVIDENCE ??
+    process.env.TICKET_79_EVIDENCE;
   if (!directory) return;
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, name), output);
@@ -391,6 +394,162 @@ test("land excludes copied ticket records and QA from both preview and retention
     }
   }
 });
+
+for (const scenario of ["changed", "missing", "blocked", "unchanged"]) {
+  test(`land checks copied content after failed worktree removal: ${scenario}`, () => {
+    const f = fixture();
+    try {
+      dispatchInstallation(f, { artifactsOnly: true });
+      mkdirSync(join(f.worktree, ".codex-runs"));
+      const record = ".codex-runs/gh-21.json";
+      const changed = join(f.artifacts, "result.txt");
+      const added = join(f.artifacts, "added.txt");
+      writeFileSync(join(f.worktree, record), "record before retry");
+      writeFileSync(join(f.worktree, changed), "QA before retry");
+      const realGit = spawnSync("which", ["git"], { encoding: "utf8" });
+      assert.equal(realGit.status, 0, realGit.stderr);
+      const wrapper = join(f.temporary, "git");
+      writeFileSync(
+        wrapper,
+        `#!${process.execPath}
+const {spawnSync} = require("node:child_process");
+const args = process.argv.slice(2);
+if (args[0] === "worktree" && args[1] === "remove") {
+  process.stderr.write("injected deletion failure\\n");
+  process.exit(1);
+}
+const result = spawnSync(${JSON.stringify(realGit.stdout.trim())}, args, {stdio:"inherit"});
+process.exit(result.status ?? 2);
+`,
+        { mode: 0o755 },
+      );
+      const first = f.run(["21"]);
+      assert.equal(first.status, 2, first.stderr);
+      assert.match(first.stdout, /已复制派发记录/);
+      assert.match(first.stderr, /injected deletion failure/);
+      const kept = `${f.root}.worktrees/.kept/21`;
+      assert.ok(!existsSync(kept));
+      assert.equal(
+        readFileSync(join(f.root, changed), "utf8"),
+        "QA before retry",
+      );
+      saveEvidence(`retry-${scenario}-first.log`, first.stdout + first.stderr);
+      rmSync(wrapper);
+      if (scenario !== "unchanged") {
+        writeFileSync(join(f.worktree, record), "record after retry");
+        writeFileSync(join(f.worktree, changed), "QA after retry");
+        writeFileSync(join(f.worktree, added), "new QA after retry");
+      }
+      if (scenario === "missing") {
+        rmSync(join(f.root, record));
+        rmSync(join(f.root, changed));
+      }
+      if (scenario === "blocked") {
+        rmSync(join(f.root, changed));
+        mkdirSync(join(f.root, changed));
+      }
+      const before = [record, changed, added].map((path) => ({
+        path,
+        worktree: existsSync(join(f.worktree, path))
+          ? readFileSync(join(f.worktree, path), "utf8")
+          : null,
+        main:
+          scenario === "blocked" && path === changed
+            ? "<directory>"
+            : existsSync(join(f.root, path))
+              ? readFileSync(join(f.root, path), "utf8")
+              : null,
+      }));
+      const refs = f.git(["show-ref"]);
+      const preview = f.run(["21", "--dry-run"], 7);
+      assert.equal(preview.status, 0, preview.stderr);
+      assert.equal(f.git(["show-ref"]), refs);
+      assert.ok(!existsSync(kept));
+      for (const file of before) {
+        if (file.worktree !== null)
+          assert.equal(
+            readFileSync(join(f.worktree, file.path), "utf8"),
+            file.worktree,
+          );
+        if (file.main !== null && file.main !== "<directory>")
+          assert.equal(
+            readFileSync(join(f.root, file.path), "utf8"),
+            file.main,
+          );
+        if (file.main === null) assert.ok(!existsSync(join(f.root, file.path)));
+      }
+      const resumed = f.run(["21"], 7);
+      assert.equal(resumed.status, 0, resumed.stderr);
+      const summary = (output: string) =>
+        output.split("\n").filter((line) => line.startsWith("  "));
+      assert.deepEqual(summary(preview.stdout), summary(resumed.stdout));
+      const recopies = (output: string) =>
+        output
+          .split("\n")
+          .filter((line) => /^(将|已)重新复制：/.test(line))
+          .map((line) => line.slice(1));
+      assert.deepEqual(recopies(preview.stdout), recopies(resumed.stdout));
+      const contents = before.map((file) => {
+        const preserved = join(kept, file.path);
+        const main = join(f.root, file.path);
+        const blocked = scenario === "blocked" && file.path === changed;
+        const mainContent = blocked
+          ? "<directory>"
+          : existsSync(main)
+            ? readFileSync(main, "utf8")
+            : null;
+        const keptContent = existsSync(preserved)
+          ? readFileSync(preserved, "utf8")
+          : null;
+        assert.equal(blocked ? keptContent : mainContent, file.worktree);
+        if (!blocked) assert.equal(keptContent, null);
+        return { ...file, mainAfter: mainContent, keptAfter: keptContent };
+      });
+      assert.ok(!existsSync(f.worktree));
+      if (scenario === "unchanged") {
+        assert.doesNotMatch(
+          preview.stdout + resumed.stdout,
+          /重新复制|移走被忽略的条目/,
+        );
+        assert.ok(!existsSync(kept));
+      } else {
+        for (const path of [record, changed, added]) {
+          assert.ok(preview.stdout.includes(path), preview.stdout);
+          assert.ok(resumed.stdout.includes(path), resumed.stdout);
+        }
+        assert.match(resumed.stdout, /已重新复制/);
+        if (scenario === "blocked") {
+          assert.match(resumed.stdout, /重新复制失败/);
+          assert.match(resumed.stdout, /移走被忽略的条目/);
+        } else {
+          assert.doesNotMatch(
+            preview.stdout + resumed.stdout,
+            /移走被忽略的条目/,
+          );
+          assert.ok(!existsSync(kept));
+        }
+      }
+      saveEvidence(
+        `retry-${scenario}-dry-run.log`,
+        preview.stdout + preview.stderr,
+      );
+      saveEvidence(
+        `retry-${scenario}-second.log`,
+        resumed.stdout + resumed.stderr,
+      );
+      saveEvidence(
+        `retry-${scenario}-contents.json`,
+        JSON.stringify(
+          { root: f.root, worktree: f.worktree, kept, contents },
+          null,
+          2,
+        ) + "\n",
+      );
+    } finally {
+      f.cleanup();
+    }
+  });
+}
 
 test("dispatch installation retry leaves intervening ignored output protected when land runs", () => {
   const f = fixture();
@@ -1030,21 +1189,21 @@ process.exit(result.status ?? 2);
       assert.equal(resumed.status, 0, `${stage}: ${resumed.stderr}`);
       if (stage === "worktree") {
         assert.equal(
-          readFileSync(
-            `${f.root}.worktrees/.kept/21/.codex-runs/gh-21-late.json`,
-            "utf8",
-          ),
+          readFileSync(join(f.root, ".codex-runs/gh-21-late.json"), "utf8"),
           "uncopied record",
         );
-        assert.ok(!existsSync(join(f.root, ".codex-runs/gh-21-late.json")));
-        assert.equal(
-          readFileSync(
-            `${f.root}.worktrees/.kept/21/${f.artifacts}/late.bin`,
-            "utf8",
+        assert.ok(
+          !existsSync(
+            `${f.root}.worktrees/.kept/21/.codex-runs/gh-21-late.json`,
           ),
+        );
+        assert.equal(
+          readFileSync(join(f.root, f.artifacts, "late.bin"), "utf8"),
           "uncopied QA",
         );
-        assert.ok(!existsSync(join(f.root, f.artifacts, "late.bin")));
+        assert.ok(
+          !existsSync(`${f.root}.worktrees/.kept/21/${f.artifacts}/late.bin`),
+        );
       }
       assert.match(resumed.stdout, /工单已合入.*跳过/);
       assert.doesNotMatch(resumed.stdout, /临时仓库验证完成|已快进合并/);
