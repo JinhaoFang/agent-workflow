@@ -19,8 +19,11 @@ disable-model-invocation: true
 - **Matt 的技能**：装了哪些。装了 `implement-spec` 的，建议移除：它是另一套执行 spec 的流程（Claude 子代理、不分执行角色），和 `run-spec` 并存时两边的约定会混用。
 - **DispatchDock**：只需要 `codex-dispatch`，它只在 `.claude/skills/`。Codex 能看到 `.agents/skills/` 下的全部技能。装了 `dual-role-workflow` 的，建议卸掉：它的描述按审美分工写，每次会话都会加载；分工规则以 [roles.md](roles.md) 为准。
 - **规则文档**：`docs/roles/` 下有没有设计负责人和工程负责人两份角色文档。
-- **基线**：包管理器、锁文件和验证命令；用派发 Codex 的那个系统用户实际跑一遍验证命令，再在一个新的 worktree 里跑一遍，确认不依赖被忽略的目录（例如装在仓库里的工具链）；最近几次 CI 有没有间歇性失败。
 - **worktree 要用的目录**：哪些不进 git 的目录 Codex 要读（参考资料、第三方技能）。
+- **基线**：包管理器、锁文件和验证命令；用派发 Codex 的那个系统用户实际跑一遍验证命令，再在一个新的 worktree 里接好上一项的软链接、跑一遍，确认不依赖其他被忽略的目录（例如装在仓库里的工具链）；最近几次 CI 有没有间歇性失败。
+- **共享登记处**：并行的工单都要往里加一项的文件（命令登记表、构建目标列表、迁移编号、总入口）。能拆成每项一个文件的，第 2 步提议拆开；拆不了的写进配置说明「常见的共享登记处」。
+- **只往后追加的列表**：日志索引、研究索引这类各分支都往末尾加行的文件。
+- **目录地图**：放文档、脚本、研究的目录有没有 README 写清里面有什么。
 - **接过没有**：有 `docs/agents/run-spec.json`，或 `.claude/skills/run-spec/` 进了 git（早期手工迁移的做法）。
 - 仓库已经在开发（有提交历史、进行中的 spec）时，再按 [existing-repo.md](existing-repo.md) 多查几项。
 
@@ -30,7 +33,14 @@ disable-model-invocation: true
 
 ## 2. 汇报并讲清步骤
 
-把事实表和领域画像给用户看，画像里「守不住的规则」逐条附上保证它的办法（权限、CI 检查、脚本）。然后讲这次要走的步骤：哪些你来写，哪些要用户做，哪些在对话里一起改。用户确认以后再动手。
+把事实表和领域画像给用户看，画像里「守不住的规则」逐条附上保证它的办法（权限、CI 检查、脚本）。然后讲这次要走的步骤：哪些你来写，哪些要用户做，哪些在对话里一起改。讲到规则时说明三层各放哪（[roles.md](roles.md)「规则分三层」）：生成的只有仓库规则，用户的个人习惯和本机的坑不写进去。用户确认以后再动手。
+
+同时提议几项可选的约定，用户同意的在第 4 步做：
+
+- **拆共享登记处**：第 1 步找到的、能拆成每项一个文件的登记处。
+- **union 合并**：只往后追加的列表，在 `.gitattributes` 里写一行 `<文件> merge=union`。本地 `git merge` 和 `git rebase` 都按它自动合并两边追加的行（git 2.34 实测）；GitHub 网页上合并 PR 时是否也按它没有实测，PR 显示冲突就在本地合并。只用于只追加的列表：两边改了同一行时，union 会把两个版本都留下，不报冲突。
+- **目录地图**：放文档、脚本、研究的目录各有一个 README，一行一项写清是什么、什么时候读。核对地图和目录一致的检查，放进第 6 步建议的第一个 spec。
+- **画图约定**：文档里要画架构图、流程图的，把 [diagrams.md](diagrams.md) 放进文档目录，在 `AGENTS.md` 加一句"画图之前读 <路径>"。
 
 前提缺了就停下，给出补齐的办法；用户同意后可以代为运行安装命令：
 
@@ -71,7 +81,8 @@ disable-model-invocation: true
   ```
 
 - GitHub：建 `role:engineering`、`role:design` 两个标签（`ready-for-human` 来自 Matt 的设置）；合并方式只允许 merge commit，打开合并后自动删除分支。
-- 规则文档：`AGENTS.md` 的角色一节和提交格式、两份角色文档，按 [roles.md](roles.md) 生成：固定部分照写，生成部分用领域画像填。和用户一起改，由用户定；仓库已有的命名和结构要改，先问。已有角色文档的仓库，对照模板逐节报告差异，固定部分缺的补上，生成部分和画像对不上的提出来。
+- 规则文档：`AGENTS.md` 的角色一节和提交格式、两份角色文档，按 [roles.md](roles.md) 生成：固定部分照写，生成部分用领域画像填，只写仓库规则。和用户一起改，由用户定；仓库已有的命名和结构要改，先问。已有角色文档的仓库，对照模板逐节报告差异，固定部分缺的补上，生成部分和画像对不上的提出来，个人偏好和本机的坑提议移出去。
+- 第 2 步用户同意的可选约定：拆开的登记处、`.gitattributes`、各目录的 README、画图约定。
 
 已经接过的仓库：只报告当前文件和模板的差异，用户同意的才改，不覆盖已有配置。`run-spec` 进了 git 时，提议换成安装的版本：
 
@@ -85,11 +96,11 @@ disable-model-invocation: true
 ## 5. 自检和冒烟测试
 
 1. 再运行自检命令。不通过的项按提示修好再跑，直到全部通过。
-2. 派一个只读任务给 Codex，派发脚本和权限用配置里的值，确认五件事：认对角色、守住规则、能用 `gh`、汇报格式齐全、看不到设计负责人的技能（`codex-dispatch`、`run-spec`、`setup-run-spec`）。
+2. 派一个只读任务给 Codex，派发脚本和权限用配置里的值；任务写明不改仓库文件，但跑验证命令时可以写临时文件和缓存，只读沙箱会让验证失败。确认五件事：认对角色、守住规则、能用 `gh`、汇报格式齐全、看不到设计负责人的技能（`codex-dispatch`、`run-spec`、`setup-run-spec`）。
 3. 告诉用户这两个技能固定在哪个版本、怎么升级：安装命令里 `#` 后面是版本（`JinhaoFang/video-studio` 的 tag），升级就换成新版本再运行
 
    ```bash
-   npx skills add JinhaoFang/video-studio#workflow-v2 --skill run-spec --skill setup-run-spec -a claude-code -y
+   npx skills add JinhaoFang/video-studio#workflow-v3 --skill run-spec --skill setup-run-spec -a claude-code -y
    ```
 
    `npx skills update` 和按锁文件恢复的命令都会把它们装进 `.agents/skills/`，Codex 就能看到了。用 `update` 更新别的技能时点名技能，更新完运行自检。安装会改 `skills-lock.json` 里这两项的哈希，要提交；不提交的话主工作区不干净，`land` 会拒绝合并。
@@ -98,8 +109,10 @@ disable-model-invocation: true
 
 ## 6. 建议第一个 spec
 
-建议用第一个 spec 把流程完整走一遍（彩排），题目推荐"按本仓库的工具链移植护栏"：提交信息检查、注释位置检查、规则文档里的命令存在性检查。现成实现在 `JinhaoFang/video-studio` 的 `tools/` 和 `JinhaoFang/design-system` 的 `scripts/`（pnpm 12），按本仓库的工具链重写，不直接复制。
+建议用第一个 spec 把流程完整走一遍（彩排），题目推荐"按本仓库的工具链移植护栏"：提交信息检查、注释位置检查、规则文档里的命令存在性检查；用户同意了目录地图的，再加一项核对各目录 README 和实际内容一致的检查。现成实现在 `JinhaoFang/video-studio` 的 `tools/` 和 `JinhaoFang/design-system` 的 `scripts/`（pnpm 12），按本仓库的工具链重写，不直接复制。
 
-告诉用户接下来的输入：PR 合并后，`/grill-with-docs` 对齐 → `/to-spec` → `/to-tickets` → 开新会话说"你的角色是设计负责人。执行 spec #<号>"。仓库有 `docs/roadmap.md` 这类新会话入口时，开场白里先点名它。
+告诉用户接下来的输入：PR 合并后，`/grill-with-docs` 对齐 → `/to-spec` → `/to-tickets` → 开新会话说"你的角色是设计负责人，先读路线图，执行 spec #<号>"。项目是什么、对设计负责人有什么要求都已在仓库里，开场不用再贴说明。`/grill-with-docs`、`/to-spec`、`/to-tickets` 只能由用户输入，模型在技能列表里看不到；也可以让设计负责人读这几个技能的说明文件照做，两种都行。
+
+执行会话也可以放在后台跑（可选）：`claude --bg -n <名字> --permission-mode <和平时相同的模式> "<开场白>"` 启动，`claude attach <名字>` 进入；在里面按 ← 回到会话列表、按 Ctrl+Z 回到 shell，会话都继续运行。`claude agents` 看有哪些会话，`claude logs <名字>` 看最近的输出，`claude stop <id>` 停下。好处是执行会话不依附终端，关掉终端不会中断派发出去的 Codex。权限模式要和平时一致，不一致时碰到确认就停下等人。以上命令按 Claude Code 2.1.312 的 `claude --help`、`claude attach --help` 核对。
 
 完成标准：用户知道下一步输入什么。

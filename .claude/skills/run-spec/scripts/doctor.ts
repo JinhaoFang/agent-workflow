@@ -10,7 +10,10 @@
  * Skill isolation checks project/ancestor and user Codex/shared roots, following
  * real paths. Tracked source skills and installed skills are both accepted.
  * Missing prerequisites exit 1; unexpected probe/runtime errors exit 2.
+ * Probe the Claude CLI with --version; optional config values show their source.
+ * Invalid optional configuration exits 2, preserving existing prerequisite exits.
  * Check an existing checkout-root .env with git check-ignore without reading it.
+ * Resolve Codex through DispatchDock's configured path, then PATH, and probe its version.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -27,8 +30,10 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { codexVersion } from "./dispatchdock.ts";
 import {
   CheckFailure,
+  OptionalConfigError,
   dispatchConfig,
   entry,
   gh,
@@ -202,6 +207,23 @@ const doctor = (values: Values): void => {
     );
     return process.versions.node;
   });
+  check(
+    "Codex CLI 可用",
+    "安装 Codex CLI 并加入 PATH，或在 DispatchDock 的 config.json 配置 agents.codex.path 为可执行程序或 Node 入口的绝对路径。",
+    codexVersion,
+  );
+  check(
+    "claude CLI 可用",
+    "安装 Claude Code CLI，并确保 claude 在 PATH 上可执行。",
+    () => {
+      const result = spawnSync("claude", ["--version"], { encoding: "utf8" });
+      requireCheck(
+        !result.error && result.status === 0 && !!result.stdout?.trim(),
+        "无法运行 claude --version，请检查 claude 是否存在且可执行。",
+      );
+      return result.stdout.trim();
+    },
+  );
   check("gh 版本", "安装或升级 GitHub CLI 到 2.83.0 或更新版本。", () => {
     const result = ghResult(["--version"]);
     const match = /gh version (\d+)\.(\d+)\.(\d+)/.exec(result.stdout ?? "");
@@ -360,11 +382,12 @@ const doctor = (values: Values): void => {
   let config: DispatchConfig | undefined;
   check(
     "执行配置完整",
-    "按 docs/agents/run-spec.md 补齐或修正 docs/agents/run-spec.json 的六项必填配置。",
+    "按 docs/agents/run-spec.md 补齐或修正 docs/agents/run-spec.json 的必填项；可选 codexConcurrency 为正整数（默认 2，可由 RUN_SPEC_CODEX_CONCURRENCY 覆盖），prCheckCommand 为非空参数数组（默认 gh pr checks {pr} --watch）。",
     () => {
       try {
         config = dispatchConfig(root);
       } catch (error) {
+        if (error instanceof OptionalConfigError) throw error;
         if (error instanceof SyntaxError)
           throw new CheckFailure("执行配置不是有效的 JSON。");
         if (error instanceof Error && /缺少|必须是/.test(error.message))
@@ -373,6 +396,15 @@ const doctor = (values: Values): void => {
       }
     },
   );
+  for (const key of ["codexConcurrency", "prCheckCommand"] as const)
+    check(
+      `可选配置 ${key}`,
+      "先修正执行配置和 RUN_SPEC_CODEX_CONCURRENCY 环境变量，再重新运行 doctor。",
+      () => {
+        requireCheck(!!config, "执行配置未通过，无法读取实际取值和来源。");
+        return `实际取值 ${JSON.stringify(config![key])}；来源：${config!.optionalSources[key]}`;
+      },
+    );
   check(
     "派发脚本",
     "安装 codex-dispatch，并让 dispatchScript 指向主工作区中存在的派发脚本文件。",
@@ -487,13 +519,15 @@ export const doctorCommand: Command = {
   execute: doctor,
   help: `${entry} doctor
 只读自检，逐项输出通过、不通过和修法，不改仓库、不改 GitHub。
-检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18；
+检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18、claude CLI 可用；
+Codex CLI 先查 DispatchDock 配置 agents.codex.path，再查 PATH，并运行 --version；失败列出查找位置；
 GitHub 的 role:engineering、role:design、ready-for-human 标签、只允许 merge commit、合并后自动删除分支；
 Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签说明；
 codex-dispatch、run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；
 执行配置完整、主工作区派发脚本存在；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
+报告可选配置 codexConcurrency、prCheckCommand 的实际取值及来源（配置、环境变量或默认）；格式错误退出 2；
 软链接目录用临时目录中的同名软链接实测，识别带末尾斜杠的无效规则；
 仓库根目录 .env 存在时用 git 实测被忽略，未被忽略的修法是在 .gitignore 中加入 .env；不存在时通过；
 AGENTS.md 的角色一节及提交格式中的 Refs、Role 尾注。
-全部通过退出 0；前提或配置不通过退出 1；参数错误或检查运行出错退出 2。`,
+全部通过退出 0；前提或必填配置检查不通过退出 1；可选配置格式、参数错误或检查运行出错退出 2。`,
 };

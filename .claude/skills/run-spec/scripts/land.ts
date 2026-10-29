@@ -9,19 +9,34 @@
  * survive worktree/branch deletion and never dirty the checkout.
  * Installation output is buffered and replayed on failure. No installation
  * journal state is needed: every unmerged attempt installs after rebase.
+ * Each installation attempt updates its private ignored-file snapshot without
+ * absorbing preexisting artifacts. Before tree removal, move unknown ignored
+ * leaves into the ticket's sibling .kept directory and print a bounded summary.
+ * Missing original snapshots retain other ignored leaves, including on retries.
+ * Before retention, compare current record/QA leaves against the main copies.
+ * Refresh changed/missing copies, including new leaves on retries; failed
+ * refreshes remain protected. Dry runs compare the same leaves and report
+ * structural copy blockers, otherwise assuming planned copies succeed.
  */
 import { spawnSync } from "node:child_process";
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import {
+  artifactLeaves,
+  keepIgnoredArtifacts,
+  prepareInstallationSnapshot,
+} from "./ignored-artifacts.ts";
 import {
   entry,
   CheckFailure,
@@ -63,6 +78,7 @@ const land = (values: Values, numbers: number[]): void => {
     commit: string;
     pushedHead?: string;
     copied?: boolean;
+    copiedPaths?: string[];
   };
   let journal: LandJournal | undefined = existsSync(journalFile)
     ? JSON.parse(readFileSync(journalFile, "utf8"))
@@ -135,6 +151,66 @@ const land = (values: Values, numbers: number[]): void => {
   const names = existsSync(records)
     ? readdirSync(records).filter((name) => matchesRecord(name, `gh-${ticket}`))
     : [];
+  const copyPaths = () =>
+    artifactLeaves(worktree, [
+      ...names.map((name) => `.codex-runs/${name}`),
+      artifacts,
+    ]);
+  const checkedCopyPaths = (dryRun: boolean): string[] => {
+    const copied: string[] = [];
+    for (const path of copyPaths()) {
+      const source = join(worktree, path);
+      const target = join(root, path);
+      const matchesCopy = (): boolean => {
+        try {
+          const from = lstatSync(source);
+          const to = lstatSync(target);
+          if (from.isSymbolicLink())
+            return (
+              to.isSymbolicLink() &&
+              readlinkSync(source) === readlinkSync(target)
+            );
+          if (from.isDirectory()) return to.isDirectory();
+          return (
+            from.isFile() &&
+            to.isFile() &&
+            readFileSync(source).equals(readFileSync(target))
+          );
+        } catch {
+          return false;
+        }
+      };
+      if (matchesCopy()) {
+        copied.push(path);
+        continue;
+      }
+      try {
+        let parent = dirname(target);
+        while (!existsSync(parent)) parent = dirname(parent);
+        if (!lstatSync(parent).isDirectory())
+          throw new Error("主工作区副本的父路径不是目录");
+        if (
+          existsSync(target) &&
+          lstatSync(source).isDirectory() !== lstatSync(target).isDirectory()
+        )
+          throw new Error("主工作区副本与源条目的文件类型不一致");
+        if (!dryRun) {
+          mkdirSync(dirname(target), { recursive: true });
+          cpSync(source, target, { recursive: true, verbatimSymlinks: true });
+          if (!matchesCopy()) throw new Error("复制后内容仍不一致");
+        }
+        copied.push(path);
+        console.log(
+          `${dryRun ? "将重新复制" : "已重新复制"}：${path} → ${target}`,
+        );
+      } catch (error) {
+        console.log(
+          `重新复制失败，${dryRun ? "将移入" : "移入"}保留目录：${path}（${(error as Error).message}）`,
+        );
+      }
+    }
+    return copied;
+  };
   if (values["dry-run"]) {
     console.log(`合并计划：#${ticket} → ${integration}（主工作区 ${root}）`);
     if (merged)
@@ -166,6 +242,14 @@ const land = (values: Values, numbers: number[]): void => {
         `复制验收产物：${join(worktree, artifacts)} → ${join(root, artifacts)}`,
       );
     }
+    if (registered && existsSync(worktree))
+      keepIgnoredArtifacts(
+        worktree,
+        config.symlinkDirectories,
+        `${root}.worktrees/.kept/${ticket}`,
+        true,
+        merged && journal!.copied ? checkedCopyPaths(true) : copyPaths(),
+      );
     console.log(
       !registered && !existsSync(worktree)
         ? "删除 worktree 已完成，跳过"
@@ -199,6 +283,10 @@ const land = (values: Values, numbers: number[]): void => {
     if (rebase) runRebase(["--continue"]);
     runRebase([integration]);
     console.log(`已 rebase 到 ${integration}`);
+    const saveSnapshot = prepareInstallationSnapshot(
+      worktree,
+      config.symlinkDirectories,
+    );
     const [installProgram, ...installArgs] = config.installCommand;
     const installation = spawnSync(installProgram, installArgs, {
       cwd: worktree,
@@ -206,6 +294,7 @@ const land = (values: Values, numbers: number[]): void => {
       encoding: "utf8",
       maxBuffer: Infinity,
     });
+    saveSnapshot();
     if (
       installation.error ||
       installation.signal ||
@@ -249,6 +338,7 @@ const land = (values: Values, numbers: number[]): void => {
   }
   if (journal!.copied) console.log("复制派发记录和验收产物已完成，跳过");
   else {
+    const copiedPaths = copyPaths();
     if (names.length) mkdirSync(join(root, ".codex-runs"), { recursive: true });
     for (const name of names)
       cpSync(join(records, name), join(root, ".codex-runs", name), {
@@ -260,6 +350,7 @@ const land = (values: Values, numbers: number[]): void => {
       cpSync(source, join(root, artifacts), { recursive: true });
     }
     journal!.copied = true;
+    journal!.copiedPaths = copiedPaths;
     saveJournal();
     console.log(
       `已复制派发记录（${names.length} 项）和验收产物：${join(root, artifacts)}`,
@@ -268,6 +359,13 @@ const land = (values: Values, numbers: number[]): void => {
   if (!registered && !existsSync(worktree))
     console.log("删除 worktree 已完成，跳过");
   else {
+    keepIgnoredArtifacts(
+      worktree,
+      config.symlinkDirectories,
+      `${root}.worktrees/.kept/${ticket}`,
+      false,
+      checkedCopyPaths(false),
+    );
     git(root, ["worktree", "remove", worktree]);
     console.log(`已删除 worktree：${worktree}`);
   }
@@ -287,8 +385,15 @@ export const landCommand: Command = {
 每次 rebase 完成后（含冲突解决后重跑），先运行配置的安装命令，再验证。
 安装成功只打印一行；失败回放输出、非零退出，保留现场，不验证也不合并。
 安装失败修好后重跑同一条命令会重新安装；验证通过后快进合并并推送 origin。
-复制本工单派发记录与验收产物后，删除 worktree 和工单分支。
+安装后记录文件粒度的忽略条目快照；重装不会把已有工单产物算成安装产物。
+删除前逐个比较本工单派发记录、验收产物和主工作区副本，内容一致才直接删除；
+有变化或缺少副本的条目重新复制并列出，复制失败则移入保留目录。
+复制完成后，将其余快照外的忽略条目移到
+<仓库目录>.worktrees/.kept/<工单>/，保持相对路径，再删除 worktree 和工单分支。
+配置的目录软链接照旧删除，不访问目标；没有原始快照的旧 worktree 保留其余全部条目。
+移走清单只列顶层路径和文件数，最多 20 项；需要的文件请拷回主工作区。
+保留目录已有同名条目时，旧副本自动归档到其中的 .previous-<随机后缀>/，不覆盖。
 冲突以 1 退出并保留现场；解决并暂存后重跑可继续。
-合并后失败可重跑续做，已完成的推送、复制和删除步骤跳过。
---dry-run 只查询 GitHub 和 git 并打印计划，不改分支、文件或远端。`,
+合并后失败可重跑续做，跳过已完成的推送和删除；复制完成后仍核对当前内容。
+--dry-run 按计划复制成功列出当前将移走的条目；不执行安装、验证或移动，不改分支、文件或远端。`,
 };

@@ -9,6 +9,16 @@
  * with the configured entry index and value; symlink targets are not resolved.
  * codexSandbox selects Codex permissions; dispatchScript resolves against the
  * main worktree (absolute paths also work). Missing/invalid config exits with 2.
+ * Optional codexConcurrency and prCheckCommand use defaults and report sources;
+ * RUN_SPEC_CODEX_CONCURRENCY overrides the validated configured concurrency.
+ * Commands retain required numeric positionals, may add optionalPositionals,
+ * and may opt into passthrough for untouched arguments after the first `--`.
+ * Handlers may return a promise; the CLI awaits dispatch queueing and failures.
+ * Parent lookup diagnoses HTTP 404 with a link command using the current spec
+ * branch when available; other gh failures retain their original diagnostic.
+ * runClaude sends the prompt on stdin, restricts tools, disables MCP/session
+ * persistence and reads text/usage/cost from --output-format json. Missing usage
+ * carries a Chinese reason; launch failures return exitCode 2 and an error.
  * Record ownership strips known extensions, then matches the exact
  * gh-<ticket>/review-<spec> name or a hyphen suffix for land, accept and cleanup.
  * All child processes receive argument arrays; no dependencies or shell evaluation.
@@ -37,11 +47,18 @@ export type Command = {
   help: string;
   options: Options;
   positionals: number;
+  optionalPositionals?: number;
+  passthrough?: boolean;
   normalizeArgs?: (args: string[]) => string[];
-  execute: (values: Values, numbers: number[]) => void;
+  execute: (
+    values: Values,
+    numbers: number[],
+    args: string[],
+  ) => void | Promise<void>;
 };
 
 export class CheckFailure extends Error {}
+export class OptionalConfigError extends Error {}
 
 export const usageError = (message: string, usage: string): Error =>
   new Error(`${message}\n用法：${usage}`);
@@ -186,6 +203,9 @@ export type DispatchConfig = {
   acceptanceRoot: string;
   codexSandbox: string;
   dispatchScript: string;
+  codexConcurrency: number;
+  prCheckCommand: string[];
+  optionalSources: Record<"codexConcurrency" | "prCheckCommand", string>;
 };
 
 const localPath = (value: unknown): value is string =>
@@ -253,7 +273,131 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     !config.dispatchScript.trim()
   )
     throw new Error("配置 dispatchScript 必须是派发脚本路径");
+  const optionalSources = {
+    codexConcurrency: Object.hasOwn(config, "codexConcurrency")
+      ? "配置"
+      : "默认",
+    prCheckCommand: Object.hasOwn(config, "prCheckCommand") ? "配置" : "默认",
+  };
+  if (!Object.hasOwn(config, "codexConcurrency")) config.codexConcurrency = 2;
+  if (
+    !Number.isSafeInteger(config.codexConcurrency) ||
+    config.codexConcurrency < 1
+  )
+    throw new OptionalConfigError(
+      "配置 codexConcurrency 必须是安全范围内的正整数",
+    );
+  const concurrency = process.env.RUN_SPEC_CODEX_CONCURRENCY;
+  if (concurrency !== undefined) {
+    if (
+      !/^[1-9]\d*$/.test(concurrency) ||
+      !Number.isSafeInteger(Number(concurrency))
+    )
+      throw new OptionalConfigError(
+        "配置 codexConcurrency 的环境变量 RUN_SPEC_CODEX_CONCURRENCY 必须是安全范围内的正整数",
+      );
+    config.codexConcurrency = Number(concurrency);
+    optionalSources.codexConcurrency = "环境变量 RUN_SPEC_CODEX_CONCURRENCY";
+  }
+  if (!Object.hasOwn(config, "prCheckCommand"))
+    config.prCheckCommand = ["gh", "pr", "checks", "{pr}", "--watch"];
+  if (
+    !Array.isArray(config.prCheckCommand) ||
+    !config.prCheckCommand.length ||
+    !config.prCheckCommand.every(
+      (part: unknown) => typeof part === "string" && part.trim().length > 0,
+    )
+  )
+    throw new OptionalConfigError(
+      "配置 prCheckCommand 必须是非空的程序和参数数组，每项必须是非空字符串",
+    );
+  config.optionalSources = optionalSources;
   return config;
+};
+
+export type ClaudeUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  [key: string]: unknown;
+};
+
+export type ClaudeResult = {
+  text: string;
+  exitCode: number;
+  stderr: string;
+  usage: ClaudeUsage | null;
+  usageUnavailableReason?: string;
+  totalCostUsd?: number;
+  modelUsage?: Record<string, unknown>;
+  error?: string;
+};
+
+export const runClaude = (options: {
+  prompt: string;
+  tools: string[];
+  cwd: string;
+  model?: string;
+}): ClaudeResult => {
+  const args = [
+    "-p",
+    "--output-format",
+    "json",
+    "--no-session-persistence",
+    "--strict-mcp-config",
+    "--tools",
+    options.tools.join(","),
+    ...(options.model ? ["--model", options.model] : []),
+  ];
+  const result = spawnSync("claude", args, {
+    cwd: options.cwd,
+    input: options.prompt,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const output: ClaudeResult = {
+    text: result.stdout ?? "",
+    exitCode: result.status ?? 2,
+    stderr: result.stderr ?? "",
+    usage: null,
+  };
+  if (result.error || result.signal) {
+    output.error = result.error
+      ? `claude 无法运行：${errorMessage(result.error)}`
+      : `claude 被信号 ${result.signal} 中断`;
+    output.usageUnavailableReason = output.error;
+    return output;
+  }
+  try {
+    const data = JSON.parse(output.text);
+    if (typeof data?.result === "string") output.text = data.result;
+    const usage = data?.usage;
+    if (
+      usage &&
+      typeof usage === "object" &&
+      [usage.input_tokens, usage.output_tokens].every(
+        (value) =>
+          typeof value === "number" && Number.isFinite(value) && value >= 0,
+      )
+    )
+      output.usage = usage;
+    else
+      output.usageUnavailableReason =
+        "claude JSON 输出缺少有效的 usage.input_tokens 或 usage.output_tokens，用量未知。";
+    if (typeof data?.total_cost_usd === "number")
+      output.totalCostUsd = data.total_cost_usd;
+    if (data?.modelUsage && typeof data.modelUsage === "object")
+      output.modelUsage = data.modelUsage;
+    if (data?.is_error) output.error = `claude 报告执行失败：${output.text}`;
+  } catch {
+    output.usageUnavailableReason = output.text.trim()
+      ? "claude 输出不是有效的 JSON，用量未知。"
+      : "claude 没有返回输出，用量未知。";
+  }
+  if (output.exitCode !== 0)
+    output.error = `claude 调用失败（退出码 ${output.exitCode}）：${output.stderr.trim() || output.text || "没有错误详情"}`;
+  return output;
 };
 
 export const git = (root: string, args: string[]): string => {
@@ -266,9 +410,21 @@ export const git = (root: string, args: string[]): string => {
 };
 
 export const ticketIntegration = (root: string, endpoint: string) => {
-  const parent = JSON.parse(
-    gh(["api", "--method", "GET", `${endpoint}/parent`]),
-  ) as Issue;
+  const result = ghResult(["api", "--method", "GET", `${endpoint}/parent`]);
+  if (result.error || result.status !== 0) {
+    if (/\bHTTP 404\b|\b404 Not Found\b/.test(result.stderr ?? "")) {
+      const ticket = endpoint.split("/").at(-1);
+      const branch = git(root, ["branch", "--show-current"]);
+      const spec = /^spec\/([1-9]\d*)-/.exec(branch)?.[1] ?? "<S>";
+      throw new CheckFailure(
+        `工单 #${ticket} 没有挂到 spec 下；请运行：${entry} link ${spec} ${ticket}`,
+      );
+    }
+    throw new Error(
+      "gh 调用失败（api），请检查 gh 安装、认证、仓库权限和网络。",
+    );
+  }
+  const parent = JSON.parse(result.stdout) as Issue;
   const spec = issueNumber(String(parent.number));
   const branches = git(root, [
     "for-each-ref",
@@ -284,7 +440,9 @@ export const ticketIntegration = (root: string, endpoint: string) => {
   return { spec, integration: branches[0] };
 };
 
-export const runCommands = (commands: Record<string, Command>): void => {
+export const runCommands = (
+  commands: Record<string, Command>,
+): void | Promise<void> => {
   const [command, ...input] = process.argv.slice(2);
   const allHelp = [
     ...Object.values(commands).map((item) => item.help),
@@ -298,14 +456,19 @@ export const runCommands = (commands: Record<string, Command>): void => {
   if (!Object.hasOwn(commands, command))
     throw usageError(`未知子命令：${command}`, allHelp);
   const definition = commands[command];
-  if (input.includes("--help")) {
+  const separator = input.indexOf("--");
+  const beforeSeparator = separator < 0 ? input : input.slice(0, separator);
+  const args =
+    definition.passthrough && separator >= 0 ? input.slice(separator + 1) : [];
+  const optionsInput = definition.passthrough ? beforeSeparator : input;
+  if (beforeSeparator.includes("--help")) {
     console.log(`用法：${definition.help}\n${ghHelp}`);
     return;
   }
   let parsed;
   try {
     parsed = parseArgs({
-      args: definition.normalizeArgs?.(input) ?? input,
+      args: definition.normalizeArgs?.(optionsInput) ?? optionsInput,
       options: {
         help: { type: "boolean" },
         "dry-run": { type: "boolean" },
@@ -321,10 +484,14 @@ export const runCommands = (commands: Record<string, Command>): void => {
     console.log(`${definition.help}\n${ghHelp}`);
     return;
   }
-  if (positionals.length !== definition.positionals) {
+  if (
+    positionals.length < definition.positionals ||
+    positionals.length >
+      definition.positionals + (definition.optionalPositionals ?? 0)
+  ) {
     throw usageError("缺少必需参数或有多余位置参数。", definition.help);
   }
-  definition.execute(values, positionals.map(issueNumber));
+  return definition.execute(values, positionals.map(issueNumber), args);
 };
 
 export const entry = "node .claude/skills/run-spec/scripts/tickets.ts";

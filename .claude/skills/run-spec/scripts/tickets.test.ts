@@ -6,6 +6,8 @@
  * keeping these tests runnable after copying the skill to another repository.
  * Retry fixtures can persist a comment before reporting failure and expose it
  * through a subsequent paginated read, covering ambiguous write completion.
+ * Shared-helper CLI stand-ins declare optional numeric positionals and raw `--`
+ * tails, and invoke a PATH fake Claude to inspect argv, stdin, usage and failures.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -20,6 +22,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { recordExtensions, recordFixtures } from "./record-fixtures.ts";
 
 type Response = {
@@ -217,6 +220,248 @@ const dryWrites = (stdout: string): string[][] =>
     .split("\n")
     .filter((line) => line.startsWith('["gh",'))
     .map((line) => JSON.parse(line));
+
+const runShared = (
+  source: string,
+  args: string[],
+  options: { output?: string; exitCode?: number; missingClaude?: boolean } = {},
+) => {
+  const directory = temporaryDirectory();
+  try {
+    const shared = pathToFileURL(join(import.meta.dirname, "shared.ts")).href;
+    writeFileSync(
+      join(directory, "fixture.mjs"),
+      `
+import { runCommands, reportError, runClaude } from ${JSON.stringify(shared)};
+try { ${source} } catch (error) { reportError(error); }
+`,
+    );
+    if (!options.missingClaude)
+      writeFileSync(
+        join(directory, "claude"),
+        `#!${process.execPath}
+const fs = require("node:fs");
+fs.writeFileSync("calls.json", JSON.stringify({args: process.argv.slice(2), input: fs.readFileSync(0, "utf8"), cwd: process.cwd()}));
+process.stdout.write(process.env.STUDIO_CLAUDE_OUTPUT || "");
+if (process.env.STUDIO_CLAUDE_EXIT !== "0") process.stderr.write("fixture failure detail");
+process.exitCode = Number(process.env.STUDIO_CLAUDE_EXIT);
+`,
+        { mode: 0o755 },
+      );
+    const result = spawnSync(
+      process.execPath,
+      [join(directory, "fixture.mjs"), ...args],
+      {
+        cwd: directory,
+        encoding: "utf8",
+        timeout: 10000,
+        env: {
+          ...process.env,
+          PATH: directory,
+          STUDIO_CLAUDE_OUTPUT: options.output ?? "",
+          STUDIO_CLAUDE_EXIT: String(options.exitCode ?? 0),
+        },
+      },
+    );
+    assert.ifError(result.error);
+    return {
+      ...result,
+      directory,
+      call: existsSync(join(directory, "calls.json"))
+        ? JSON.parse(readFileSync(join(directory, "calls.json"), "utf8"))
+        : undefined,
+    };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+};
+
+const parserFixture = `
+const definition = {
+  help: "fixture [<工单号>] [--label <值>] [-- <原样参数>…]",
+  options: {label: {type: "string"}},
+  positionals: 0,
+  optionalPositionals: 1,
+  passthrough: true,
+  normalizeArgs: args => args.map(arg => arg === "alias" ? "4" : arg),
+  execute: (values, numbers, args) => console.log(JSON.stringify({values, numbers, args})),
+};
+runCommands({optional: definition, mixed: {...definition, positionals: 1}});
+`;
+
+test("shared command declarations accept omitted or present optional positionals", () => {
+  for (const [args, numbers] of [
+    [["optional"], []],
+    [["optional", "4"], [4]],
+    [["mixed", "4"], [4]],
+    [
+      ["mixed", "4", "5"],
+      [4, 5],
+    ],
+  ] as const) {
+    const result = runShared(parserFixture, [...args]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      values: {},
+      numbers,
+      args: [],
+    });
+  }
+  for (const args of [
+    ["mixed"],
+    ["optional", "4", "5"],
+    ["optional", "0"],
+    ["mixed", "4", "text"],
+    ["optional", "--unknown"],
+  ]) {
+    const result = runShared(parserFixture, args);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /^出错：/);
+  }
+});
+
+test("shared command passthrough preserves help, flags, whitespace and shell characters after --", () => {
+  const args = [
+    "--help",
+    "--unknown",
+    "0",
+    "alias",
+    "",
+    "a path",
+    "line\nbreak",
+    "$(touch sentinel)",
+    "`literal`",
+    "--",
+  ];
+  const result = runShared(parserFixture, [
+    "optional",
+    "alias",
+    "--label",
+    "value",
+    "--",
+    ...args,
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    values: { label: "value" },
+    numbers: [4],
+    args,
+  });
+  const withoutNumber = runShared(parserFixture, ["optional", "--", ...args]);
+  assert.equal(withoutNumber.status, 0, withoutNumber.stderr);
+  assert.deepEqual(JSON.parse(withoutNumber.stdout).args, args);
+  const help = runShared(parserFixture, [
+    "optional",
+    "--help",
+    "--",
+    "--unknown",
+  ]);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /^用法：/);
+});
+
+const claudeFixture = `
+runCommands({fixture: {
+  help: "fixture [--model <模型>] -- <工具>…",
+  options: {model: {type: "string"}}, positionals: 0, passthrough: true,
+  execute: (values, numbers, tools) => {
+    const result = runClaude({prompt: "prompt with spaces\\n$(literal)", tools, model: values.model, cwd: process.cwd()});
+    console.log(JSON.stringify(result));
+    process.exitCode = result.exitCode;
+  },
+}});
+`;
+
+test("shared Claude invocation restricts argv and returns text, tokens and cost from JSON", () => {
+  const usage = {
+    input_tokens: 120,
+    output_tokens: 45,
+    cache_creation_input_tokens: 10,
+    cache_read_input_tokens: 80,
+  };
+  const modelUsage = { "claude-haiku": { inputTokens: 120, outputTokens: 45 } };
+  for (const tools of [[], ["Read", "Glob", "Grep"]]) {
+    const result = runShared(
+      claudeFixture,
+      ["fixture", "--model", "haiku", "--", ...tools],
+      {
+        output: JSON.stringify({
+          type: "result",
+          result: "OK\n完整输出",
+          usage,
+          total_cost_usd: 0.02,
+          modelUsage,
+        }),
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.call, {
+      args: [
+        "-p",
+        "--output-format",
+        "json",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+        "--tools",
+        tools.join(","),
+        "--model",
+        "haiku",
+      ],
+      input: "prompt with spaces\n$(literal)",
+      cwd: result.directory,
+    });
+    assert.deepEqual(JSON.parse(result.stdout), {
+      text: "OK\n完整输出",
+      exitCode: 0,
+      stderr: "",
+      usage,
+      totalCostUsd: 0.02,
+      modelUsage,
+    });
+  }
+});
+
+test("shared Claude invocation explains missing usage and preserves failed process output", () => {
+  for (const [output, expected] of [
+    [JSON.stringify({ result: "OK" }), /缺少有效的 usage/],
+    [
+      JSON.stringify({
+        result: "OK",
+        usage: { input_tokens: "1", output_tokens: 2 },
+      }),
+      /缺少有效的 usage/,
+    ],
+    ["plain output", /不是有效的 JSON/],
+    ["", /没有返回输出/],
+  ] as const) {
+    const result = runShared(claudeFixture, ["fixture"], { output });
+    assert.equal(result.status, 0, result.stderr);
+    const response = JSON.parse(result.stdout);
+    assert.equal(response.usage, null);
+    assert.match(response.usageUnavailableReason, expected);
+  }
+  const failed = runShared(claudeFixture, ["fixture"], {
+    output: "failed output",
+    exitCode: 7,
+  });
+  assert.equal(failed.status, 7, failed.stderr);
+  const response = JSON.parse(failed.stdout);
+  assert.equal(response.text, "failed output");
+  assert.equal(response.stderr, "fixture failure detail");
+  assert.match(
+    response.error,
+    /claude 调用失败（退出码 7）.*fixture failure detail/,
+  );
+  const missing = runShared(claudeFixture, ["fixture"], {
+    missingClaude: true,
+  });
+  assert.equal(missing.status, 2, missing.stderr);
+  assert.equal(missing.call, undefined);
+  assert.match(
+    JSON.parse(missing.stdout).error,
+    /claude 无法运行：文件或程序不存在/,
+  );
+});
 
 test("frontier groups paginated children and filters closed blockers", () => {
   const responses = [
