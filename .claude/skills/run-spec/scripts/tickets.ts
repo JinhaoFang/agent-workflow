@@ -1,6 +1,6 @@
 /**
  * Designer-only ticket CLI: run `node .claude/skills/run-spec/scripts/tickets.ts
- * <frontier|link|accept|dispatch|land|cleanup|review|doctor> --help` from a clone.
+ * <frontier|link|accept|dispatch|land|cleanup|review|doctor|watch> --help` from a clone.
  * Register each command once; modules provide help, options, required/optional
  * numeric positional counts, optional raw `--` passthrough and a handler.
  * Shared helpers load optional configuration defaults/sources and run Claude
@@ -16,6 +16,7 @@ import { linkCommand } from "./link.ts";
 import { acceptCommand } from "./accept.ts";
 import { doctorCommand } from "./doctor.ts";
 import { reviewCommand } from "./review.ts";
+import { watchCommand } from "./watch.ts";
 import { reportError, runCommands, type Command } from "./shared.ts";
 
 const commands: Record<string, Command> = {
@@ -27,6 +28,7 @@ const commands: Record<string, Command> = {
   link: linkCommand,
   accept: acceptCommand,
   review: reviewCommand,
+  watch: watchCommand,
 };
 
 try {
