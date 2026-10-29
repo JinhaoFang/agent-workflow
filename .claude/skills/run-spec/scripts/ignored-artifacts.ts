@@ -7,8 +7,9 @@
  * and retain previously classified installation paths, so existing ticket
  * artifacts never become installation output on retries. Legacy trees retain
  * their conservative status across retries. Snapshots compare paths, not content.
- * Land moves remaining leaves, archiving previous copies on collisions. Summaries
- * show at most 20 top-level paths and file counts, never individual leaf names.
+ * Land excludes successfully copied record/QA leaves and moves remaining leaves,
+ * archiving previous copies on collisions. Summaries show at most 20 top-level
+ * paths and file counts, never individual leaf names.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -64,6 +65,11 @@ const leaves = (root: string, path = ""): string[] => {
   });
 };
 
+export const artifactLeaves = (worktree: string, paths: string[]): string[] =>
+  paths
+    .filter((path) => existsSync(join(worktree, path)))
+    .flatMap((path) => leaves(worktree, path));
+
 const ignoredFiles = (worktree: string, directories: string[]): string[] => {
   const links = directories.filter((directory) => {
     try {
@@ -108,13 +114,14 @@ export const prepareInstallationSnapshot = (
   initial = false,
 ): (() => void) => {
   const file = snapshotFile(worktree);
-  const previous = initial ? undefined : readSnapshot(file);
-  const before = new Set(initial ? [] : ignoredFiles(worktree, directories));
+  const previous = readSnapshot(file);
+  const first = initial && !previous;
+  const before = new Set(first ? [] : ignoredFiles(worktree, directories));
   const installed = new Set(previous?.files);
   return () => {
     const snapshot: Snapshot = {
       version: 1,
-      legacy: !initial && (previous?.legacy ?? true),
+      legacy: !first && (previous?.legacy ?? true),
       files: ignoredFiles(worktree, directories).filter(
         (path) => installed.has(path) || !before.has(path),
       ),
@@ -172,11 +179,14 @@ export const keepIgnoredArtifacts = (
   directories: string[],
   destination: string,
   dryRun: boolean,
+  copiedPaths: string[] = [],
 ): void => {
   const plan = ignoredArtifactPlan(worktree, directories);
+  const copied = new Set(copiedPaths);
+  plan.files = plan.files.filter((file) => !copied.has(file));
   if (plan.legacy)
     console.log(
-      "没有原始安装产物快照（旧 worktree），除配置的软链接外，全部被忽略的条目均保留。",
+      "没有原始安装产物快照（旧 worktree），除配置的软链接与已复制的本工单记录、验收产物外，全部被忽略的条目均保留。",
     );
   if (!plan.files.length) return;
   console.log(`${dryRun ? "将移走" : "移走"}被忽略的条目 → ${destination}`);

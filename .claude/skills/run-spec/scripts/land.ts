@@ -12,7 +12,9 @@
  * Each installation attempt updates its private ignored-file snapshot without
  * absorbing preexisting artifacts. Before tree removal, move unknown ignored
  * leaves into the ticket's sibling .kept directory and print a bounded summary.
- * Missing original snapshots retain all ignored leaves, including on retries.
+ * Missing original snapshots retain other ignored leaves, including on retries.
+ * Completed copies are journaled by leaf path and excluded from retention;
+ * dry runs assume planned copies succeed. Uncopied paths remain protected.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -27,6 +29,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import {
+  artifactLeaves,
   keepIgnoredArtifacts,
   prepareInstallationSnapshot,
 } from "./ignored-artifacts.ts";
@@ -71,6 +74,7 @@ const land = (values: Values, numbers: number[]): void => {
     commit: string;
     pushedHead?: string;
     copied?: boolean;
+    copiedPaths?: string[];
   };
   let journal: LandJournal | undefined = existsSync(journalFile)
     ? JSON.parse(readFileSync(journalFile, "utf8"))
@@ -143,6 +147,11 @@ const land = (values: Values, numbers: number[]): void => {
   const names = existsSync(records)
     ? readdirSync(records).filter((name) => matchesRecord(name, `gh-${ticket}`))
     : [];
+  const copyPaths = () =>
+    artifactLeaves(worktree, [
+      ...names.map((name) => `.codex-runs/${name}`),
+      artifacts,
+    ]);
   if (values["dry-run"]) {
     console.log(`合并计划：#${ticket} → ${integration}（主工作区 ${root}）`);
     if (merged)
@@ -180,6 +189,7 @@ const land = (values: Values, numbers: number[]): void => {
         config.symlinkDirectories,
         `${root}.worktrees/.kept/${ticket}`,
         true,
+        merged && journal!.copied ? (journal!.copiedPaths ?? []) : copyPaths(),
       );
     console.log(
       !registered && !existsSync(worktree)
@@ -269,6 +279,7 @@ const land = (values: Values, numbers: number[]): void => {
   }
   if (journal!.copied) console.log("复制派发记录和验收产物已完成，跳过");
   else {
+    const copiedPaths = copyPaths();
     if (names.length) mkdirSync(join(root, ".codex-runs"), { recursive: true });
     for (const name of names)
       cpSync(join(records, name), join(root, ".codex-runs", name), {
@@ -280,6 +291,7 @@ const land = (values: Values, numbers: number[]): void => {
       cpSync(source, join(root, artifacts), { recursive: true });
     }
     journal!.copied = true;
+    journal!.copiedPaths = copiedPaths;
     saveJournal();
     console.log(
       `已复制派发记录（${names.length} 项）和验收产物：${join(root, artifacts)}`,
@@ -293,6 +305,7 @@ const land = (values: Values, numbers: number[]): void => {
       config.symlinkDirectories,
       `${root}.worktrees/.kept/${ticket}`,
       false,
+      journal!.copiedPaths ?? [],
     );
     git(root, ["worktree", "remove", worktree]);
     console.log(`已删除 worktree：${worktree}`);
@@ -314,12 +327,13 @@ export const landCommand: Command = {
 安装成功只打印一行；失败回放输出、非零退出，保留现场，不验证也不合并。
 安装失败修好后重跑同一条命令会重新安装；验证通过后快进合并并推送 origin。
 安装后记录文件粒度的忽略条目快照；重装不会把已有工单产物算成安装产物。
-复制本工单派发记录与验收产物后，将快照外的忽略条目移到
+已复制回主工作区的本工单派发记录与验收产物直接删除，不列入移走清单；
+未复制的条目照旧保留。复制完成后，将其余快照外的忽略条目移到
 <仓库目录>.worktrees/.kept/<工单>/，保持相对路径，再删除 worktree 和工单分支。
-配置的目录软链接照旧删除，不访问目标；没有原始快照的旧 worktree 全部保留。
+配置的目录软链接照旧删除，不访问目标；没有原始快照的旧 worktree 保留其余全部条目。
 移走清单只列顶层路径和文件数，最多 20 项；需要的文件请拷回主工作区。
 保留目录已有同名条目时，旧副本自动归档到其中的 .previous-<随机后缀>/，不覆盖。
 冲突以 1 退出并保留现场；解决并暂存后重跑可继续。
 合并后失败可重跑续做，已完成的推送、复制和删除步骤跳过。
---dry-run 列出当前将移走的条目；不执行安装、验证或移动，不改分支、文件或远端。`,
+--dry-run 按计划复制成功列出当前将移走的条目；不执行安装、验证或移动，不改分支、文件或远端。`,
 };

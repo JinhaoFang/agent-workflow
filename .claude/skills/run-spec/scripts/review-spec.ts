@@ -37,6 +37,7 @@ import {
 } from "./shared.ts";
 
 const fixedPrompt = `你是派发前的独立只读审查者，使用一个不共享此前对话上下文的新会话。
+只做审查，不担任设计负责人或工程负责人，也不向用户提问。
 先读当前仓库的 AGENTS.md，再按其中的指针读角色文档和路线图；默认位置为 docs/roles/ 和 docs/roadmap.md，不存在时用 Glob、Grep 定位，找不到则明确说明。
 然后读取本次审查材料清单及其中的全部 spec、子工单或草稿；spec 正文是当前决定的唯一事实来源，不读 spec 评论。
 只允许用 Read、Glob、Grep 查阅材料和相关代码；不修改文件，不执行命令，不操作 GitHub，不派发子代理。

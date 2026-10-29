@@ -13,6 +13,7 @@
  * Dry runs preview the same name, prompt and comment without writes.
  * Every installation attempt records ignored leaves in the private git
  * directory before dispatch, excluding configured directory symlinks.
+ * Preparation retries reuse that snapshot and add only newly installed paths.
  * Global startup admission is locked until DispatchDock registers a live run;
  * account concurrency errors retry through the same queue with live output.
  * --resume preserves interrupted edits and rejects live runs or rebases.
@@ -401,6 +402,7 @@ worktree 不存在、干净、有活着的运行或进行中的 rebase 时拒绝
 可用 RUN_SPEC_CODEX_CONCURRENCY 覆盖；达到上限时加锁排队，每 5 分钟最多打印一行。
 Codex 返回 Concurrency limit exceeded 时回到排队自动重试；用 slots 查看运行与空余名额。
 评论失败以 2 退出，不派发，已准备的 worktree 保留供重试。
+安装失败重试时沿用已有安装产物快照，只补充本次安装新建的路径。
 --dry-run 只读 GitHub 和 git 并打印计划及评论内容，不评论、不安装、
 不建目录、不派发。`,
 };

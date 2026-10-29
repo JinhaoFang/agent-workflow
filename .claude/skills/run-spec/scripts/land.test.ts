@@ -9,6 +9,8 @@
  * conflict retries demonstrate ordering without reading internal CLI functions.
  * Protection cases create installation snapshots through dispatch, then assert
  * kept paths/content and cleanup-safe summaries through the public land CLI.
+ * Every dispatch uses a fixture-local DispatchDock home, even when verification
+ * inherits an occupied global registry. Copied records/QA never enter retention.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -228,7 +230,10 @@ const readSteps = (
     .split("\n")
     .map((line) => JSON.parse(line));
 
-const dispatchInstallation = (f: ReturnType<typeof fixture>) => {
+const dispatchInstallation = (
+  f: ReturnType<typeof fixture>,
+  options: { artifactsOnly?: boolean; retry?: boolean } = {},
+) => {
   f.git(["worktree", "remove", f.worktree]);
   f.git(["branch", "-D", "ticket/21"]);
   f.commit(
@@ -237,8 +242,13 @@ const dispatchInstallation = (f: ReturnType<typeof fixture>) => {
   );
   f.commit(
     "install.cjs",
-    `${readFileSync(join(f.root, "install.cjs"), "utf8")}\nfs.mkdirSync("node_modules/package", {recursive:true});\nfs.writeFileSync("node_modules/package/installed.txt", "dependency");\n`,
+    `${readFileSync(join(f.root, "install.cjs"), "utf8")}\nfs.mkdirSync("node_modules/package", {recursive:true});\nfs.writeFileSync("node_modules/package/installed.txt", "dependency");\nif (!process.exitCode) fs.writeFileSync("node_modules/package/success.txt", "installed on success");\n`,
   );
+  if (options.artifactsOnly)
+    f.commit(
+      "verify.cjs",
+      `const fs = require("node:fs");\nfs.writeFileSync("${f.artifacts}/verification.json", "QA only");\n`,
+    );
   const script = join(f.temporary, "dispatcher.cjs");
   writeFileSync(script, "process.exitCode = 0;\n");
   f.commit(
@@ -263,27 +273,163 @@ const dispatchInstallation = (f: ReturnType<typeof fixture>) => {
     },
   });
   writeFileSync(responsesFile, JSON.stringify(responses));
-  const result = spawnSync(process.execPath, [cli, "dispatch", "21"], {
-    cwd: f.root,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      PATH: `${f.temporary}${delimiter}${process.env.PATH}`,
-      LAND_FIXTURE_ROOT: f.temporary,
-    },
-  });
+  const dispatch = (installExit = 0) => {
+    rmSync(join(f.temporary, "gh-calls.jsonl"), { force: true });
+    return spawnSync(process.execPath, [cli, "dispatch", "21"], {
+      cwd: f.root,
+      encoding: "utf8",
+      timeout: 30000,
+      env: {
+        ...process.env,
+        PATH: `${f.temporary}${delimiter}${process.env.PATH}`,
+        CODEX_DISPATCH_HOME: join(f.temporary, "dispatch-home"),
+        RUN_SPEC_CODEX_CONCURRENCY: undefined,
+        LAND_FIXTURE_ROOT: f.temporary,
+        LAND_INSTALL_EXIT: String(installExit),
+      },
+    });
+  };
+  if (options.retry) {
+    const failed = dispatch(1);
+    assert.ifError(failed.error);
+    assert.equal(failed.status, 2, failed.stderr);
+    writeFileSync(
+      join(f.worktree, "node_modules/package/between-installs.bin"),
+      "ticket output between installs",
+    );
+    saveEvidence(
+      "dispatch-first-install-failed.log",
+      failed.stdout + failed.stderr,
+    );
+  }
+  const result = dispatch();
   writeFileSync(responsesFile, original);
+  assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(f.git(["status", "--porcelain"], f.worktree), "");
   f.commit("ticket.txt", "ticket implementation", f.worktree);
 };
 
 const saveEvidence = (name: string, output: string): void => {
-  const directory = process.env.TICKET_79_EVIDENCE;
+  const directory =
+    process.env.TICKET_89_EVIDENCE ?? process.env.TICKET_79_EVIDENCE;
   if (!directory) return;
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, name), output);
 };
+
+test("land excludes copied ticket records and QA from both preview and retention with or without a snapshot", () => {
+  for (const legacy of [false, true]) {
+    for (const extra of [false, true]) {
+      const f = fixture();
+      try {
+        dispatchInstallation(f, { artifactsOnly: true });
+        if (legacy)
+          rmSync(
+            join(
+              f.git(["rev-parse", "--absolute-git-dir"], f.worktree),
+              "run-spec-installation.json",
+            ),
+          );
+        mkdirSync(join(f.worktree, ".codex-runs"));
+        writeFileSync(
+          join(f.worktree, ".codex-runs/gh-21.json"),
+          "ticket record",
+        );
+        writeFileSync(join(f.worktree, f.artifacts, "result.txt"), "ticket QA");
+        if (extra)
+          writeFileSync(join(f.worktree, "out/new-output.bin"), "new output");
+        const preview = f.run(["21", "--dry-run"]);
+        assert.equal(preview.status, 0, preview.stderr);
+        const result = f.run(["21"]);
+        assert.equal(result.status, 0, result.stderr);
+        const kept = `${f.root}.worktrees/.kept/21`;
+        const summary = (output: string) =>
+          output.split("\n").filter((line) => line.startsWith("  "));
+        assert.deepEqual(summary(preview.stdout), summary(result.stdout));
+        if (!legacy) {
+          assert.equal(existsSync(kept), extra);
+          if (extra) {
+            assert.deepEqual(summary(result.stdout), [
+              '  "out"：1 个文件',
+              "  合计 1 个顶层路径，1 个文件",
+            ]);
+            assert.equal(
+              readFileSync(join(kept, "out/new-output.bin"), "utf8"),
+              "new output",
+            );
+          } else
+            assert.doesNotMatch(
+              result.stdout + preview.stdout,
+              /移走被忽略的条目/,
+            );
+        } else {
+          assert.ok(
+            existsSync(join(kept, "node_modules/package/installed.txt")),
+          );
+          assert.ok(existsSync(join(kept, "out/steps.jsonl")));
+        }
+        assert.ok(!existsSync(join(kept, ".codex-runs")));
+        assert.ok(!existsSync(join(kept, f.artifacts)));
+        assert.equal(
+          readFileSync(join(f.root, ".codex-runs/gh-21.json"), "utf8"),
+          "ticket record",
+        );
+        assert.equal(
+          readFileSync(join(f.root, f.artifacts, "result.txt"), "utf8"),
+          "ticket QA",
+        );
+        const scenario = `${legacy ? "legacy" : "snapshot"}-${extra ? "extra-file" : "copied-only"}`;
+        saveEvidence(`land-${scenario}.log`, result.stdout + result.stderr);
+        saveEvidence(
+          `land-${scenario}-dry-run.log`,
+          preview.stdout + preview.stderr,
+        );
+      } finally {
+        f.cleanup();
+      }
+    }
+  }
+});
+
+test("dispatch installation retry leaves intervening ignored output protected when land runs", () => {
+  const f = fixture();
+  try {
+    dispatchInstallation(f, { artifactsOnly: true, retry: true });
+    const snapshot = JSON.parse(
+      readFileSync(
+        join(
+          f.git(["rev-parse", "--absolute-git-dir"], f.worktree),
+          "run-spec-installation.json",
+        ),
+        "utf8",
+      ),
+    );
+    assert.ok(
+      !snapshot.files.includes("node_modules/package/between-installs.bin"),
+    );
+    assert.ok(snapshot.files.includes("node_modules/package/success.txt"));
+    const preview = f.run(["21", "--dry-run"]);
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.match(preview.stdout, /"node_modules"：1 个文件/);
+    const result = f.run(["21"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /"node_modules"：1 个文件/);
+    const kept = `${f.root}.worktrees/.kept/21`;
+    assert.equal(
+      readFileSync(
+        join(kept, "node_modules/package/between-installs.bin"),
+        "utf8",
+      ),
+      "ticket output between installs",
+    );
+    assert.ok(!existsSync(join(kept, "node_modules/package/installed.txt")));
+    assert.ok(!existsSync(join(kept, "node_modules/package/success.txt")));
+    saveEvidence("land-dispatch-retry.log", result.stdout + result.stderr);
+  } finally {
+    f.cleanup();
+  }
+});
 
 test("land keeps new ignored directories and new files within installed directories without following symlinks", () => {
   for (const scenario of ["new-directory", "existing-directory"]) {
@@ -369,6 +515,9 @@ test("land legacy worktrees keep all ignored files except configured symlinks an
     );
     assert.ok(existsSync(join(kept, "out/steps.jsonl")));
     assert.ok(existsSync(join(kept, ".codex-runs/gh-210.json")));
+    assert.ok(!existsSync(join(kept, ".codex-runs/gh-21.json")));
+    assert.ok(!existsSync(join(kept, f.artifacts)));
+    assert.ok(existsSync(join(kept, "out/custom-qa/spec-17/22/other.txt")));
     assert.ok(!existsSync(join(kept, "references")));
     assert.equal(
       readFileSync(join(f.root, "references/shared.txt"), "utf8"),
@@ -850,7 +999,24 @@ process.exit(result.status ?? 2);
         );
         assert.ok(existsSync(join(f.root, ".codex-runs/gh-21.json")));
       }
-      if (stage === "copy") rmSync(blocker, { recursive: true });
+      if (stage === "copy") {
+        assert.equal(
+          readFileSync(
+            join(f.worktree, f.artifacts, "nested/result.txt"),
+            "utf8",
+          ),
+          "ticket QA",
+        );
+        assert.ok(!existsSync(`${f.root}.worktrees/.kept/21`));
+        rmSync(blocker, { recursive: true });
+      }
+      if (stage === "worktree") {
+        writeFileSync(
+          join(f.worktree, ".codex-runs/gh-21-late.json"),
+          "uncopied record",
+        );
+        writeFileSync(join(f.worktree, f.artifacts, "late.bin"), "uncopied QA");
+      }
       if (failedCommand) rmSync(join(f.temporary, "git"));
       assert.equal(existsSync(f.worktree), stage !== "branch");
       assert.ok(f.git(["branch", "--list", "ticket/21"]));
@@ -862,6 +1028,24 @@ process.exit(result.status ?? 2);
       assert.equal(existsSync(f.worktree), stage !== "branch");
       const resumed = f.run(["21"], 7);
       assert.equal(resumed.status, 0, `${stage}: ${resumed.stderr}`);
+      if (stage === "worktree") {
+        assert.equal(
+          readFileSync(
+            `${f.root}.worktrees/.kept/21/.codex-runs/gh-21-late.json`,
+            "utf8",
+          ),
+          "uncopied record",
+        );
+        assert.ok(!existsSync(join(f.root, ".codex-runs/gh-21-late.json")));
+        assert.equal(
+          readFileSync(
+            `${f.root}.worktrees/.kept/21/${f.artifacts}/late.bin`,
+            "utf8",
+          ),
+          "uncopied QA",
+        );
+        assert.ok(!existsSync(join(f.root, f.artifacts, "late.bin")));
+      }
       assert.match(resumed.stdout, /工单已合入.*跳过/);
       assert.doesNotMatch(resumed.stdout, /临时仓库验证完成|已快进合并/);
       if (stage !== "push") assert.match(resumed.stdout, /推送已完成，跳过/);
@@ -921,10 +1105,7 @@ test("land does not reuse a completed journal for new commits on a recreated tic
   try {
     assert.equal(f.run(["21"]).status, 0);
     const kept = `${f.root}.worktrees/.kept/21`;
-    const priorSteps = readFileSync(
-      join(kept, f.artifacts, "steps.jsonl"),
-      "utf8",
-    );
+    const priorSteps = readFileSync(join(kept, "out/steps.jsonl"), "utf8");
     f.git(["worktree", "add", "-b", "ticket/21", f.worktree, f.integration]);
     f.commit("follow-up.txt", "new ticket work", f.worktree);
     mkdirSync(join(f.worktree, f.artifacts), { recursive: true });
@@ -943,11 +1124,11 @@ test("land does not reuse a completed journal for new commits on a recreated tic
     );
     assert.equal(archives.length, 1);
     assert.equal(
-      readFileSync(join(kept, archives[0], f.artifacts, "steps.jsonl"), "utf8"),
+      readFileSync(join(kept, archives[0], "out/steps.jsonl"), "utf8"),
       priorSteps,
     );
     assert.notEqual(
-      readFileSync(join(kept, f.artifacts, "steps.jsonl"), "utf8"),
+      readFileSync(join(kept, "out/steps.jsonl"), "utf8"),
       priorSteps,
     );
     assert.equal(

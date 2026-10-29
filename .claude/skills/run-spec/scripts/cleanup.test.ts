@@ -8,6 +8,8 @@
  * Kept-directory checks cover exact child ownership, file-count previews and
  * printing the full bounded plan before the first actual deletion.
  * Verify logs cover child ownership, main/other-spec retention and dry-run.
+ * Watch/review-spec cleanup covers exact numeric owners, report sidecars and
+ * interrupted snapshot directories, retaining unrelated and default names.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -193,6 +195,97 @@ process.stdout.write(JSON.stringify(response.value));
     cleanup: () => rmSync(temporary, { recursive: true, force: true }),
   };
 };
+
+test("cleanup lists and removes owned watch logs and review-spec outputs while preserving other and default names", () => {
+  const f = fixture();
+  try {
+    const owned = [
+      "watch-17.log",
+      "watch-17-render.log",
+      "watch-1.log",
+      "watch-1-train.log",
+      "watch-2.log",
+      "watch-2-render.log",
+      "review-spec-17-1.md",
+      "review-spec-17-1.json",
+      "review-spec-17-2.md",
+      "review-spec-17-3.json",
+    ];
+    const unrelated = [
+      "watch-170-render.log",
+      "watch-12-train.log",
+      "watch-20.log",
+      "watch-17other.log",
+      "watch-17.other.log",
+      "watch-1700000000000-123.log",
+      "watch-20261029-123.log",
+      "watch-17.log.json",
+      "watch-17-render.md",
+      "review-spec-170-1.md",
+      "review-spec-170-1.json",
+      "review-spec-17-note.md",
+      "review-spec-17-note.json",
+      "review-spec-17other-1.md",
+    ];
+    for (const name of [...owned, ...unrelated])
+      writeFileSync(join(f.records, name), name);
+    const snapshots = ["review-spec-17-AbC123", "review-spec-17-Zyx987"];
+    const otherDirectories = [
+      "review-spec-170-AbC123",
+      "review-spec-17",
+      "watch-17-render.log",
+    ];
+    rmSync(join(f.records, "watch-17-render.log"));
+    owned.splice(owned.indexOf("watch-17-render.log"), 1);
+    for (const name of [...snapshots, ...otherDirectories]) {
+      mkdirSync(join(f.records, name));
+      writeFileSync(join(f.records, name, "input.md"), name);
+    }
+    const before = readdirSync(f.records).sort();
+    const preview = f.run(["17", "--dry-run"]);
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.deepEqual(readdirSync(f.records).sort(), before);
+    for (const name of [...owned, ...snapshots])
+      assert.ok(
+        preview.stdout.includes(`删除文件或目录：${join(f.records, name)}\n`),
+        name,
+      );
+    for (const name of [...unrelated, ...otherDirectories])
+      assert.ok(
+        !preview.stdout.includes(`删除文件或目录：${join(f.records, name)}\n`),
+        name,
+      );
+    const result = f.run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(
+      result.stdout.split("\n").filter((line) => line.startsWith("删除")),
+      preview.stdout.split("\n").filter((line) => line.startsWith("删除")),
+    );
+    for (const name of [...owned, ...snapshots])
+      assert.ok(!existsSync(join(f.records, name)), name);
+    for (const name of unrelated)
+      assert.equal(readFileSync(join(f.records, name), "utf8"), name);
+    for (const name of otherDirectories)
+      assert.equal(
+        readFileSync(join(f.records, name, "input.md"), "utf8"),
+        name,
+      );
+    const directory = process.env.TICKET_89_EVIDENCE;
+    if (directory) {
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        join(directory, "cleanup-watch-review-spec.log"),
+        result.stdout + result.stderr,
+      );
+      writeFileSync(
+        join(directory, "cleanup-watch-review-spec-dry-run.log"),
+        preview.stdout + preview.stderr,
+      );
+    }
+  } finally {
+    f.cleanup();
+  }
+});
 
 test("cleanup removes only spec records, QA, worktrees and exact ticket refs, including rework and closed children", () => {
   const f = fixture();

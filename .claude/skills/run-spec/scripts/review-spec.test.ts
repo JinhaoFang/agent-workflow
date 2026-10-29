@@ -191,6 +191,11 @@ test("review-spec snapshots every GitHub body and blocker, restricts tools, pres
     assert.equal(metadata.totalCostUsd, 0.02);
     assert.equal(metadata.usage.input_tokens, 123);
     const [call] = f.claude();
+    assert.ok(
+      call.prompt.includes(
+        "只做审查，不担任设计负责人或工程负责人，也不向用户提问。",
+      ),
+    );
     assert.equal(call.cwd, f.worktree);
     assert.deepEqual(call.args, [
       "-p",
@@ -385,6 +390,7 @@ test("help and dry runs expose fixed prompt and never call external services or 
       "--focus-file",
       "--post",
       "固定提示词全文",
+      "只做审查，不担任设计负责人或工程负责人，也不向用户提问。",
       "AGENTS.md",
       "docs/roles/",
       "路线图",

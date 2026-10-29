@@ -539,6 +539,9 @@ test("dispatch retries incomplete preparation after install failure before dispa
     rmSync(missingLink);
     const attempts = join(f.worktree, "install-attempts.jsonl");
     const firstAttempt = readFileSync(attempts, "utf8");
+    mkdirSync(join(f.worktree, "out"));
+    const generated = join(f.worktree, "out/between-installs.bin");
+    writeFileSync(generated, "ticket output");
     const plan = f.run(["--dry-run"]);
     assert.equal(plan.status, 0, plan.stderr);
     assert.match(plan.stdout, /安装命令：/);
@@ -548,6 +551,15 @@ test("dispatch retries incomplete preparation after install failure before dispa
     const retried = f.run([], { cwd: f.worktree });
     assert.equal(retried.status, 0, retried.stderr);
     assert.match(retried.stdout, /安装命令已完成/);
+    const privateGit = f.git(["rev-parse", "--absolute-git-dir"], f.worktree);
+    const snapshot = JSON.parse(
+      readFileSync(join(privateGit, "run-spec-installation.json"), "utf8"),
+    );
+    assert.deepEqual(snapshot.files, [
+      "install-attempts.jsonl",
+      "install-result.json",
+    ]);
+    assert.equal(readFileSync(generated, "utf8"), "ticket output");
     assert.equal(
       realpathSync(missingLink),
       realpathSync(join(f.root, "references")),

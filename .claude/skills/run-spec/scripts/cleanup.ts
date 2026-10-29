@@ -10,6 +10,8 @@
  * Include exact child ticket .kept directories, listing bounded top-level file
  * counts before any deletion. Unrelated ticket retention directories survive.
  * Remove verify-<child> logs with exact ticket ownership, retaining main logs.
+ * Remove spec/child watch logs and this spec's review-spec reports, JSON sidecars
+ * and interrupted input snapshot directories, retaining other/default names.
  */
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -50,18 +52,33 @@ const cleanup = (values: Values, numbers: number[]): void => {
   );
   const records = join(root, ".codex-runs");
   const files = existsSync(records)
-    ? readdirSync(records)
-        .filter(
-          (name) =>
+    ? readdirSync(records, { withFileTypes: true })
+        .filter((file) => {
+          const name = file.name;
+          return (
             matchesRecord(name, `review-${spec}`) ||
+            (file.isFile() &&
+              name.endsWith(".log") &&
+              [spec, ...tickets].some(
+                (number) =>
+                  name === `watch-${number}.log` ||
+                  name.startsWith(`watch-${number}-`),
+              )) ||
+            (name.startsWith(`review-spec-${spec}-`) &&
+              (file.isDirectory() ||
+                (file.isFile() &&
+                  new RegExp(
+                    `^review-spec-${spec}-[1-9]\\d*\\.(md|json)$`,
+                  ).test(name)))) ||
             [...tickets].some(
               (ticket) =>
                 matchesRecord(name, `gh-${ticket}`) ||
                 (name.endsWith(".log") &&
                   matchesRecord(name, `verify-${ticket}`)),
-            ),
-        )
-        .map((name) => join(records, name))
+            )
+          );
+        })
+        .map((file) => join(records, file.name))
     : [];
   const artifacts = join(root, config.acceptanceRoot, `spec-${spec}`);
   if (existsSync(artifacts)) files.push(artifacts);
@@ -192,6 +209,8 @@ export const cleanupCommand: Command = {
 远端分支删除失败会报出分支名，继续其他清理，最后以 1 退出。
 记录名只匹配完整编号或编号后接 - 后缀，其他记录保留。
 验证日志只匹配 .log 文件，main 和其他 spec 工单的验证日志保留。
+巡检日志只清理 watch-<spec号>.log、watch-<spec号>-*.log 和子工单号的同类日志；其他 spec 和默认名字保留。
+同时清理 review-spec-<spec号>-<序号>.md、配对的 .json，以及 review-spec-<spec号>-<随机后缀>/ 输入快照目录。
 不干净的 worktree 跳过并保留对应分支，以 1 退出；不强行删除 worktree。
 --dry-run 只读取 GitHub、git 和文件，列出清单，不删除任何内容。`,
 };
