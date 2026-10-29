@@ -18,6 +18,7 @@ import { linkCommand } from "./link.ts";
 import { acceptCommand } from "./accept.ts";
 import { doctorCommand } from "./doctor.ts";
 import { reviewCommand } from "./review.ts";
+import { reviewSpecCommand } from "./review-spec.ts";
 import { slotsCommand } from "./slots.ts";
 import { watchCommand } from "./watch.ts";
 import { reportError, runCommands, type Command } from "./shared.ts";
@@ -34,6 +35,7 @@ const commands: Record<string, Command> = {
   link: linkCommand,
   accept: acceptCommand,
   review: reviewCommand,
+  "review-spec": reviewSpecCommand,
   watch: watchCommand,
 };
 
