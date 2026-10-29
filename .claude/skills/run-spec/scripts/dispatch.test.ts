@@ -5,12 +5,14 @@
  * on this file. No GitHub writes, network access or repository helpers are used.
  * Comment requests capture temporary-file bodies and simulate write failures;
  * prompts, rework names, dry-run behavior and push permissions are observable.
+ * Queue/resume cases use isolated DispatchDock registries and real temporary git.
  * Private installation snapshots contain ignored installation leaves, exclude
  * linked sources and dispatch records, and stay unchanged on prepared rework.
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import {
+  appendFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -243,6 +245,7 @@ process.stdout.write(JSON.stringify(response.value));
         env: {
           ...process.env,
           PATH: `${temporary}${delimiter}${process.env.PATH}`,
+          CODEX_DISPATCH_HOME: join(temporary, "dispatch-home"),
           DISPATCH_FIXTURE_ROOT: temporary,
           DISPATCH_FIXTURE_EXIT: String(options.exit ?? 0),
           INSTALL_FIXTURE_EXIT: String(options.installExit ?? 0),
@@ -296,6 +299,7 @@ process.stdout.write(JSON.stringify(response.value));
         env: {
           ...process.env,
           PATH: `${temporary}${delimiter}${process.env.PATH}`,
+          CODEX_DISPATCH_HOME: join(temporary, "dispatch-home"),
           DISPATCH_FIXTURE_ROOT: temporary,
           DISPATCH_FIXTURE_EXIT: "0",
           DISPATCH_FIXTURE_RELEASE: release,
@@ -366,12 +370,13 @@ test("dispatch creates worktree, links and installs, then forwards prompt and re
     );
     assert.equal(record.cwd, f.worktree);
     assert.deepEqual(record.comments, result.comments);
-    for (const number of [21, 17])
-      assert.ok(
-        record.args[0].includes(
-          `gh issue view ${number} --json title,body,comments`,
-        ),
-      );
+    assert.ok(
+      record.args[0].includes("gh issue view 21 --json title,body,comments"),
+    );
+    assert.ok(record.args[0].includes("gh issue view 17 --json title,body"));
+    assert.ok(
+      !record.args[0].includes("gh issue view 17 --json title,body,comments"),
+    );
     assert.ok(
       record.args[0].includes(JSON.stringify(f.config.verificationCommand)),
     );
@@ -995,6 +1000,10 @@ test("dispatch help documents push permission, comments, failure handling and dr
     assert.deepEqual(result.calls, []);
     for (const text of [
       "--allow-push",
+      "--resume",
+      "slots",
+      "排队",
+      "每 5 分钟最多打印一行",
       "不要推送",
       "不开 PR",
       "不推送其他分支",
@@ -1008,5 +1017,411 @@ test("dispatch help documents push permission, comments, failure handling and dr
       assert.ok(result.stdout.includes(text), text);
   } finally {
     f.cleanup();
+  }
+});
+
+const evidence = (name: string, output: string): void => {
+  const directory = process.env.RUN_SPEC_TEST_EVIDENCE;
+  if (!directory) return;
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, name), output);
+};
+
+const registryLine = (home: string, event: Record<string, unknown>) => {
+  mkdirSync(home, { recursive: true });
+  appendFileSync(
+    join(home, "runs.jsonl"),
+    JSON.stringify({ v: 1, ...event }) + "\n",
+  );
+};
+
+const startRecord = (home: string, id: string, pid: number, repo: string) =>
+  registryLine(home, {
+    event: "start",
+    id,
+    name: id,
+    pid,
+    repo,
+    started: 1700000000000,
+  });
+
+test("dispatch resumes original dirty worktree, preserves edits, comments notes and omits rework instruction", () => {
+  const f = fixture();
+  try {
+    const absent = f.run(["--resume"]);
+    assert.equal(absent.status, 1, absent.stderr);
+    assert.match(absent.stderr, /原 worktree 不存在/);
+    assert.equal(f.run().status, 0);
+    const clean = f.run(["--resume"]);
+    assert.equal(clean.status, 1, clean.stderr);
+    assert.match(clean.stderr, /worktree 干净/);
+    const file = join(f.worktree, "unfinished.txt");
+    writeFileSync(file, "previous interrupted edits");
+    const plan = f.run(["--resume", "--dry-run"]);
+    assert.equal(plan.status, 0, plan.stderr);
+    assert.equal(readFileSync(file, "utf8"), "previous interrupted edits");
+    assert.doesNotMatch(plan.stdout, /返工派发|另起提交/);
+    const result = f.run(["--resume", "--note", "接着完成上次中断的工单"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.comments.length, 1);
+    assert.equal(readFileSync(file, "utf8"), "previous interrupted edits");
+    const record = JSON.parse(
+      readFileSync(join(f.worktree, ".codex-runs/gh-21-2.json"), "utf8"),
+    );
+    assert.match(record.args[1], /上次派发中断.*未提交的改动是上次执行写的/);
+    assert.doesNotMatch(record.args[1], /返工派发|另起提交/);
+    assert.deepEqual(record.comments, result.comments);
+    evidence(
+      "resume.txt",
+      `不存在：\n${absent.stderr}干净：\n${clean.stderr}续做：\n${result.stdout}${result.stderr}\n遗留文件：${readFileSync(file, "utf8")}\n`,
+    );
+    evidence("dry-run.txt", plan.stdout);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("dispatch rejects resume with a live wrapper, orphaned agent or either rebase state", () => {
+  const f = fixture();
+  try {
+    assert.equal(f.run().status, 0);
+    writeFileSync(join(f.worktree, "unfinished.txt"), "previous edits");
+    const home = join(f.temporary, "dispatch-home");
+    const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+    for (const orphan of [false, true]) {
+      startRecord(home, "active", orphan ? dead : process.pid, f.worktree);
+      if (orphan) {
+        registryLine(home, {
+          event: "spawned",
+          id: "active",
+          agentPid: process.pid,
+        });
+        registryLine(home, { event: "interrupted", id: "active" });
+      }
+      const result = f.run(["--resume"]);
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /有活着的运行 active/);
+      evidence(
+        orphan ? "resume-orphan-rejected.txt" : "resume-live-rejected.txt",
+        result.stderr,
+      );
+      registryLine(home, { event: "end", id: "active", exit: 0 });
+    }
+    const privateGit = f.git(["rev-parse", "--absolute-git-dir"], f.worktree);
+    for (const state of ["rebase-merge", "rebase-apply"]) {
+      const directory = join(privateGit, state);
+      mkdirSync(directory);
+      const result = f.run(["--resume"]);
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /进行中的 rebase/);
+      evidence(`resume-${state}-rejected.txt`, result.stderr);
+      rmSync(directory, { recursive: true });
+    }
+    const rejected = f.run();
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, /--resume/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+const queueFixture = (limit = 2) => {
+  const f = fixture();
+  const home = join(f.temporary, "dispatch-home");
+  mkdirSync(home);
+  writeFileSync(
+    f.configFile,
+    JSON.stringify({ ...f.config, codexConcurrency: limit }),
+  );
+  writeFileSync(
+    join(f.temporary, "gh"),
+    `#!${process.execPath}
+const args = process.argv.slice(2);
+if (args[0] === "repo") console.log(JSON.stringify({nameWithOwner: "${repo}"}));
+else if (args.at(-1).endsWith("/parent")) {
+  if (process.env.PARENT_FAILURE) { console.error(process.env.PARENT_FAILURE); process.exit(1); }
+  console.log(JSON.stringify({number:17}));
+} else console.log(JSON.stringify({state:"open", labels:[{name:"role:engineering"}]}));
+`,
+    { mode: 0o755 },
+  );
+  writeFileSync(
+    join(f.root, "fake-dispatch.cjs"),
+    `
+const fs = require("node:fs");
+const path = require("node:path");
+const home = process.env.CODEX_DISPATCH_HOME;
+const args = process.argv.slice(2);
+const name = args[args.indexOf("--name") + 1];
+const id = name + "-" + process.pid;
+const log = event => fs.appendFileSync(path.join(home, "runs.jsonl"), JSON.stringify({v:1,id,...event}) + "\\n");
+const attemptFile = path.join(home, "attempt-" + name);
+const attempt = fs.existsSync(attemptFile) ? Number(fs.readFileSync(attemptFile)) + 1 : 1;
+fs.writeFileSync(attemptFile, String(attempt));
+log({event:"start", name, repo:process.cwd(), pid:process.pid, started:Date.now()});
+if (attempt <= Number(process.env.LIMIT_FAILURES || 0)) {
+  console.error("Concurrency limit exceeded for account");
+  log({event:"end",exit:1});
+  process.exit(1);
+}
+console.log("已启动：" + name);
+if (process.env.SUCCESS_LIMIT_TEXT) console.log("Concurrency limit exceeded 已恢复");
+const finish = () => { log({event:"end",exit:0}); console.log("已完成：" + name); };
+if (process.env.HOLD_DISPATCH) {
+  const timer = setInterval(() => {
+    if (fs.existsSync(path.join(home, "release-" + name))) { clearInterval(timer); finish(); }
+  }, 20);
+} else finish();
+`,
+  );
+  const jobs: {
+    child: ReturnType<typeof spawn>;
+    output: { stdout: string; stderr: string };
+    done: Promise<number | null>;
+  }[] = [];
+  const launch = (
+    ticket = 21,
+    extraEnv: Record<string, string> = {},
+    flags: string[] = [],
+    args: string[] = [],
+  ) => {
+    const child = spawn(
+      process.execPath,
+      [...flags, cli, "dispatch", String(ticket), ...args],
+      {
+        cwd: f.root,
+        env: {
+          ...process.env,
+          PATH: `${f.temporary}${delimiter}${process.env.PATH}`,
+          CODEX_DISPATCH_HOME: home,
+          RUN_SPEC_CODEX_CONCURRENCY: undefined,
+          ...extraEnv,
+        },
+      },
+    );
+    const output = { stdout: "", stderr: "" };
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      output.stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      output.stderr += chunk;
+    });
+    const done = new Promise<number | null>((resolve, reject) => {
+      child.on("error", reject);
+      child.on("close", resolve);
+    });
+    const job = { child, output, done };
+    jobs.push(job);
+    return job;
+  };
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 15000;
+    while (!predicate()) {
+      if (Date.now() > deadline)
+        assert.fail(JSON.stringify(jobs.map((job) => job.output)));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  return {
+    ...f,
+    home,
+    launch,
+    waitFor,
+    cleanup: async () => {
+      for (const job of jobs) job.child.kill();
+      await Promise.all(jobs.map((job) => job.done));
+      f.cleanup();
+    },
+  };
+};
+
+test("dispatch queues behind two live global runs, ignores dead records and starts when one ends", async () => {
+  const f = queueFixture();
+  try {
+    startRecord(f.home, "external-1", process.pid, "/external/one");
+    startRecord(f.home, "external-2", process.pid, "/external/two");
+    startRecord(
+      f.home,
+      "dead",
+      spawnSync(process.execPath, ["-e", ""]).pid,
+      "/external/dead",
+    );
+    const job = f.launch();
+    await f.waitFor(() => job.output.stdout.includes("排队中"));
+    assert.ok(!existsSync(f.worktree));
+    assert.doesNotMatch(job.output.stdout, /已启动/);
+    registryLine(f.home, { event: "end", id: "external-1", exit: 0 });
+    assert.equal(await job.done, 0, job.output.stderr);
+    assert.match(job.output.stdout, /已启动：gh-21/);
+    evidence("queue.txt", job.output.stdout + job.output.stderr);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("dispatch admits only one of two waiters into a freed slot and recovers a dead startup lock", async () => {
+  const f = queueFixture();
+  try {
+    startRecord(f.home, "external-1", process.pid, "/external/one");
+    startRecord(f.home, "external-2", process.pid, "/external/two");
+    const lock = join(f.home, "run-spec-dispatch.lock");
+    mkdirSync(lock);
+    writeFileSync(
+      join(lock, String(spawnSync(process.execPath, ["-e", ""]).pid)),
+      "",
+    );
+    const jobs = [
+      f.launch(21, { HOLD_DISPATCH: "1" }),
+      f.launch(22, { HOLD_DISPATCH: "1" }),
+    ];
+    await f.waitFor(() =>
+      jobs.every((job) => job.output.stdout.includes("排队中")),
+    );
+    registryLine(f.home, { event: "end", id: "external-1", exit: 0 });
+    await f.waitFor(() =>
+      jobs.some((job) => job.output.stdout.includes("已启动")),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const started = jobs.filter((job) => job.output.stdout.includes("已启动"));
+    assert.equal(started.length, 1);
+    const winner = started[0];
+    const name = winner.output.stdout.match(/已启动：(gh-\d+)/)![1];
+    writeFileSync(join(f.home, "release-" + name), "");
+    assert.equal(await winner.done, 0, winner.output.stderr);
+    const other = jobs.find((job) => job !== winner)!;
+    await f.waitFor(() => other.output.stdout.includes("已启动"));
+    const otherName = other.output.stdout.match(/已启动：(gh-\d+)/)![1];
+    writeFileSync(join(f.home, "release-" + otherName), "");
+    assert.equal(await other.done, 0, other.output.stderr);
+    evidence(
+      "queue-two-waiters.txt",
+      jobs
+        .map(
+          (job, index) =>
+            `等待者 ${index + 1}：\n${job.output.stdout}${job.output.stderr}`,
+        )
+        .join("\n") + "\n只放行一个：通过\n",
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("dispatch retries account concurrency failures through the queue and finally succeeds", async () => {
+  const f = queueFixture();
+  try {
+    const job = f.launch(21, { LIMIT_FAILURES: "1" });
+    assert.equal(await job.done, 0, job.output.stderr);
+    assert.match(job.output.stderr, /Concurrency limit exceeded/);
+    assert.match(job.output.stdout, /排队中/);
+    assert.match(job.output.stdout, /已完成：gh-21/);
+    assert.equal(readFileSync(join(f.home, "attempt-gh-21"), "utf8"), "2");
+    evidence("queue-retry.txt", job.output.stdout + job.output.stderr);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("dispatch prints at most six queue lines during thirty simulated minutes", async () => {
+  const f = queueFixture();
+  try {
+    startRecord(f.home, "external-1", process.pid, "/external/one");
+    startRecord(f.home, "external-2", process.pid, "/external/two");
+    const preload = join(f.temporary, "virtual-time.mjs");
+    writeFileSync(
+      preload,
+      `
+import timers from "node:timers/promises";
+import { syncBuiltinESMExports } from "node:module";
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
+let elapsed = 0;
+const realNow = Date.now;
+const realDelay = timers.setTimeout;
+Date.now = () => realNow() + elapsed;
+timers.setTimeout = async () => {
+  elapsed += 60000;
+  if (elapsed === 1800000) appendFileSync(join(process.env.CODEX_DISPATCH_HOME, "runs.jsonl"), JSON.stringify({v:1,event:"end",id:"external-1",exit:0}) + "\\n");
+  await realDelay(1);
+};
+syncBuiltinESMExports();
+`,
+    );
+    const job = f.launch(21, {}, ["--import", preload]);
+    assert.equal(await job.done, 0, job.output.stderr);
+    const lines = job.output.stdout.match(/排队中/g) ?? [];
+    assert.equal(lines.length, 6, job.output.stdout);
+    evidence(
+      "queue-thirty-minutes.txt",
+      job.output.stdout + "\n模拟时间：30 分钟；排队中共 6 行\n",
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("dispatch suggests link only for parent 404 and infers spec from current branch", async () => {
+  const f = queueFixture();
+  try {
+    f.git(["checkout", "spec/17-test"]);
+    const missing = f.launch(
+      21,
+      { PARENT_FAILURE: "gh: Not Found (HTTP 404)" },
+      [],
+      ["--dry-run"],
+    );
+    assert.equal(await missing.done, 1, missing.output.stderr);
+    assert.match(missing.output.stderr, /工单 #21 没有挂到 spec 下/);
+    assert.match(missing.output.stderr, /tickets.ts link 17 21/);
+    evidence("missing-spec.txt", missing.output.stderr);
+    f.git(["checkout", "main"]);
+    const placeholder = f.launch(21, {
+      PARENT_FAILURE: "gh: Not Found (HTTP 404)",
+    });
+    assert.equal(await placeholder.done, 1);
+    assert.match(placeholder.output.stderr, /link <S> 21/);
+    const network = f.launch(21, {
+      PARENT_FAILURE: "error connecting to api.github.com",
+    });
+    assert.equal(await network.done, 2);
+    assert.equal(
+      network.output.stderr,
+      "出错：gh 调用失败（api），请检查 gh 安装、认证、仓库权限和网络。\n",
+    );
+    assert.doesNotMatch(network.output.stderr, /link|没有挂到/);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("dispatch releases startup lock after registration so two free slots run concurrently", async () => {
+  const f = queueFixture();
+  try {
+    const jobs = [
+      f.launch(21, { HOLD_DISPATCH: "1" }),
+      f.launch(22, { HOLD_DISPATCH: "1" }),
+    ];
+    await f.waitFor(() =>
+      jobs.every((job) => job.output.stdout.includes("已启动")),
+    );
+    for (const ticket of [21, 22])
+      writeFileSync(join(f.home, "release-gh-" + ticket), "");
+    assert.deepEqual(await Promise.all(jobs.map((job) => job.done)), [0, 0]);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("dispatch does not retry a successful task whose output mentions the limit", async () => {
+  const f = queueFixture();
+  try {
+    const job = f.launch(21, { SUCCESS_LIMIT_TEXT: "1" });
+    assert.equal(await job.done, 0, job.output.stderr);
+    assert.equal(readFileSync(join(f.home, "attempt-gh-21"), "utf8"), "1");
+    assert.doesNotMatch(job.output.stdout, /排队中/);
+  } finally {
+    await f.cleanup();
   }
 });

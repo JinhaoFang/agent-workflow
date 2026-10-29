@@ -13,6 +13,7 @@
  * Probe the Claude CLI with --version; optional config values show their source.
  * Invalid optional configuration exits 2, preserving existing prerequisite exits.
  * Check an existing checkout-root .env with git check-ignore without reading it.
+ * Resolve Codex through DispatchDock's configured path, then PATH, and probe its version.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -29,6 +30,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { codexVersion } from "./dispatchdock.ts";
 import {
   CheckFailure,
   OptionalConfigError,
@@ -205,6 +207,11 @@ const doctor = (values: Values): void => {
     );
     return process.versions.node;
   });
+  check(
+    "Codex CLI 可用",
+    "安装 Codex CLI 并加入 PATH，或在 DispatchDock 的 config.json 配置 agents.codex.path 为可执行程序或 Node 入口的绝对路径。",
+    codexVersion,
+  );
   check(
     "claude CLI 可用",
     "安装 Claude Code CLI，并确保 claude 在 PATH 上可执行。",
@@ -513,6 +520,7 @@ export const doctorCommand: Command = {
   help: `${entry} doctor
 只读自检，逐项输出通过、不通过和修法，不改仓库、不改 GitHub。
 检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18、claude CLI 可用；
+Codex CLI 先查 DispatchDock 配置 agents.codex.path，再查 PATH，并运行 --version；失败列出查找位置；
 GitHub 的 role:engineering、role:design、ready-for-human 标签、只允许 merge commit、合并后自动删除分支；
 Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签说明；
 codex-dispatch、run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；

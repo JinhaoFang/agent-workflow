@@ -13,6 +13,9 @@
  * RUN_SPEC_CODEX_CONCURRENCY overrides the validated configured concurrency.
  * Commands retain required numeric positionals, may add optionalPositionals,
  * and may opt into passthrough for untouched arguments after the first `--`.
+ * Handlers may return a promise; the CLI awaits dispatch queueing and failures.
+ * Parent lookup diagnoses HTTP 404 with a link command using the current spec
+ * branch when available; other gh failures retain their original diagnostic.
  * runClaude sends the prompt on stdin, restricts tools, disables MCP/session
  * persistence and reads text/usage/cost from --output-format json. Missing usage
  * carries a Chinese reason; launch failures return exitCode 2 and an error.
@@ -47,7 +50,11 @@ export type Command = {
   optionalPositionals?: number;
   passthrough?: boolean;
   normalizeArgs?: (args: string[]) => string[];
-  execute: (values: Values, numbers: number[], args: string[]) => void;
+  execute: (
+    values: Values,
+    numbers: number[],
+    args: string[],
+  ) => void | Promise<void>;
 };
 
 export class CheckFailure extends Error {}
@@ -403,9 +410,21 @@ export const git = (root: string, args: string[]): string => {
 };
 
 export const ticketIntegration = (root: string, endpoint: string) => {
-  const parent = JSON.parse(
-    gh(["api", "--method", "GET", `${endpoint}/parent`]),
-  ) as Issue;
+  const result = ghResult(["api", "--method", "GET", `${endpoint}/parent`]);
+  if (result.error || result.status !== 0) {
+    if (/\bHTTP 404\b|\b404 Not Found\b/.test(result.stderr ?? "")) {
+      const ticket = endpoint.split("/").at(-1);
+      const branch = git(root, ["branch", "--show-current"]);
+      const spec = /^spec\/([1-9]\d*)-/.exec(branch)?.[1] ?? "<S>";
+      throw new CheckFailure(
+        `工单 #${ticket} 没有挂到 spec 下；请运行：${entry} link ${spec} ${ticket}`,
+      );
+    }
+    throw new Error(
+      "gh 调用失败（api），请检查 gh 安装、认证、仓库权限和网络。",
+    );
+  }
+  const parent = JSON.parse(result.stdout) as Issue;
   const spec = issueNumber(String(parent.number));
   const branches = git(root, [
     "for-each-ref",
@@ -421,7 +440,9 @@ export const ticketIntegration = (root: string, endpoint: string) => {
   return { spec, integration: branches[0] };
 };
 
-export const runCommands = (commands: Record<string, Command>): void => {
+export const runCommands = (
+  commands: Record<string, Command>,
+): void | Promise<void> => {
   const [command, ...input] = process.argv.slice(2);
   const allHelp = [
     ...Object.values(commands).map((item) => item.help),
@@ -470,7 +491,7 @@ export const runCommands = (commands: Record<string, Command>): void => {
   ) {
     throw usageError("缺少必需参数或有多余位置参数。", definition.help);
   }
-  definition.execute(values, positionals.map(issueNumber), args);
+  return definition.execute(values, positionals.map(issueNumber), args);
 };
 
 export const entry = "node .claude/skills/run-spec/scripts/tickets.ts";

@@ -8,6 +8,8 @@
  * direct version/auth probes exercise the same bounded gh retry as API calls.
  * A fake Claude CLI makes availability checks independent of the host install;
  * optional configuration covers defaults, configured/env sources and exit 2.
+ * Codex probes cover DispatchDock's explicit Node/wrapper path, PATH fallback
+ * and missing executables with isolated PATH/config directories.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -116,6 +118,13 @@ console.log("2.1.0 (Claude Code fixture)");
 `,
     { mode: 0o755 },
   );
+  writeFileSync(
+    join(bin, "codex"),
+    `#!${process.execPath}
+console.log("codex-cli 0.1.0 (fixture)");
+`,
+    { mode: 0o755 },
+  );
   const run = (
     args = ["doctor"],
     options: {
@@ -146,6 +155,7 @@ console.log("2.1.0 (Claude Code fixture)");
         PATH: options.isolatedPath
           ? bin
           : `${bin}${delimiter}${process.env.PATH}`,
+        CODEX_DISPATCH_HOME: join(temporary, "dispatch-home"),
         CLAUDE_CONFIG_DIR: join(temporary, "user-claude"),
         RUN_SPEC_CODEX_CONCURRENCY: options.concurrency,
         DOCTOR_CALLS: ghCalls,
@@ -796,6 +806,88 @@ test("doctor version and auth gh probes retry once and keep existing failure exi
       2,
     );
     assert.equal(failed.calls.filter((args) => args[0] === "auth").length, 2);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor finds configured Codex Node and npm wrapper entries without Codex on PATH", () => {
+  const f = fixture();
+  try {
+    const home = join(f.temporary, "dispatch-home");
+    mkdirSync(home);
+    const codex = join(home, "custom-codex.cjs");
+    writeFileSync(
+      codex,
+      `if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["--version"])) process.exit(91); console.log("codex-cli configured fixture");`,
+    );
+    rmSync(join(f.bin, "codex"));
+    const gitPath = (process.env.PATH ?? "")
+      .split(delimiter)
+      .map((path) => join(path, "git"))
+      .find(existsSync);
+    assert.ok(gitPath);
+    symlinkSync(gitPath, join(f.bin, "git"));
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({ v: 1, agents: { codex: { path: codex } } }),
+    );
+    const result = f.run(["doctor"], { isolatedPath: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /通过：Codex CLI 可用；codex-cli configured fixture/,
+    );
+    assert.ok(result.stdout.includes(codex));
+    const wrapper = join(home, "codex.cmd");
+    writeFileSync(wrapper, '@"%dp0%/custom-codex.cjs" %*');
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({ v: 1, agents: { codex: { path: wrapper } } }),
+    );
+    const wrapped = f.run(["doctor"], { isolatedPath: true });
+    assert.equal(wrapped.status, 0, wrapped.stderr);
+    assert.match(
+      wrapped.stdout,
+      /通过：Codex CLI 可用；codex-cli configured fixture/,
+    );
+    const directory = process.env.RUN_SPEC_TEST_EVIDENCE;
+    if (directory) {
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        join(directory, "doctor-configured-codex.txt"),
+        result.stdout + result.stderr,
+      );
+    }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor reports both Codex search locations when config and PATH have no CLI", () => {
+  const f = fixture();
+  try {
+    rmSync(join(f.bin, "codex"));
+    const gitPath = (process.env.PATH ?? "")
+      .split(delimiter)
+      .map((path) => join(path, "git"))
+      .find(existsSync);
+    assert.ok(gitPath);
+    symlinkSync(gitPath, join(f.bin, "git"));
+    const missing = f.run(["doctor"], { isolatedPath: true });
+    fails(
+      missing,
+      "Codex CLI 可用",
+      /已查找：.*config.json 的 agents.codex.path、PATH/,
+    );
+    const directory = process.env.RUN_SPEC_TEST_EVIDENCE;
+    if (directory) {
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        join(directory, "doctor-missing-codex.txt"),
+        missing.stdout + missing.stderr,
+      );
+    }
   } finally {
     f.cleanup();
   }
