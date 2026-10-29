@@ -10,6 +10,8 @@
  */
 import { cleanupCommand } from "./cleanup.ts";
 import { landCommand } from "./land.ts";
+import { verifyCommand } from "./verify.ts";
+import { prCheckCommand } from "./pr-check.ts";
 import { dispatchCommand } from "./dispatch.ts";
 import { frontierCommand } from "./frontier.ts";
 import { linkCommand } from "./link.ts";
@@ -24,6 +26,8 @@ const commands: Record<string, Command> = {
   doctor: doctorCommand,
   cleanup: cleanupCommand,
   land: landCommand,
+  verify: verifyCommand,
+  "pr-check": prCheckCommand,
   dispatch: dispatchCommand,
   slots: slotsCommand,
   frontier: frontierCommand,

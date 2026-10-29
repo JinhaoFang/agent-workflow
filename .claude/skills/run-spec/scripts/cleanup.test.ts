@@ -7,6 +7,7 @@
  * All deletion stays inside temporary fixtures.
  * Kept-directory checks cover exact child ownership, file-count previews and
  * printing the full bounded plan before the first actual deletion.
+ * Verify logs cover child ownership, main/other-spec retention and dry-run.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -70,6 +71,9 @@ const fixture = () => {
     "review-17.progress.log",
     "review-17-batch-2.events.jsonl",
     "review-17-2.md",
+    "verify-1.log",
+    "verify-1-1793268000000-123.log",
+    "verify-2-1793268000001-124.log",
   ];
   const unrelated = [
     "smoke-test.progress.log",
@@ -82,6 +86,12 @@ const fixture = () => {
     "review-170-2.progress.log",
     "review-17other.log",
     "review-17.other.log",
+    "verify-main-1793268000000-125.log",
+    "verify-12-1793268000000-126.log",
+    "verify-20-1793268000000-127.log",
+    "verify-1other.log",
+    "verify-1.other.log",
+    "verify-1-1793268000000-123.json",
   ];
   const records = join(root, ".codex-runs");
   mkdirSync(records);
