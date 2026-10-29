@@ -113,4 +113,6 @@ disable-model-invocation: true
 
 告诉用户接下来的输入：PR 合并后，`/grill-with-docs` 对齐 → `/to-spec` → `/to-tickets` → 开新会话说"你的角色是设计负责人，先读路线图，执行 spec #<号>"。项目是什么、对设计负责人有什么要求都已在仓库里，开场不用再贴说明。`/grill-with-docs`、`/to-spec`、`/to-tickets` 只能由用户输入，模型在技能列表里看不到；也可以让设计负责人读这几个技能的说明文件照做，两种都行。
 
+执行会话也可以放在后台跑（可选）：`claude --bg -n <名字> --permission-mode <和平时相同的模式> "<开场白>"` 启动，`claude attach <名字>` 进入；在里面按 ← 回到会话列表、按 Ctrl+Z 回到 shell，会话都继续运行。`claude agents` 看有哪些会话，`claude logs <名字>` 看最近的输出，`claude stop <id>` 停下。好处是执行会话不依附终端，关掉终端不会中断派发出去的 Codex。权限模式要和平时一致，不一致时碰到确认就停下等人。以上命令按 Claude Code 2.1.312 的 `claude --help`、`claude attach --help` 核对。
+
 完成标准：用户知道下一步输入什么。
