@@ -6,6 +6,8 @@
  * Run with node --test on this file or pnpm verify. No network or GitHub writes.
  * Root .env cases use git's effective ignore behavior without reading secrets;
  * direct version/auth probes exercise the same bounded gh retry as API calls.
+ * A fake Claude CLI makes availability checks independent of the host install;
+ * optional configuration covers defaults, configured/env sources and exit 2.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -106,9 +108,22 @@ else process.exitCode = 91;
 `,
     { mode: 0o755 },
   );
+  writeFileSync(
+    join(bin, "claude"),
+    `#!${process.execPath}
+if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["--version"])) process.exit(91);
+console.log("2.1.0 (Claude Code fixture)");
+`,
+    { mode: 0o755 },
+  );
   const run = (
     args = ["doctor"],
-    options: { cwd?: string; oldNode?: boolean } = {},
+    options: {
+      cwd?: string;
+      oldNode?: boolean;
+      concurrency?: string;
+      isolatedPath?: boolean;
+    } = {},
   ) => {
     rmSync(ghCalls, { force: true });
     writeFileSync(join(temporary, "responses.json"), JSON.stringify(responses));
@@ -128,8 +143,11 @@ else process.exitCode = 91;
       timeout: 10000,
       env: {
         ...process.env,
-        PATH: `${bin}${delimiter}${process.env.PATH}`,
+        PATH: options.isolatedPath
+          ? bin
+          : `${bin}${delimiter}${process.env.PATH}`,
         CLAUDE_CONFIG_DIR: join(temporary, "user-claude"),
+        RUN_SPEC_CODEX_CONCURRENCY: options.concurrency,
         DOCTOR_CALLS: ghCalls,
         DOCTOR_RESPONSES: join(temporary, "responses.json"),
       },
@@ -191,6 +209,16 @@ test("doctor passes with tracked source skills, paginated labels and directory-o
     assert.match(result.stdout, /自检结束：全部通过/);
     assert.match(result.stdout, /技能隔离 setup-run-spec；尚未安装/);
     assert.match(result.stdout, /同名软链接实测通过/);
+    assert.match(result.stdout, /通过：claude CLI 可用；2\.1\.0/);
+    assert.match(
+      result.stdout,
+      /可选配置 codexConcurrency；实际取值 2；来源：默认/,
+    );
+    assert.ok(
+      result.stdout.includes(
+        '可选配置 prCheckCommand；实际取值 ["gh","pr","checks","{pr}","--watch"]；来源：默认',
+      ),
+    );
     assert.deepEqual(result.calls, [
       ["--version"],
       ["auth", "status"],
@@ -425,13 +453,13 @@ test("doctor reports absent configuration, every missing field, invalid JSON and
   const f = fixture();
   try {
     rmSync(join(f.root, "docs/agents/run-spec.json"));
-    fails(f.run(), "执行配置完整", /六项必填配置/);
+    fails(f.run(), "执行配置完整", /必填项/);
     for (const key of Object.keys(f.config)) {
       const config: Record<string, unknown> = { ...f.config };
       delete config[key];
       f.write("docs/agents/run-spec.json", JSON.stringify(config));
       const result = f.run();
-      fails(result, "执行配置完整", /六项必填配置/);
+      fails(result, "执行配置完整", /必填项/);
       assert.ok(result.stderr.includes(`配置缺少 ${key}`));
     }
     f.write("docs/agents/run-spec.json", "{");
@@ -550,6 +578,9 @@ test("doctor help lists all checks and incorrect arguments exit 2 without invoki
       "setup-run-spec",
       "共享目录",
       "配置",
+      "codexConcurrency",
+      "prCheckCommand",
+      "claude",
       "派发脚本",
       ".codex-runs",
       "末尾斜杠",
@@ -571,6 +602,103 @@ test("doctor help lists all checks and incorrect arguments exit 2 without invoki
       assert.match(result.stderr, /^出错：/);
       assert.deepEqual(result.calls, []);
     }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor reports optional configuration and environment precedence without executing commands", () => {
+  const f = fixture();
+  try {
+    f.write(
+      "docs/agents/run-spec.json",
+      JSON.stringify({
+        ...f.config,
+        codexConcurrency: 3,
+        prCheckCommand: ["make", "ci-local", "PR={pr}"],
+      }),
+    );
+    const configured = f.run();
+    assert.equal(configured.status, 0, configured.stderr);
+    assert.match(configured.stdout, /codexConcurrency；实际取值 3；来源：配置/);
+    assert.ok(
+      configured.stdout.includes(
+        'prCheckCommand；实际取值 ["make","ci-local","PR={pr}"]；来源：配置',
+      ),
+    );
+    const overridden = f.run(["doctor"], { concurrency: "4" });
+    assert.equal(overridden.status, 0, overridden.stderr);
+    assert.match(
+      overridden.stdout,
+      /codexConcurrency；实际取值 4；来源：环境变量 RUN_SPEC_CODEX_CONCURRENCY/,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor rejects malformed optional values and environment overrides with exit 2", () => {
+  const f = fixture();
+  try {
+    for (const [key, invalidValues, expected] of [
+      [
+        "codexConcurrency",
+        [0, -1, 1.5, "2", null, 9007199254740992],
+        /codexConcurrency 必须是.*正整数/,
+      ],
+      [
+        "prCheckCommand",
+        [[], "gh pr checks", null, ["gh", ""], [" "], ["gh", 2]],
+        /prCheckCommand 必须是非空.*数组/,
+      ],
+    ] as const) {
+      for (const value of invalidValues) {
+        f.write(
+          "docs/agents/run-spec.json",
+          JSON.stringify({ ...f.config, [key]: value }),
+        );
+        const result = f.run();
+        assert.equal(result.status, 2, result.stdout + result.stderr);
+        assert.match(result.stderr, /^出错：/);
+        assert.match(result.stderr, expected);
+      }
+    }
+    f.write("docs/agents/run-spec.json", JSON.stringify(f.config));
+    for (const concurrency of [
+      "",
+      "0",
+      "-1",
+      "1.5",
+      "abc",
+      "9007199254740992",
+    ]) {
+      const result = f.run(["doctor"], { concurrency });
+      assert.equal(result.status, 2, result.stdout + result.stderr);
+      assert.match(
+        result.stderr,
+        /codexConcurrency.*RUN_SPEC_CODEX_CONCURRENCY.*正整数/,
+      );
+    }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor reports a missing Claude CLI as an unmet prerequisite", () => {
+  const f = fixture();
+  try {
+    rmSync(join(f.bin, "claude"));
+    const gitPath = (process.env.PATH ?? "")
+      .split(delimiter)
+      .map((path) => join(path, "git"))
+      .find(existsSync);
+    assert.ok(gitPath);
+    symlinkSync(gitPath, join(f.bin, "git"));
+    fails(
+      f.run(["doctor"], { isolatedPath: true }),
+      "claude CLI 可用",
+      /无法运行 claude --version[\s\S]*安装 Claude Code CLI/,
+    );
   } finally {
     f.cleanup();
   }

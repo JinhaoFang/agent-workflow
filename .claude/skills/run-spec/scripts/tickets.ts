@@ -1,8 +1,11 @@
 /**
  * Designer-only ticket CLI: run `node .claude/skills/run-spec/scripts/tickets.ts
  * <frontier|link|accept|dispatch|land|cleanup|review|doctor> --help` from a clone.
- * Register each command once; modules provide help, options, positional count
- * and handler. Shared parsing and diagnostics dispatch commands locally so
+ * Register each command once; modules provide help, options, required/optional
+ * numeric positional counts, optional raw `--` passthrough and a handler.
+ * Shared helpers load optional configuration defaults/sources and run Claude
+ * with restricted tools, no MCP/session persistence and JSON usage reporting.
+ * Shared parsing and diagnostics dispatch commands locally so
  * copying this skill needs no repository helpers or dependencies.
  */
 import { cleanupCommand } from "./cleanup.ts";
