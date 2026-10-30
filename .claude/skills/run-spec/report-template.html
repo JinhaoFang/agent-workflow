@@ -4,6 +4,7 @@
 数组；report 是标题、任务与截点，ticket/dispatch/session/independent/subagent 是
 工单和用量，goal 是同口径改前改后及预算，finding/review 是发现和审查。其余 type
 分别驱动同名节的表与文字。未知数填 null，不填 0；输入包含缓存，不重复相加。
+汇总只加已知项并标明缺项数；比值所需项缺失时写未知，对比条只画已知部分。
 示例取自本仓库 spec #77 汇报、子工单验收与 PR #91；精确缺项在页面中列明。
 只可选省略领域结果：删除 domain 数据后整节自动隐藏；其余节缺项写明未知和依据。
 要添加领域结果图，在 data 中加入该领域的测量记录，在同一脚本块内用 comparison
@@ -1457,7 +1458,7 @@
           {
             type: "gap",
             label: "独立审查用量",
-            text: "派发前记录仅有约数，精确输入、缓存和输出未知；汇总显示已知下界。review-spec 实测另列，可能与 #84 时长重叠。",
+            text: "派发前记录仅有约数，精确输入、缓存和输出未知；汇总显示已知部分合计并标明缺项数。review-spec 实测另列，可能与 #84 时长重叠。",
             source:
               "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6493457898",
           },
@@ -1568,23 +1569,35 @@
                 maximumFractionDigits: digits,
                 minimumFractionDigits: digits,
               });
-        const sum = (entries, key) =>
-          entries.reduce((total, entry) => total + (entry[key] ?? 0), 0);
-        const known = (entries, key, digits = 0) => {
-          if (!entries.length) return "无记录";
-          const values = entries.filter((entry) => entry[key] != null);
-          if (!values.length) return "未知";
-          return (
-            format(sum(values, key), digits) +
-            (values.length < entries.length ? "（已知下界，其余未知）" : "")
+        const sum = (entries, ...keys) => {
+          const values = entries.flatMap((entry) =>
+            keys.map((key) => entry[key]),
           );
+          const knownValues = values.filter((value) => value != null);
+          return {
+            value: knownValues.length
+              ? knownValues.reduce((total, value) => total + value, 0)
+              : null,
+            missing: values.length - knownValues.length,
+          };
         };
+        const subtotal = ({ value, missing = 0 }, digits = 0, unit = "") =>
+          value == null
+            ? `未知${missing ? `（缺 ${format(missing)} 项）` : ""}`
+            : `${format(value, digits)}${unit}${missing ? `（已知部分合计，缺 ${format(missing)} 项）` : ""}`;
+        const known = (entries, key, digits = 0, unit = "") =>
+          entries.length ? subtotal(sum(entries, key), digits, unit) : "无记录";
         const percent = (value, maximum) =>
           maximum > 0 ? Math.max(0, Math.min(100, (value / maximum) * 100)) : 0;
         const ratio = (numerator, denominator) =>
-          denominator > 0
-            ? `${format(numerator / denominator, 2)} 倍`
-            : "未知（分母无有效记录）";
+          numerator.value == null ||
+          denominator.value == null ||
+          numerator.missing ||
+          denominator.missing
+            ? "未知"
+            : denominator.value > 0
+              ? `${format(numerator.value / denominator.value, 2)} 倍`
+              : "未知（分母无有效记录）";
         const repo = "https://github.com/JinhaoFang/video-studio";
         const link = (url, label) => {
           const node = element("a", "", label);
@@ -1654,19 +1667,23 @@
           const group = element("div", "bar-group");
           const maximum = Math.max(
             0,
-            ...entries.map((entry) => entry.value ?? 0),
+            ...entries
+              .filter((entry) => entry.value != null)
+              .map((entry) => entry.value),
           );
           for (const entry of entries) {
             const track = element("div", "compare-bar");
-            const fill = element("span", "compare-fill");
-            fill.style.width = `${percent(entry.value, maximum)}%`;
-            fill.style.background = entry.color;
+            if (entry.value != null) {
+              const fill = element("span", "compare-fill");
+              fill.style.width = `${percent(entry.value, maximum)}%`;
+              fill.style.background = entry.color;
+              track.append(fill);
+            }
             track.append(
-              fill,
               element(
                 "span",
                 "compare-value",
-                `${entry.label} ${format(entry.value)} ${entry.unit}`,
+                `${entry.label} ${subtotal(entry, 0, ` ${entry.unit}`)}`,
               ),
             );
             group.append(track);
@@ -1690,7 +1707,7 @@
           ],
           [format(dispatches.length), "次有用量记录的 Codex 派发与审查"],
           [
-            format(sum(dispatches, "minutes"), 1) + " 分",
+            known(dispatches, "minutes", 1, " 分"),
             "派发累计用时，含并行，不含子代理",
           ],
           [format(meta.testsAfter), "项最终提交本地测试通过"],
@@ -1964,13 +1981,13 @@
           comparison(slot("cost-chart"), label, [
             {
               label: "Claude 主会话",
-              value: mainValue,
+              ...mainValue,
               unit: "tokens",
               color: "var(--d)",
             },
             {
               label: "Codex 全部",
-              value: codexValue,
+              ...codexValue,
               unit: "tokens",
               color: "var(--a)",
             },
@@ -1978,7 +1995,7 @@
         }
         text(
           "efficiency",
-          `主会话 / Codex 总用量比（输入＋输出）：${ratio(mainInput + mainOutput, codexInput + codexOutput)}；输入比 ${ratio(mainInput, codexInput)}，输出比 ${ratio(mainOutput, codexOutput)}。主会话平均上下文：${meta.replies > 0 ? format(mainInput / meta.replies) + " tokens / 回复" : "未知"}（含缓存输入 ÷ ${format(meta.replies)} 次回复）。`,
+          `主会话 / Codex 总用量比（输入＋输出）：${ratio(sum(sessions, "input", "output"), sum(codex, "input", "output"))}；输入比 ${ratio(mainInput, codexInput)}，输出比 ${ratio(mainOutput, codexOutput)}。主会话平均上下文：${mainInput.value != null && !mainInput.missing && meta.replies > 0 ? format(mainInput.value / meta.replies) + " tokens / 回复" : "未知"}（含缓存输入 ÷ ${format(meta.replies)} 次回复）。`,
         );
         table(
           "cost-detail",
