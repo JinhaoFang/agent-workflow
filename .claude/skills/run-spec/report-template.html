@@ -10,8 +10,7 @@
 或 DOM/SVG 绘制并附文字标注；沿用下方定稿变量，不引外部资源，不新增全局名字。
 版式与配色来自 PathJX a6c42b1 的 spec #27 汇报，移除外部字体及不适用的领域内容；
 本模板按新版写法调整节次与图表。所有脚本保持一个块，只用 const/let 和箭头函数。
-TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分类行默认的 --a；
-示例设计工单起止未知，不画横条。
+设计工单有起止时间时画横条；只有验收关闭时刻时合在一行画点，颜色与 Claude 用量条一致。
 -->
 <html lang="zh-CN">
   <head>
@@ -195,6 +194,21 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
         min-width: 2px;
         border-radius: 3px;
       }
+      .milestone-track {
+        height: auto;
+      }
+      .milestone-lane {
+        height: 19px;
+        position: relative;
+      }
+      .timeline-point {
+        position: absolute;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+      }
       .axis {
         display: flex;
         justify-content: space-between;
@@ -343,6 +357,7 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
       <section>
         <h2>任务</h2>
         <p data-slot="task"></p>
+        <p data-slot="result"></p>
         <p data-slot="delivery-status"></p>
         <p class="note" data-slot="limit"></p>
       </section>
@@ -477,7 +492,7 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
             limit:
               "规则篇幅是按模板重新生成的草稿，不代表 PathJX 已完成升级。主会话用量沿用原汇报截点，不含之后未记录的开 PR 与 CI 等待。",
             dispatchNote:
-              "派发起点取原汇报的分钟级运行记录，终点由已记录的分钟数计算；累计用时包含并行。设计工单只有验收时刻，起止与用时保持未知。",
+              "派发起点取原汇报的分钟级运行记录，终点由已记录的分钟数计算；累计用时包含并行。设计工单的点表示验收关闭时刻，悬停或聚焦可查看工单号、标题和时间；实际起止与用时未知。",
           },
           {
             type: "ticket",
@@ -1278,14 +1293,89 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
           {
             type: "decision",
             owner: "用户",
-            text: "范围、规则分层与后台会话入口写进 v3；本仓库规则全面重排留到第二阶段；推送 tag 前确认。",
+            text: "v3 只改 run-spec、setup-run-spec 及本仓库配置、工作流文档和路线图；PathJX 升级另开 spec。",
+            reason: "把真实使用暴露的问题做进可复用技能，实际升级单独执行。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "decision",
+            owner: "用户",
+            text: "规则分为仓库规则、本机说明和个人偏好，模板只生成仓库规则。",
+            reason: "避免个人习惯和本机的坑成为所有接手者必须遵守的规则。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "decision",
+            owner: "用户",
+            text: "把后台会话的启动方式写进 v3 的 setup 交接和本仓库工作流文档。",
+            reason: "让执行会话脱离终端后继续运行，需要时可 attach 进入。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "decision",
+            owner: "用户",
+            text: "本仓库规则按 v3 全面改写留到视频第二阶段收尾。",
+            reason: "原始记录未单独说明理由。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "decision",
+            owner: "用户",
+            text: "PR 合并后打 workflow-v3 tag，推送 tag 前先确认。",
+            reason: "原始记录未单独说明理由。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "第一批和第二批合成一次审查。",
+            reason: "Codex 账号只有两个名额，审查也占一个。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6494710471",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "设计工单也经 land 合并，主工作区只经工单脚本操作。",
+            reason: "当前设计会话被隔离在自己的 worktree 中。",
             source: "docs/reports/spec-77-workflow-v3.html",
           },
           {
             type: "decision",
             owner: "设计负责人",
-            text: "两批合成一次审查以节省名额；并行工单分开登记位置；把清理补充项统一到返工单。",
+            text: "#82 和 #84 往登记表加项的位置分开。",
+            reason: "避免两张并行工单在同一位置发生冲突。",
             source: "docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "#84 的清理补充项移到返工单 #89。",
+            reason: "避免两张并行工单修改同一处清理逻辑。",
+            source: "docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "巡检名字以 spec 号或工单号开头。",
+            reason: "cleanup 按编号清理本 spec 的巡检记录。",
+            source: "docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "采纳 review-spec 的推荐，在本仓库设计负责人文档补上 v3 判断规则的指针。",
+            reason: "避免 run-spec 引用角色文档中尚不存在的规则。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6495573759",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "路线图去掉「进度」，已完成事项并进「已定」。",
+            reason: "让本仓库路线图与 v3 只记录变化慢的内容这一约定一致。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6495573759",
           },
           {
             type: "problem",
@@ -1361,7 +1451,7 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
           {
             type: "gap",
             label: "设计工单时间",
-            text: "只有验收和关闭时刻，实际起止、分钟未知；甘特图列出工单但不画虚构的横条。",
+            text: "只有验收和关闭时刻，实际起止、分钟未知；甘特图在同一行按验收关闭时刻画点，不把它当成开工或完工时间。",
             source: "https://github.com/JinhaoFang/video-studio/issues/77",
           },
           {
@@ -1459,7 +1549,7 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
           rework: { label: "返工", color: "var(--b)" },
           review: { label: "审查", color: "var(--c)" },
           long: { label: "长作业", color: "var(--muted)" },
-          design: { label: "设计工单", color: "var(--a)" },
+          design: { label: "设计工单", color: "var(--d)" },
         };
         const slot = (name) => document.querySelector(`[data-slot="${name}"]`);
         const element = (tag, className, text) => {
@@ -1506,6 +1596,11 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
         const issue = (number) =>
           link(`${repo}/issues/${number}`, `#${number}`);
         const evidence = (label, url) => link(url, label);
+        const statement = (value, url) => {
+          const node = element("span", "", value);
+          if (url) node.append(" ", link(url, "证据"));
+          return node;
+        };
         const dated = (value, options) =>
           new Intl.DateTimeFormat("zh-CN", {
             timeZone: meta.timezone,
@@ -1609,10 +1704,8 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
           card.append(element("b", "", value), element("span", "", label));
           slot("kpis").append(card);
         }
-        text(
-          "task",
-          `目标：${meta.goal} 范围：${meta.scope} 结果：${meta.result}`,
-        );
+        text("task", `${meta.goal} ${meta.scope}`);
+        slot("result").append(element("b", "", "结果："), meta.result);
         slot("delivery-status").append(
           link(`${repo}/pull/${meta.pr}`, `PR #${meta.pr} · ${meta.prState}`),
           "；CI：",
@@ -1696,11 +1789,16 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
             .filter((entry) => entry.role === "design")
             .map((entry) => ({
               id: `design-${entry.id}`,
+              ticket: entry.id,
               label: entry.title,
               kind: "design",
               start: entry.start ?? null,
               end: entry.end ?? null,
-              minutes: entry.minutes ?? null,
+              minutes:
+                entry.minutes ??
+                (entry.start && entry.end
+                  ? (Date.parse(entry.end) - Date.parse(entry.start)) / 60000
+                  : null),
               status: entry.status,
               source: entry.source,
               closed: entry.closed,
@@ -1711,15 +1809,15 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
         for (const date of [
           ...new Set(
             timeline
-              .filter((entry) => entry.start)
-              .map((entry) => day(entry.start)),
+              .filter((entry) => entry.start || entry.closed)
+              .map((entry) => day(entry.start ?? entry.closed)),
           ),
         ].sort()) {
           const option = element("option", "", date);
           option.value = date;
           daySelect.append(option);
         }
-        if (timeline.some((entry) => !entry.start)) {
+        if (timeline.some((entry) => !entry.start && !entry.closed)) {
           const option = element("option", "", "起止未知");
           option.value = "unknown";
           daySelect.append(option);
@@ -1737,20 +1835,36 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
             (entry) =>
               (kindSelect.value === "all" || entry.kind === kindSelect.value) &&
               (daySelect.value === "all" ||
-                (entry.start ? day(entry.start) : "unknown") ===
-                  daySelect.value),
+                (entry.start || entry.closed
+                  ? day(entry.start ?? entry.closed)
+                  : "unknown") === daySelect.value),
           );
           const timed = entries.filter((entry) => entry.start && entry.end);
-          const start = timed.length
-            ? Math.min(...timed.map((entry) => Date.parse(entry.start)))
-            : 0;
-          const end = timed.length
-            ? Math.max(...timed.map((entry) => Date.parse(entry.end)))
-            : start;
+          const milestones = entries.filter(
+            (entry) =>
+              entry.kind === "design" &&
+              !(entry.start && entry.end) &&
+              entry.closed,
+          );
+          const instants = milestones.map((entry) => Date.parse(entry.closed));
+          const start =
+            timed.length || instants.length
+              ? Math.min(
+                  ...timed.map((entry) => Date.parse(entry.start)),
+                  ...instants,
+                )
+              : 0;
+          const end =
+            timed.length || instants.length
+              ? Math.max(
+                  ...timed.map((entry) => Date.parse(entry.end)),
+                  ...instants,
+                )
+              : start;
           const span = end - start;
           const container = slot("timeline");
           container.replaceChildren();
-          if (timed.length) {
+          if (timed.length || milestones.length) {
             const axis = element("div", "axis");
             axis.append(
               element("span", "", time(new Date(start).toISOString())),
@@ -1762,6 +1876,7 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
           if (!entries.length)
             container.append(element("p", "sub", "该筛选下无记录。"));
           for (const entry of entries) {
+            if (milestones.includes(entry)) continue;
             const row = element("div", "timeline-row");
             row.dataset.run = entry.id;
             const label = element("div", "timeline-label");
@@ -1785,6 +1900,27 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
               track.append(bar);
             } else
               track.append(element("span", "compare-value", "起止／分钟未知"));
+            row.append(label, track);
+            container.append(row);
+          }
+          if (milestones.length) {
+            const row = element("div", "timeline-row");
+            const label = element("div", "timeline-label", "设计工单");
+            label.append(element("small", "", "验收关闭时刻"));
+            const track = element("div", "track milestone-track");
+            for (const entry of milestones) {
+              const lane = element("div", "milestone-lane");
+              const point = evidence("", entry.source);
+              const description = `#${entry.ticket} · ${entry.label} · ${entry.status} · 验收关闭 ${time(entry.closed)}`;
+              point.className = "timeline-point";
+              point.dataset.run = entry.id;
+              point.title = description;
+              point.setAttribute("aria-label", description);
+              point.style.left = `${span > 0 ? percent(Date.parse(entry.closed) - start, span) : 50}%`;
+              point.style.background = kinds.design.color;
+              lane.append(point);
+              track.append(lane);
+            }
             row.append(label, track);
             container.append(row);
           }
@@ -1923,10 +2059,11 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
         );
         table(
           "decisions",
-          ["谁", "决定与理由"],
+          ["谁", "决定", "理由"],
           of("decision").map((entry) => [
             entry.owner,
-            evidence(entry.text, entry.source),
+            statement(entry.text, entry.source),
+            entry.reason,
           ]),
         );
         table(
@@ -1934,7 +2071,7 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
           ["问题与责任", "影响与处理"],
           of("problem").map((entry) => [
             `${entry.label}（${entry.owner}）`,
-            evidence(entry.impact, entry.source),
+            statement(entry.impact, entry.source),
           ]),
         );
         for (const entry of of("next"))
@@ -1944,7 +2081,7 @@ TODO(design)：定稿未指定设计工单的专用图例色，沿用其未分�
           ["口径／缺项", "说明"],
           of("gap").map((entry) => [
             entry.label,
-            evidence(entry.text, entry.source),
+            statement(entry.text, entry.source),
           ]),
         );
         for (const entry of of("source")) {
