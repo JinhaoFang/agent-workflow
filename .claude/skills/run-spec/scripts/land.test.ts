@@ -12,6 +12,8 @@
  * Every dispatch uses a fixture-local DispatchDock home, even when verification
  * inherits an occupied global registry. Removal retries compare current record/QA
  * content, recopy changes and retain leaves when refreshing the main copy fails.
+ * Disposable cases exercise Git patterns, protected roots and cleanup retries;
+ * fake verification writes cache files and a Git wrapper exposes pre-removal state.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -313,6 +315,7 @@ const dispatchInstallation = (
 
 const saveEvidence = (name: string, output: string): void => {
   const directory =
+    process.env.TICKET_98_EVIDENCE ??
     process.env.TICKET_90_EVIDENCE ??
     process.env.TICKET_89_EVIDENCE ??
     process.env.TICKET_79_EVIDENCE;
@@ -320,6 +323,292 @@ const saveEvidence = (name: string, output: string): void => {
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, name), output);
 };
+
+const blockWorktreeRemoval = (f: ReturnType<typeof fixture>): void => {
+  const realGit = spawnSync("which", ["git"], { encoding: "utf8" });
+  assert.equal(realGit.status, 0, realGit.stderr);
+  writeFileSync(
+    join(f.temporary, "git"),
+    `#!${process.execPath}
+const {spawnSync} = require("node:child_process");
+const args = process.argv.slice(2);
+if (args[0] === "worktree" && args[1] === "remove") process.exit(1);
+const result = spawnSync(${JSON.stringify(realGit.stdout.trim())}, args, {stdio:"inherit"});
+process.exit(result.status ?? 2);
+`,
+    { mode: 0o755 },
+  );
+};
+
+test("land disposableIgnored uses Git patterns on ignored leaves and reports deletion/retention in dry runs and retries", () => {
+  for (const legacy of [false, true]) {
+    const f = fixture();
+    try {
+      if (!legacy) dispatchInstallation(f);
+      mkdirSync(join(f.worktree, f.artifacts, "nested"), { recursive: true });
+      writeFileSync(
+        join(f.worktree, f.artifacts, "nested/result.txt"),
+        "ticket QA",
+      );
+      const disposableIgnored = [
+        "**/__pycache__/",
+        ".pytest_cache/",
+        "apps/*/dist/",
+        "/out/root-only/",
+        "out/select/*",
+        "!out/select/keep.*",
+        "out/link",
+        "out/empty-cache/",
+      ];
+      const deleted = [
+        "out/pkg/__pycache__/module.pyc",
+        "out/nested/.pytest_cache/result.bin",
+        "apps/web/dist/bundle.js",
+        "out/root-only/result.bin",
+        "out/select/delete with space\nand newline.bin",
+      ];
+      const retained = [
+        "out/media/clip.bin",
+        "out/select/keep.bin",
+        "out/nested/root-only/result.bin",
+        "apps/group/nested/dist/bundle.js",
+        "out/__pycache__",
+      ];
+      f.commit(
+        ".gitignore",
+        `${readFileSync(join(f.root, ".gitignore"), "utf8")}\napps/\n`,
+      );
+      f.commit(
+        "docs/agents/run-spec.json",
+        JSON.stringify({
+          ...JSON.parse(readFileSync(f.configFile, "utf8")),
+          disposableIgnored,
+        }),
+      );
+      f.git(["rebase", f.integration], f.worktree);
+      for (const file of retained) {
+        mkdirSync(join(f.worktree, file, ".."), { recursive: true });
+        writeFileSync(join(f.worktree, file), file);
+      }
+      f.commit(
+        "verify.cjs",
+        `${readFileSync(join(f.worktree, "verify.cjs"), "utf8")}\nfor (const file of ${JSON.stringify(deleted)}) { fs.mkdirSync(require("node:path").dirname(file), {recursive:true}); fs.writeFileSync(file, "cache"); }\nfs.mkdirSync("out/empty-cache", {recursive:true});\n`,
+        f.worktree,
+      );
+      const target = join(f.temporary, "outside cache.txt");
+      writeFileSync(target, "outside source");
+      symlinkSync(target, join(f.worktree, "out/link"));
+      const failed = f.run(["21"], 1);
+      assert.equal(failed.status, 1, failed.stderr);
+      for (const file of deleted) assert.ok(existsSync(join(f.worktree, file)));
+      const refs = f.git(["show-ref"]);
+      const preview = f.run(["21", "--dry-run"]);
+      assert.equal(preview.status, 0, preview.stderr);
+      assert.match(
+        preview.stdout,
+        /按 disposableIgnored 模式将删除 6 个被忽略文件/,
+      );
+      assert.match(preview.stdout, /将保留 \d+ 个被忽略文件/);
+      assert.equal(f.git(["show-ref"]), refs);
+      for (const file of deleted) assert.ok(existsSync(join(f.worktree, file)));
+      assert.ok(existsSync(join(f.worktree, "out/empty-cache")));
+      blockWorktreeRemoval(f);
+      const result = f.run(["21"]);
+      assert.equal(result.status, 2, result.stderr);
+      assert.match(
+        result.stdout,
+        /按 disposableIgnored 模式删除 6 个被忽略文件/,
+      );
+      assert.match(result.stdout, /保留 \d+ 个被忽略文件 →/);
+      const kept = `${f.root}.worktrees/.kept/21`;
+      for (const file of deleted) {
+        assert.ok(!existsSync(join(f.worktree, file)), file);
+        assert.ok(!existsSync(join(kept, file)), file);
+      }
+      assert.ok(!existsSync(join(f.worktree, "out/empty-cache")));
+      assert.equal(readFileSync(target, "utf8"), "outside source");
+      for (const file of retained)
+        assert.equal(readFileSync(join(kept, file), "utf8"), file);
+      assert.equal(
+        readFileSync(join(f.root, f.artifacts, "nested/result.txt"), "utf8"),
+        "ticket QA",
+      );
+      saveEvidence(
+        `land-disposable-${legacy ? "legacy" : "snapshot"}.log`,
+        result.stdout + result.stderr,
+      );
+      saveEvidence(
+        `land-disposable-${legacy ? "legacy" : "snapshot"}-dry-run.log`,
+        preview.stdout + preview.stderr,
+      );
+      rmSync(join(f.temporary, "git"));
+      const resumed = f.run(["21"]);
+      assert.equal(resumed.status, 0, resumed.stderr);
+      assert.match(
+        resumed.stdout,
+        /按 disposableIgnored 模式删除 0 个被忽略文件/,
+      );
+      assert.ok(!existsSync(f.worktree));
+      saveEvidence(
+        `land-disposable-${legacy ? "legacy" : "snapshot"}-resumed.log`,
+        resumed.stdout + resumed.stderr,
+      );
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
+test("land disposableIgnored handles no matches and deletion without any retained leaves", () => {
+  for (const matches of [false, true]) {
+    const f = fixture();
+    try {
+      dispatchInstallation(f, { artifactsOnly: true });
+      f.commit(
+        "docs/agents/run-spec.json",
+        JSON.stringify({
+          ...JSON.parse(readFileSync(f.configFile, "utf8")),
+          disposableIgnored: [matches ? "out/cache.bin" : "out/absent.bin"],
+        }),
+      );
+      f.git(["rebase", f.integration], f.worktree);
+      writeFileSync(join(f.worktree, "out/cache.bin"), "cache");
+      const preview = f.run(["21", "--dry-run"]);
+      assert.equal(preview.status, 0, preview.stderr);
+      assert.ok(existsSync(join(f.worktree, "out/cache.bin")));
+      const result = f.run(["21"]);
+      assert.equal(result.status, 0, result.stderr);
+      assert.ok(
+        result.stdout.includes(
+          `按 disposableIgnored 模式删除 ${matches ? 1 : 0} 个被忽略文件`,
+        ),
+      );
+      assert.ok(result.stdout.includes(`保留 ${matches ? 0 : 1} 个被忽略文件`));
+      const kept = `${f.root}.worktrees/.kept/21`;
+      assert.equal(existsSync(kept), !matches);
+      if (!matches)
+        assert.equal(
+          readFileSync(join(kept, "out/cache.bin"), "utf8"),
+          "cache",
+        );
+      assert.ok(!existsSync(f.worktree));
+      saveEvidence(
+        `land-disposable-${matches ? "all" : "no"}-matches.log`,
+        result.stdout + result.stderr,
+      );
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
+test("land disposableIgnored protects all record and QA roots, including changed copies that cannot be refreshed", () => {
+  const f = fixture();
+  try {
+    f.commit(
+      "docs/agents/run-spec.json",
+      JSON.stringify({
+        ...f.config,
+        acceptanceRoot: "./out/custom-qa/",
+        disposableIgnored: ["**"],
+      }),
+    );
+    f.git(["rebase", f.integration], f.worktree);
+    blockWorktreeRemoval(f);
+    const first = f.run(["21"]);
+    assert.equal(first.status, 2, first.stderr);
+    assert.match(first.stdout, /按 disposableIgnored 模式删除 2 个被忽略文件/);
+    const kept = `${f.root}.worktrees/.kept/21`;
+    for (const file of [
+      ".codex-runs/gh-210.json",
+      ".codex-runs/smoke.json",
+      "out/custom-qa/spec-17/22/other.txt",
+    ])
+      assert.ok(existsSync(join(kept, file)), file);
+    for (const file of [
+      ".codex-runs/gh-21.json",
+      `${f.artifacts}/nested/result.txt`,
+    ]) {
+      assert.ok(existsSync(join(f.root, file)), file);
+      writeFileSync(join(f.worktree, file), "changed protected content");
+      rmSync(join(f.root, file));
+      mkdirSync(join(f.root, file));
+    }
+    const preview = f.run(["21", "--dry-run"]);
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.match(
+      preview.stdout,
+      /按 disposableIgnored 模式将删除 0 个被忽略文件/,
+    );
+    assert.match(preview.stdout, /重新复制失败/);
+    rmSync(join(f.temporary, "git"));
+    const resumed = f.run(["21"]);
+    assert.equal(resumed.status, 0, resumed.stderr);
+    assert.match(
+      resumed.stdout,
+      /按 disposableIgnored 模式删除 0 个被忽略文件/,
+    );
+    for (const file of [
+      ".codex-runs/gh-21.json",
+      `${f.artifacts}/nested/result.txt`,
+    ])
+      assert.equal(
+        readFileSync(join(kept, file), "utf8"),
+        "changed protected content",
+      );
+    assert.ok(!existsSync(f.worktree));
+    saveEvidence(
+      "land-disposable-protected.log",
+      first.stdout + resumed.stdout + resumed.stderr,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("land disposableIgnored accepts an empty array and rejects malformed configuration before side effects", () => {
+  for (const disposableIgnored of [
+    [],
+    null,
+    false,
+    "out/",
+    {},
+    [1],
+    [null],
+    [""],
+    [" "],
+    ["out/\n**"],
+    ["out/\r**"],
+    ["out/\0**"],
+  ]) {
+    const f = fixture();
+    try {
+      f.commit(
+        "docs/agents/run-spec.json",
+        JSON.stringify({ ...f.config, disposableIgnored }),
+      );
+      const before = f.git(["show-ref"]);
+      const result = f.run(["21", "--dry-run"]);
+      if (Array.isArray(disposableIgnored) && !disposableIgnored.length) {
+        assert.equal(result.status, 0, result.stderr);
+        assert.doesNotMatch(result.stdout, /disposableIgnored/);
+      } else {
+        assert.equal(result.status, 2, result.stderr);
+        assert.match(result.stderr, /^出错：配置 disposableIgnored/);
+        assert.equal(result.calls.length, 0);
+      }
+      assert.equal(f.git(["show-ref"]), before);
+      assert.ok(existsSync(f.worktree));
+      assert.ok(!existsSync(join(f.root, f.artifacts)));
+      saveEvidence(
+        `land-disposable-config-${JSON.stringify(disposableIgnored).replace(/[^a-zA-Z0-9]/g, "_")}.log`,
+        result.stdout + result.stderr,
+      );
+    } finally {
+      f.cleanup();
+    }
+  }
+});
 
 test("land excludes copied ticket records and QA from both preview and retention with or without a snapshot", () => {
   for (const legacy of [false, true]) {

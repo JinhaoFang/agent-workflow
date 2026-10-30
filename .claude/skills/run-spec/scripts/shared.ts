@@ -13,6 +13,7 @@
  * RUN_SPEC_CODEX_CONCURRENCY overrides the validated configured concurrency.
  * verificationEnv defaults to {}, substitutes {mainRoot} in configured values
  * and preserves existing process values; exclusiveVerification defaults false.
+ * disposableIgnored defaults to [] and accepts one gitignore pattern per string.
  * Commands retain required numeric positionals, may add optionalPositionals,
  * and may opt into passthrough for untouched arguments after the first `--`.
  * Handlers may return a promise; the CLI awaits dispatch queueing and failures.
@@ -209,11 +210,13 @@ export type DispatchConfig = {
   prCheckCommand: string[];
   verificationEnv: Record<string, string>;
   exclusiveVerification: boolean;
+  disposableIgnored: string[];
   optionalSources: Record<
     | "codexConcurrency"
     | "prCheckCommand"
     | "verificationEnv"
-    | "exclusiveVerification",
+    | "exclusiveVerification"
+    | "disposableIgnored",
     string
   >;
 };
@@ -305,6 +308,9 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     exclusiveVerification: Object.hasOwn(config, "exclusiveVerification")
       ? "配置"
       : "默认",
+    disposableIgnored: Object.hasOwn(config, "disposableIgnored")
+      ? "配置"
+      : "默认",
   };
   if (!Object.hasOwn(config, "codexConcurrency")) config.codexConcurrency = 2;
   if (
@@ -354,6 +360,20 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     config.exclusiveVerification = false;
   if (typeof config.exclusiveVerification !== "boolean")
     throw new OptionalConfigError("配置 exclusiveVerification 必须是布尔值");
+  if (!Object.hasOwn(config, "disposableIgnored"))
+    config.disposableIgnored = [];
+  if (
+    !Array.isArray(config.disposableIgnored) ||
+    !config.disposableIgnored.every(
+      (pattern: unknown) =>
+        typeof pattern === "string" &&
+        pattern.trim().length > 0 &&
+        !/[\0\r\n]/.test(pattern),
+    )
+  )
+    throw new OptionalConfigError(
+      "配置 disposableIgnored 必须是 gitignore 模式数组，每项为非空单行字符串且不能含 NUL",
+    );
   config.optionalSources = optionalSources;
   return config;
 };

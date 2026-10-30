@@ -10,6 +10,9 @@
  * Land excludes successfully copied record/QA leaves and moves remaining leaves,
  * archiving previous copies on collisions. Summaries show at most 20 top-level
  * paths and file counts, never individual leaf names.
+ * Land may discard configured gitignore matches using Git's check-ignore in an
+ * isolated temporary repository. Record/QA roots and copied leaves are protected;
+ * the default empty pattern list preserves prior behavior, including cleanup.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -24,7 +27,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { git } from "./shared.ts";
 
 type Snapshot = { version: 1; files: string[]; legacy: boolean };
@@ -174,20 +178,83 @@ export const printKeptDirectory = (directory: string): void => {
   printArtifactList(leaves(directory));
 };
 
+const disposableFiles = (files: string[], patterns: string[]): Set<string> => {
+  if (!files.length || !patterns.length) return new Set();
+  const temporary = mkdtempSync(join(tmpdir(), "run-spec-disposable-"));
+  try {
+    git(temporary, ["init", "--quiet", "--template="]);
+    writeFileSync(join(temporary, ".gitignore"), `${patterns.join("\n")}\n`);
+    const result = spawnSync(
+      "git",
+      [
+        "-c",
+        "core.excludesFile=",
+        "check-ignore",
+        "--no-index",
+        "--stdin",
+        "-z",
+      ],
+      {
+        cwd: temporary,
+        encoding: "utf8",
+        input: `${files.join("\0")}\0`,
+        maxBuffer: Infinity,
+      },
+    );
+    if (result.error || result.signal || ![0, 1].includes(result.status ?? -1))
+      throw new Error("无法匹配 disposableIgnored 模式，worktree 已保留");
+    return new Set(result.stdout.split("\0").filter(Boolean));
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+};
+
 export const keepIgnoredArtifacts = (
   worktree: string,
   directories: string[],
   destination: string,
   dryRun: boolean,
   copiedPaths: string[] = [],
+  patterns: string[] = [],
+  protectedDirectories: string[] = [],
 ): void => {
   const plan = ignoredArtifactPlan(worktree, directories);
   const copied = new Set(copiedPaths);
   plan.files = plan.files.filter((file) => !copied.has(file));
+  const protectedPaths = protectedDirectories.map((directory) =>
+    relative(worktree, resolve(worktree, directory)).split(sep).join("/"),
+  );
+  const discarded = disposableFiles(
+    plan.files.filter(
+      (file) =>
+        !protectedPaths.some(
+          (directory) => file === directory || file.startsWith(`${directory}/`),
+        ),
+    ),
+    patterns,
+  );
+  plan.files = plan.files.filter((file) => !discarded.has(file));
+  if (patterns.length) {
+    const count = (files: string[]) =>
+      files.filter((file) => !file.endsWith("/")).length;
+    console.log(
+      `按 disposableIgnored 模式${dryRun ? "将删除" : "删除"} ${count([...discarded])} 个被忽略文件`,
+    );
+    console.log(
+      `${dryRun ? "将保留" : "保留"} ${count(plan.files)} 个被忽略文件 → ${destination}`,
+    );
+  }
   if (plan.legacy)
     console.log(
-      "没有原始安装产物快照（旧 worktree），除配置的软链接与已复制的本工单记录、验收产物外，全部被忽略的条目均保留。",
+      patterns.length
+        ? "没有原始安装产物快照（旧 worktree），派发记录和验收产物仍受保护，其余被忽略的条目按 disposableIgnored 配置删除或保留。"
+        : "没有原始安装产物快照（旧 worktree），除配置的软链接与已复制的本工单记录、验收产物外，全部被忽略的条目均保留。",
     );
+  if (!dryRun)
+    for (const file of discarded) {
+      if (file.endsWith("/")) rmdirSync(join(worktree, file));
+      else rmSync(join(worktree, file));
+    }
   if (!plan.files.length) return;
   console.log(`${dryRun ? "将移走" : "移走"}被忽略的条目 → ${destination}`);
   printArtifactList(plan.files);
