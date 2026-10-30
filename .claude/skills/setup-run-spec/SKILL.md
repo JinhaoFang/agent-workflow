@@ -100,7 +100,7 @@ disable-model-invocation: true
 3. 告诉用户这两个技能固定在哪个版本、怎么升级：安装命令里 `#` 后面是版本（`JinhaoFang/video-studio` 的 tag），升级就换成新版本再运行
 
    ```bash
-   npx skills add JinhaoFang/video-studio#workflow-v3 --skill run-spec --skill setup-run-spec -a claude-code -y
+   npx skills add JinhaoFang/video-studio#workflow-v3.1 --skill run-spec --skill setup-run-spec -a claude-code -y
    ```
 
    `npx skills update` 和按锁文件恢复的命令都会把它们装进 `.agents/skills/`，Codex 就能看到了。用 `update` 更新别的技能时点名技能，更新完运行自检。安装会改 `skills-lock.json` 里这两项的哈希，要提交；不提交的话主工作区不干净，`land` 会拒绝合并。
