@@ -12,7 +12,8 @@
  * Every dispatch uses a fixture-local DispatchDock home, even when verification
  * inherits an occupied global registry. Removal retries compare current record/QA
  * content, recopy changes and retain leaves when refreshing the main copy fails.
- * Disposable cases exercise Git patterns, protected roots and cleanup retries;
+ * Disposable cases exercise Git patterns, record/current-spec protection and
+ * deletion or retention elsewhere under acceptanceRoot, including cleanup retries;
  * fake verification writes cache files and a Git wrapper exposes pre-removal state.
  */
 import assert from "node:assert/strict";
@@ -315,6 +316,7 @@ const dispatchInstallation = (
 
 const saveEvidence = (name: string, output: string): void => {
   const directory =
+    process.env.TICKET_106_EVIDENCE ??
     process.env.TICKET_98_EVIDENCE ??
     process.env.TICKET_90_EVIDENCE ??
     process.env.TICKET_89_EVIDENCE ??
@@ -502,7 +504,109 @@ test("land disposableIgnored handles no matches and deletion without any retaine
   }
 });
 
-test("land disposableIgnored protects all record and QA roots, including changed copies that cannot be refreshed", () => {
+test("land disposableIgnored only protects records and current-spec QA in previews, retention and retries", () => {
+  for (const legacy of [false, true]) {
+    const f = fixture();
+    try {
+      if (!legacy) dispatchInstallation(f, { artifactsOnly: true });
+      f.commit(
+        "docs/agents/run-spec.json",
+        JSON.stringify({
+          ...JSON.parse(readFileSync(f.configFile, "utf8")),
+          acceptanceRoot: "./out/custom-qa/",
+          disposableIgnored: ["out/custom-qa/**/*.tmp", ".codex-runs/**"],
+        }),
+      );
+      f.git(["rebase", f.integration], f.worktree);
+      const deleted = [
+        "out/custom-qa/artifacts/qa/web-e2e/trace.tmp",
+        "out/custom-qa/artifacts/qa/cli/result.tmp",
+        "out/custom-qa/spec-18/21/result.tmp",
+        "out/custom-qa/spec-170/21/result.tmp",
+        "out/custom-qa/spec-17-other/21/result.tmp",
+      ];
+      const protectedFiles = [
+        ".codex-runs/gh-210.tmp",
+        "out/custom-qa/spec-17/22/result.tmp",
+        "out/custom-qa/spec-17/shared.tmp",
+      ];
+      const retained = [
+        "out/custom-qa/artifacts/qa/web-e2e/trace.txt",
+        "out/custom-qa/spec-18/21/result.txt",
+      ];
+      const copied = `${f.artifacts}/matched.tmp`;
+      const files = [...deleted, ...protectedFiles, ...retained, copied];
+      for (const file of files) {
+        mkdirSync(join(f.worktree, file, ".."), { recursive: true });
+        writeFileSync(join(f.worktree, file), file);
+      }
+      const refs = f.git(["show-ref"]);
+      const preview = f.run(["21", "--dry-run"]);
+      assert.equal(preview.status, 0, preview.stderr);
+      assert.match(
+        preview.stdout,
+        /按 disposableIgnored 模式将删除 5 个被忽略文件/,
+      );
+      assert.equal(f.git(["show-ref"]), refs);
+      for (const file of files)
+        assert.equal(readFileSync(join(f.worktree, file), "utf8"), file);
+      assert.ok(!existsSync(join(f.root, copied)));
+      blockWorktreeRemoval(f);
+      const first = f.run(["21"]);
+      assert.equal(first.status, 2, first.stderr);
+      assert.match(
+        first.stdout,
+        /按 disposableIgnored 模式删除 5 个被忽略文件/,
+      );
+      const kept = `${f.root}.worktrees/.kept/21`;
+      for (const file of deleted) {
+        assert.ok(!existsSync(join(f.worktree, file)), file);
+        assert.ok(!existsSync(join(kept, file)), file);
+        assert.ok(!existsSync(join(f.root, file)), file);
+      }
+      for (const file of [...protectedFiles, ...retained])
+        assert.equal(readFileSync(join(kept, file), "utf8"), file);
+      assert.equal(readFileSync(join(f.root, copied), "utf8"), copied);
+      const retryDeleted = "out/custom-qa/artifacts/qa/cli/retry.tmp";
+      const retryProtected = "out/custom-qa/spec-17/22/retry.tmp";
+      for (const file of [retryDeleted, retryProtected]) {
+        mkdirSync(join(f.worktree, file, ".."), { recursive: true });
+        writeFileSync(join(f.worktree, file), file);
+      }
+      const retryPreview = f.run(["21", "--dry-run"]);
+      assert.equal(retryPreview.status, 0, retryPreview.stderr);
+      assert.match(
+        retryPreview.stdout,
+        /按 disposableIgnored 模式将删除 1 个被忽略文件/,
+      );
+      for (const file of [retryDeleted, retryProtected])
+        assert.equal(readFileSync(join(f.worktree, file), "utf8"), file);
+      rmSync(join(f.temporary, "git"));
+      const resumed = f.run(["21"]);
+      assert.equal(resumed.status, 0, resumed.stderr);
+      assert.match(
+        resumed.stdout,
+        /按 disposableIgnored 模式删除 1 个被忽略文件/,
+      );
+      assert.ok(!existsSync(join(kept, retryDeleted)));
+      assert.equal(
+        readFileSync(join(kept, retryProtected), "utf8"),
+        retryProtected,
+      );
+      assert.ok(!existsSync(f.worktree));
+      saveEvidence(
+        `land-disposable-spec-scope-${legacy ? "legacy" : "snapshot"}.log`,
+        [preview, first, retryPreview, resumed]
+          .map((result) => result.stdout + result.stderr)
+          .join("\n"),
+      );
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
+test("land disposableIgnored protects records and current-spec QA, including changed copies that cannot be refreshed", () => {
   const f = fixture();
   try {
     f.commit(
@@ -1369,6 +1473,11 @@ test("land help is read-only and argument errors exit with 2", () => {
     assert.match(help.stdout, /land <工单>/);
     assert.match(help.stdout, /先运行配置的安装命令，再验证/);
     assert.match(help.stdout, /失败回放输出/);
+    assert.match(help.stdout, /\.codex-runs 和 <acceptanceRoot>\/spec-<S>\//);
+    assert.match(
+      help.stdout,
+      /acceptanceRoot 下的其他路径按模式删除或移入保留目录/,
+    );
     for (const args of [[], ["0"], ["21", "extra"], ["21", "--unknown"]]) {
       const result = f.run(args);
       assert.equal(result.status, 2);

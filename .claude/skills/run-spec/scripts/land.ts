@@ -19,8 +19,9 @@
  * structural copy blockers, otherwise assuming planned copies succeed.
  * Installation/verification apply verificationEnv; verification shares the
  * repository mutex when exclusiveVerification is enabled.
- * disposableIgnored discards matched non-record/QA ignored leaves at retention;
- * matching and counts are also available in dry runs, with [] preserving v3.
+ * disposableIgnored discards matched ignored leaves outside .codex-runs and
+ * the current spec's QA directory at retention; matching and counts are also
+ * available in dry runs, with [] preserving v3.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -152,7 +153,8 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
     throw new CheckFailure(
       `派发记录和验收产物尚未复制，但工单 worktree 不存在：${worktree}`,
     );
-  const artifacts = join(config.acceptanceRoot, `spec-${spec}`, String(ticket));
+  const specArtifacts = join(config.acceptanceRoot, `spec-${spec}`);
+  const artifacts = join(specArtifacts, String(ticket));
   const records = join(worktree, ".codex-runs");
   const names = existsSync(records)
     ? readdirSync(records).filter((name) => matchesRecord(name, `gh-${ticket}`))
@@ -256,7 +258,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
         true,
         merged && journal!.copied ? checkedCopyPaths(true) : copyPaths(),
         config.disposableIgnored,
-        [".codex-runs", config.acceptanceRoot],
+        [".codex-runs", specArtifacts],
       );
     console.log(
       !registered && !existsSync(worktree)
@@ -382,7 +384,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
       false,
       checkedCopyPaths(false),
       config.disposableIgnored,
-      [".codex-runs", config.acceptanceRoot],
+      [".codex-runs", specArtifacts],
     );
     git(root, ["worktree", "remove", worktree]);
     console.log(`已删除 worktree：${worktree}`);
@@ -415,7 +417,8 @@ POSIX 独立进程组全部退出后才回收；Windows 不支持进程组，仍
 <仓库目录>.worktrees/.kept/<工单>/，保持相对路径，再删除 worktree 和工单分支。
 disposableIgnored 默认为 []；配置非空时按 Git 的 gitignore 规则直接删除匹配的被忽略文件，
 输出删除和保留的文件数量；--dry-run 只列将删除、将保留的数量，不改文件。
-整个 .codex-runs 和 acceptanceRoot 目录始终受保护，即使匹配模式也不按模式删除。
+整个 .codex-runs 和 <acceptanceRoot>/spec-<S>/ 始终受保护，S 为本工单的父 spec 号，
+即使匹配模式也不按模式删除；acceptanceRoot 下的其他路径按模式删除或移入保留目录。
 配置的目录软链接照旧删除，不访问目标；没有原始快照的旧 worktree 也应用上述删除与保护规则。
 移走清单只列顶层路径和文件数，最多 20 项；需要的文件请拷回主工作区。
 保留目录已有同名条目时，旧副本自动归档到其中的 .previous-<随机后缀>/，不覆盖。

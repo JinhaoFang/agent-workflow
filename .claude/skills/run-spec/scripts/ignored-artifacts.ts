@@ -11,8 +11,9 @@
  * archiving previous copies on collisions. Summaries show at most 20 top-level
  * paths and file counts, never individual leaf names.
  * Land may discard configured gitignore matches using Git's check-ignore in an
- * isolated temporary repository. Record/QA roots and copied leaves are protected;
- * the default empty pattern list preserves prior behavior, including cleanup.
+ * isolated temporary repository. Caller-selected roots (.codex-runs and the
+ * current spec's QA directory for land) and copied leaves are protected; the
+ * default empty pattern list preserves prior behavior, including cleanup.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -247,7 +248,7 @@ export const keepIgnoredArtifacts = (
   if (plan.legacy)
     console.log(
       patterns.length
-        ? "没有原始安装产物快照（旧 worktree），派发记录和验收产物仍受保护，其余被忽略的条目按 disposableIgnored 配置删除或保留。"
+        ? "没有原始安装产物快照（旧 worktree），派发记录和本 spec 的验收产物仍受保护，其余被忽略的条目按 disposableIgnored 配置删除或保留。"
         : "没有原始安装产物快照（旧 worktree），除配置的软链接与已复制的本工单记录、验收产物外，全部被忽略的条目均保留。",
     );
   if (!dryRun)
