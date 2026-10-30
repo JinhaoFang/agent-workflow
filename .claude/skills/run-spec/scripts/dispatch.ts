@@ -18,6 +18,8 @@
  * account concurrency errors retry through the same queue with live output.
  * --resume preserves interrupted edits and rejects live runs or rebases.
  * Ticket instructions read comments; parent-spec instructions read only body.
+ * Installation and dispatch inherit effective verificationEnv; exclusive
+ * verification instructions route complete checks through main tickets.ts.
  */
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -53,6 +55,7 @@ import {
   recordName,
   ticketIntegration,
   usageError,
+  verificationEnvironment,
   type Command,
   type Issue,
   type Values,
@@ -81,6 +84,8 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
       };
     });
   const root = trees[0].path;
+  const verificationEnv = verificationEnvironment(config, root);
+  const env = { ...process.env, ...verificationEnv };
   const { repo, endpoint, issue, write } = github(Boolean(values["dry-run"]));
   const ticket = numbers[0];
   const child = issue(ticket) as Issue & { labels?: { name: string }[] };
@@ -181,13 +186,27 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
     `spec-${spec}`,
     String(ticket),
   );
-  const task = `完成 GitHub 工单 #${ticket}（父 spec #${spec}）。先运行 gh issue view ${ticket} --json title,body,comments 读取工单正文和评论，再运行 gh issue view ${spec} --json title,body 只读父 spec 正文，不读父 spec 评论。按工单的边界和验收标准完成、验证并提交，最后按角色文档的格式汇报。验证命令参数数组：${JSON.stringify(config.verificationCommand)}。`;
+  const verificationCommand = config.exclusiveVerification
+    ? [
+        process.execPath,
+        join(root, ".claude/skills/run-spec/scripts/tickets.ts"),
+        "verify",
+        String(ticket),
+      ]
+    : config.verificationCommand;
+  const task = `完成 GitHub 工单 #${ticket}（父 spec #${spec}）。先运行 gh issue view ${ticket} --json title,body,comments 读取工单正文和评论，再运行 gh issue view ${spec} --json title,body 只读父 spec 正文，不读父 spec 评论。按工单的边界和验收标准完成、验证并提交，最后按角色文档的格式汇报。验证命令参数数组：${JSON.stringify(verificationCommand)}。`;
   const pushInstruction = values["allow-push"]
     ? `只允许把本工单分支 ${branch} 推送到远端，不开 PR，不推送其他分支`
     : "不要推送";
   const extra = [
     `你在 git worktree ${worktree} 里工作，分支是 ${branch}。提交留在这个分支上，不要切换分支，${pushInstruction}，不要改动主工作区 ${root} 和其他 worktree。`,
     `以下目录是指向主工作区的软链接，只读使用：${config.symlinkDirectories.join("、") || "无"}。验收产物写到本 worktree 的 ${artifacts} 下，汇报里用绝对路径。`,
+    Object.keys(verificationEnv).length
+      ? `实际生效的验证环境变量（已替换 {mainRoot}，已有同名进程环境优先；安装和派发进程均已携带）：${JSON.stringify(verificationEnv)}。`
+      : "",
+    config.exclusiveVerification
+      ? `完整验证必须使用主工作区 tickets.ts 的上述绝对路径命令（verify ${ticket}），通过仓库验证锁排队；不要直接运行配置的验证命令。局部测试照常。该命令自动将完整日志写入 ${join(root, ".codex-runs")}，无需手动改动主工作区。`
+      : "",
     resume
       ? "这是原地续做：上次派发中断，worktree 中未提交的改动是上次执行写的，请核对已有进度后继续完成本工单。"
       : existing && !needsPreparation
@@ -275,6 +294,7 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
       const [program, ...installArgs] = config.installCommand;
       const result = spawnSync(program, installArgs, {
         cwd: worktree,
+        env,
         stdio: ["inherit", "pipe", "pipe"],
         encoding: "utf8",
         maxBuffer: Infinity,
@@ -317,6 +337,7 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
       }>((complete, reject) => {
         const child = spawn(process.execPath, args, {
           cwd: worktree,
+          env,
           stdio: ["inherit", "pipe", "pipe"],
         });
         let limited = false;
@@ -398,6 +419,10 @@ export const dispatchCommand: Command = {
 --resume 在不干净的原 worktree 里续做中断的派发，保留未提交改动，不要求返工另起提交；
 worktree 不存在、干净、有活着的运行或进行中的 rebase 时拒绝并说明。
 读取工单正文和评论，父 spec 只读正文；未挂 spec 时提示 link 命令。
+verificationEnv 默认 {}，安装和派发进程携带替换 {mainRoot} 后的变量，已有同名环境优先；
+实际值写入派发指令和记录，因此配置里不要放密钥，--dry-run 可预览。
+exclusiveVerification 默认 false；开启时指令要求完整验证运行主工作区 tickets.ts verify <工单> 的绝对路径命令，
+通过仓库锁排队，日志自动写入主工作区 .codex-runs；局部测试照常。
 以 DispatchDock 全局记录及进程存活判断并发，codexConcurrency 默认 2，
 可用 RUN_SPEC_CODEX_CONCURRENCY 覆盖；达到上限时加锁排队，每 5 分钟最多打印一行。
 Codex 返回 Concurrency limit exceeded 时回到排队自动重试；用 slots 查看运行与空余名额。

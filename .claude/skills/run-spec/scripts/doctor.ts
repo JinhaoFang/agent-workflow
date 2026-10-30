@@ -40,6 +40,7 @@ import {
   ghResult,
   git,
   usageError,
+  verificationEnvironment,
   type Command,
   type DispatchConfig,
   type Values,
@@ -382,7 +383,7 @@ const doctor = (values: Values): void => {
   let config: DispatchConfig | undefined;
   check(
     "执行配置完整",
-    "按 docs/agents/run-spec.md 补齐或修正 docs/agents/run-spec.json 的必填项；可选 codexConcurrency 为正整数（默认 2，可由 RUN_SPEC_CODEX_CONCURRENCY 覆盖），prCheckCommand 为非空参数数组（默认 gh pr checks {pr} --watch）。",
+    "按 docs/agents/run-spec.md 补齐或修正 docs/agents/run-spec.json 的必填项；可选 codexConcurrency 为正整数（默认 2，可由 RUN_SPEC_CODEX_CONCURRENCY 覆盖），prCheckCommand 为非空参数数组（默认 gh pr checks {pr} --watch），verificationEnv 为字符串到字符串的对象（默认 {}），exclusiveVerification 为布尔值（默认 false），disposableIgnored 为 gitignore 模式数组（默认 []）。",
     () => {
       try {
         config = dispatchConfig(root);
@@ -396,7 +397,12 @@ const doctor = (values: Values): void => {
       }
     },
   );
-  for (const key of ["codexConcurrency", "prCheckCommand"] as const)
+  for (const key of [
+    "codexConcurrency",
+    "prCheckCommand",
+    "exclusiveVerification",
+    "disposableIgnored",
+  ] as const)
     check(
       `可选配置 ${key}`,
       "先修正执行配置和 RUN_SPEC_CODEX_CONCURRENCY 环境变量，再重新运行 doctor。",
@@ -405,6 +411,23 @@ const doctor = (values: Values): void => {
         return `实际取值 ${JSON.stringify(config![key])}；来源：${config!.optionalSources[key]}`;
       },
     );
+  check(
+    "可选配置 verificationEnv",
+    "把 verificationEnv 配成字符串到字符串的对象，或省略以使用默认 {}；不要放密钥。",
+    () => {
+      requireCheck(!!config, "执行配置未通过，无法读取实际取值和来源。");
+      const effective = verificationEnvironment(config!, main || root);
+      const sources = Object.fromEntries(
+        Object.keys(effective).map((key) => [
+          key,
+          process.env[key] === undefined
+            ? config!.optionalSources.verificationEnv
+            : "进程环境",
+        ]),
+      );
+      return `实际取值 ${JSON.stringify(effective)}；来源：${config!.optionalSources.verificationEnv}；各变量来源：${JSON.stringify(sources)}`;
+    },
+  );
   check(
     "派发脚本",
     "安装 codex-dispatch，并让 dispatchScript 指向主工作区中存在的派发脚本文件。",
@@ -525,7 +548,9 @@ GitHub 的 role:engineering、role:design、ready-for-human 标签、只允许 m
 Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签说明；
 codex-dispatch、run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；
 执行配置完整、主工作区派发脚本存在；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
-报告可选配置 codexConcurrency、prCheckCommand 的实际取值及来源（配置、环境变量或默认）；格式错误退出 2；
+报告可选配置 codexConcurrency、prCheckCommand、verificationEnv、exclusiveVerification、disposableIgnored 的实际取值及来源；
+disposableIgnored 默认 []，每项为非空单行 gitignore 模式，不能含 NUL；格式错误退出 2；
+verificationEnv 显示替换 {mainRoot} 并保留已有进程环境后的实际值与逐变量来源；格式错误退出 2；
 软链接目录用临时目录中的同名软链接实测，识别带末尾斜杠的无效规则；
 仓库根目录 .env 存在时用 git 实测被忽略，未被忽略的修法是在 .gitignore 中加入 .env；不存在时通过；
 AGENTS.md 的角色一节及提交格式中的 Refs、Role 尾注。

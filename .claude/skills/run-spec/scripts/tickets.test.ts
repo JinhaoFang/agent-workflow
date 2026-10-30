@@ -99,6 +99,7 @@ const fields = [
   "无\n推断已接受",
   "--remaining",
   "无",
+  "--no-commits",
 ];
 const expectedBody =
   "## 验收：通过\n- 提交：abc123\n  def456\n- 验证：pnpm verify\n  全部通过\n- TODO(design) 与推断：无\n  推断已接受\n- 遗留：无\n";

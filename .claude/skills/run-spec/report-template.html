@@ -1,1227 +1,2180 @@
 <!doctype html>
 <!--
-  单文件 spec 汇报模板：直接用浏览器打开，可断网使用，无外部资源。
-  换数据只改脚本块开头的 data 数组：report 是标题与来源；dispatch 每次派发一条，
-  start 用本期首日零点起算的 HH:mm（次日可写 24:46），minutes 是累计运行分钟；
-  input 含缓存，cacheRead 是其中缓存，output 是输出；design 的 input 不含缓存，
-  总输入按 input + cacheWrite + cacheRead 计算；previous 是上一期已知用量。
-  finding 每条发现一条，handling 的相同文字会自动归组。所有数字、图表和注记都由数组派生。
-  新流程图：替换 node 与 edge 记录；node 用唯一 id、label、detail、row、col 描述方框，
-  桌面 col 为 0 或 1、row 从 0 起；edge 用 from、to 指向节点 id，节点间用直线连接。
-  手机按 node 在数组里的顺序纵向排列；分支连线须留出空位，用浏览器复核不穿过其他方框。
-  示例数据均来自 docs/reports/spec-60-nasa-punk-opening.html：18 次有记录的派发、
-  4 条审查发现；原汇报未给出 #74 工程运行的用时和用量，不补估算。
-  折线按派发完成时刻累计输出，不代表逐 token 实时采样；审查用量含原汇报记录的子代理。
-  延续 spec #60 的单栏版式、颜色、字号、间距与卡片样式，只使用系统字体。
+单文件 spec 汇报模板：浏览器直接打开，可断网使用。复制后替换脚本块开头的 data
+数组；report 是标题、任务与截点，ticket/dispatch/session/independent/subagent 是
+工单和用量，goal 是同口径改前改后与结论，finding/review 是发现和审查。其余 type
+分别驱动同名节的表与文字。未知数填 null，不填 0；输入包含缓存，不重复相加。
+汇总只加已知项并标明缺项数；比值所需项缺失时写未知，对比条只画已知部分。
+示例取自本仓库 spec #77 汇报、子工单验收与 PR #91；精确缺项在页面中列明。
+只可选省略领域结果：删除 domain 数据后整节自动隐藏；其余节缺项写明未知和依据。
+要添加领域结果图，在 data 中加入该领域的测量记录，在同一脚本块内用 comparison
+或 DOM/SVG 绘制并附文字标注；沿用下方定稿变量，不引外部资源，不新增全局名字。
+版式与配色来自 PathJX a6c42b1 的 spec #27 汇报，移除外部字体及不适用的领域内容；
+本模板按新版写法调整节次与图表。所有脚本保持一个块，只用 const/let 和箭头函数。
+设计工单有起止时间时画横条；只有验收关闭时刻时合在一行画点，颜色与 Claude 用量条一致。
+goal 的 conclusion 填达成／部分达成／未达成；before、after 共用 unit，只有有限数字且
+单位非空时画条，其余列入表格。domain 的 cells 按 report.domainHeadings 的顺序填写。
+session 可有多条，仅一条设 compare: true；replies 随该会话填写，用于计算平均上下文。
+report.costNote、comparisonNote 可选，缺省按已录入用量生成；localVerificationUrl 可选。
+repoUrl、sourceRef 分别指定仓库和 docs/ 相对证据链接的版本。
 -->
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Spec 汇报</title>
     <style>
       :root {
-        color-scheme: light;
-        --bg: #f4f6f9;
-        --surface: #ffffff;
-        --ink: #141820;
-        --ink-2: #485164;
-        --muted: #737d90;
-        --line: #dde2ea;
-        --accent: #2f45b5;
-        --accent-soft: #e6e9fa;
-        --s-feature: #2a78d6;
-        --s-rework: #eb6834;
-        --s-review: #1baf7a;
-        --s-prev: #9aa3b3;
-        --font-display: "Songti SC", "SimSun", serif;
-        --font-body: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-        --font-data: ui-monospace, Menlo, Consolas, monospace;
+        --bg: #fafaf8;
+        --fg: #1d1d1b;
+        --muted: #6b6b66;
+        --line: #deddd8;
+        --card: #fff;
+        --a: #2f6fb0;
+        --b: #c0762a;
+        --c: #4f8a4a;
+        --d: #8a5ab0;
+        --e: #b04a4a;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          color-scheme: dark;
-          --bg: #101319;
-          --surface: #171b23;
-          --ink: #eceef4;
-          --ink-2: #b6bdcc;
-          --muted: #8b93a5;
-          --line: #2a303c;
-          --accent: #9eabff;
-          --accent-soft: #232a4a;
-          --s-feature: #3987e5;
-          --s-rework: #d95926;
-          --s-review: #199e70;
-          --s-prev: #5c6576;
+          --bg: #171716;
+          --fg: #ecebe6;
+          --muted: #a3a29c;
+          --line: #383835;
+          --card: #21211f;
+          --a: #6aa4e0;
+          --b: #e0a160;
+          --c: #86c27f;
+          --d: #b991dc;
+          --e: #e07a7a;
         }
       }
-      *,
-      *::before,
-      *::after {
+      * {
         box-sizing: border-box;
       }
       body {
         margin: 0;
         background: var(--bg);
-        color: var(--ink);
-        font-family: var(--font-body);
-        font-size: 15px;
-        line-height: 1.75;
-        overflow-wrap: anywhere;
+        color: var(--fg);
+        font:
+          15px/1.6 system-ui,
+          -apple-system,
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
       }
-      .page {
-        max-width: 960px;
+      main {
+        max-width: 920px;
         margin: 0 auto;
-        padding: 40px 20px 72px;
-        display: grid;
-        gap: 56px;
-      }
-      h1,
-      h2,
-      h3 {
-        margin: 0;
-        line-height: 1.35;
-        text-wrap: balance;
-      }
-      h1,
-      h2 {
-        font-family: var(--font-display);
+        padding: 24px 16px 48px;
       }
       h1 {
-        font-size: clamp(26px, 4.4vw, 38px);
+        font-size: 24px;
+        margin: 0 0 4px;
       }
       h2 {
-        font-size: 22px;
+        font-size: 18px;
+        margin: 32px 0 10px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 4px;
       }
-      h3 {
-        font-size: 16px;
-      }
-      p {
-        margin: 0;
-      }
-      section {
-        display: grid;
-        gap: 18px;
-        min-width: 0;
-      }
-      .section-head {
-        display: grid;
-        gap: 4px;
-        border-top: 1px solid var(--line);
-        padding-top: 20px;
-      }
-      .hero {
-        display: grid;
-        gap: 14px;
-      }
-      .eyebrow {
-        font-family: var(--font-data);
-        font-size: 12px;
-        letter-spacing: 0.08em;
+      .sub {
         color: var(--muted);
-      }
-      .lede {
-        font-size: 17px;
-        color: var(--ink-2);
-      }
-      .note {
-        font-size: 13px;
-        color: var(--ink-2);
+        margin: 0 0 16px;
       }
       .kpis {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 10px;
       }
       .kpi {
-        background: var(--surface);
+        background: var(--card);
         border: 1px solid var(--line);
         border-radius: 8px;
-        padding: 14px 16px;
-        display: grid;
-        gap: 2px;
-        min-width: 0;
-        align-content: start;
+        padding: 10px 12px;
       }
-      .num {
-        font-family: var(--font-data);
-        font-size: 26px;
-        font-weight: 500;
-        line-height: 1.3;
-        font-variant-numeric: tabular-nums;
-      }
-      .num small {
-        font-size: 14px;
-        color: var(--ink-2);
-        font-weight: 400;
-      }
-      .label {
-        font-size: 13px;
-        color: var(--ink-2);
-      }
-      .figure {
-        margin: 0;
-        padding: 16px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        display: grid;
-        gap: 10px;
-        min-width: 0;
-      }
-      .legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px 18px;
-        font-size: 13px;
-        color: var(--ink-2);
-      }
-      .legend span {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .swatch {
-        width: 12px;
-        height: 12px;
-        border-radius: 3px;
-        background: var(--series);
-      }
-      .timeline {
-        display: grid;
-        gap: 12px;
-      }
-      .time-axis {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        font-size: 12px;
-        color: var(--ink-2);
-      }
-      .dispatch {
-        display: grid;
-        gap: 4px;
-      }
-      .dispatch-head {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
-        gap: 2px 12px;
-        font-size: 13px;
-      }
-      .dispatch-head span {
-        color: var(--ink-2);
-      }
-      .track {
-        position: relative;
-        height: 18px;
-        border-radius: 4px;
-        background: var(--bg);
-      }
-      .duration {
-        position: absolute;
-        left: var(--start);
-        width: var(--length);
-        min-width: 2px;
-        height: 100%;
-        background: var(--series);
-        border-radius: 3px;
-      }
-      .bar-list,
-      .usage-groups {
-        display: grid;
-        gap: 18px;
-      }
-      .bar-row {
-        display: grid;
-        gap: 4px;
-      }
-      .bar-label {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
-        gap: 2px 12px;
-        font-size: 13px;
-      }
-      .bar-value {
-        font-family: var(--font-data);
-        font-variant-numeric: tabular-nums;
-      }
-      .bar-track {
-        height: 18px;
-        border-radius: 4px;
-        background: var(--bg);
-      }
-      .bar-fill {
-        width: var(--length);
-        height: 100%;
-        border-radius: 3px;
-        background: var(--series);
-      }
-      .usage-group {
-        display: grid;
-        gap: 10px;
-      }
-      .items {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        display: grid;
-        gap: 14px;
-      }
-      .items li {
-        padding-left: 14px;
-        border-left: 2px solid var(--line);
-        display: grid;
-        gap: 2px;
-      }
-      .items p {
-        color: var(--ink-2);
-        font-size: 14px;
-      }
-      .chart {
+      .kpi b {
         display: block;
+        font-size: 22px;
+      }
+      .kpi span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      table {
         width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        background: var(--card);
+        table-layout: fixed;
+      }
+      th,
+      td {
+        border: 1px solid var(--line);
+        padding: 6px 8px;
+        text-align: left;
+        vertical-align: top;
+        overflow-wrap: anywhere;
+      }
+      th {
+        font-weight: 600;
+      }
+      .wrap {
+        width: 100%;
+        min-width: 0;
       }
       svg text {
-        fill: var(--ink-2);
-        font-family: var(--font-body);
+        fill: var(--fg);
         font-size: 12px;
       }
-      svg .grid-line {
-        stroke: var(--line);
-        stroke-width: 1;
+      svg .muted {
+        fill: var(--muted);
       }
-      svg .trend-line {
-        fill: none;
-        stroke: var(--accent);
-        stroke-width: 2;
+      ul,
+      ol {
+        padding-left: 20px;
       }
-      svg .point {
-        fill: var(--surface);
-        stroke: var(--accent);
-        stroke-width: 2;
-      }
-      svg .node {
-        fill: var(--surface);
-        stroke: var(--line);
-        stroke-width: 1;
-      }
-      svg .node-title {
-        fill: var(--ink);
-        font-size: 16px;
-        font-weight: 700;
-      }
-      svg .node-detail {
+      code {
         font-size: 13px;
+        overflow-wrap: anywhere;
       }
-      svg .edge {
-        fill: none;
-        stroke: var(--accent);
-        stroke-width: 2;
+      a {
+        color: var(--a);
+        text-underline-offset: 2px;
+        overflow-wrap: anywhere;
       }
-      @media (max-width: 720px) {
+      p {
+        margin: 10px 0;
+      }
+      button,
+      select {
+        font: inherit;
+        color: var(--fg);
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 4px 8px;
+        max-width: 100%;
+      }
+      .note {
+        border-left: 3px solid var(--b);
+        padding: 7px 11px;
+        background: var(--card);
+      }
+      .controls {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        margin: 12px 0;
+      }
+      .timeline-row,
+      .bar-row {
+        display: grid;
+        grid-template-columns: minmax(135px, 23%) minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        margin: 7px 0;
+      }
+      .timeline-label {
+        font-size: 12px;
+        overflow-wrap: anywhere;
+        line-height: 1.4;
+      }
+      .timeline-label small {
+        display: block;
+        color: var(--muted);
+      }
+      .track {
+        height: 19px;
+        background: var(--line);
+        position: relative;
+        border-radius: 3px;
+        min-width: 0;
+      }
+      .bar {
+        position: absolute;
+        top: 2px;
+        bottom: 2px;
+        min-width: 2px;
+        border-radius: 3px;
+      }
+      .milestone-track {
+        height: auto;
+      }
+      .milestone-lane {
+        height: 19px;
+        position: relative;
+      }
+      .timeline-point {
+        position: absolute;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+      }
+      .axis {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--muted);
+        margin: 5px 0 12px;
+      }
+      .legend {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .swatch {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        margin: 0 3px 0 10px;
+      }
+      .bar-row {
+        grid-template-columns: minmax(135px, 23%) minmax(0, 1fr);
+      }
+      .bar-group {
+        display: grid;
+        gap: 5px;
+      }
+      .compare-bar {
+        background: var(--line);
+        border-radius: 3px;
+        min-height: 23px;
+        position: relative;
+        overflow: hidden;
+      }
+      .compare-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        opacity: 0.25;
+      }
+      .compare-value {
+        position: relative;
+        display: block;
+        padding: 1px 5px;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .status-pending {
+        color: var(--b);
+      }
+      details {
+        margin: 15px 0;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--a);
+      }
+      td.num,
+      th.num {
+        font-variant-numeric: tabular-nums;
+      }
+      footer {
+        margin-top: 28px;
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      @media (max-width: 600px) {
+        main {
+          padding: 20px 12px 36px;
+        }
+        h1 {
+          font-size: 21px;
+        }
         .kpis {
           grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .kpi b {
+          font-size: 20px;
+        }
+        table.responsive thead {
+          display: none;
+        }
+        table.responsive,
+        table.responsive tbody {
+          display: block;
+        }
+        table.responsive tr {
+          display: block;
+          border: 1px solid var(--line);
+          margin-bottom: 9px;
+        }
+        table.responsive td,
+        table.responsive th {
+          display: grid;
+          grid-template-columns: minmax(76px, 28%) minmax(0, 1fr);
+          gap: 8px;
+          border: 0;
+          border-bottom: 1px solid var(--line);
+          padding: 5px 8px;
+          min-width: 0;
+        }
+        table.responsive td:before,
+        table.responsive th:before {
+          content: attr(data-label);
+          color: var(--muted);
+          font-weight: 400;
+        }
+        table.responsive td:last-child {
+          border-bottom: 0;
+        }
+        .timeline-row,
+        .bar-row {
+          grid-template-columns: minmax(95px, 31%) minmax(0, 1fr);
+          gap: 6px;
+        }
+        .timeline-label {
+          font-size: 11px;
+        }
+      }
+      @media print {
+        details {
+          display: block;
+        }
+        details > * {
+          display: block;
+        }
+        select,
+        .controls {
+          display: none;
+        }
+        a {
+          color: inherit;
+        }
+        .track,
+        .compare-fill {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
       }
     </style>
   </head>
   <body>
-    <main class="page">
-      <header class="hero">
-        <div class="eyebrow" id="report-meta"></div>
-        <h1 id="report-title"></h1>
-        <p class="lede" id="report-intro"></p>
-      </header>
-      <div class="kpis" id="kpis" aria-label="关键数字"></div>
-      <section aria-labelledby="timeline-heading">
-        <div class="section-head">
-          <div class="eyebrow">时间线</div>
-          <h2 id="timeline-heading">派发与关键节点</h2>
-        </div>
-        <figure class="figure" aria-labelledby="timeline-heading">
-          <div class="legend" id="timeline-legend"></div>
-          <div class="time-axis" id="time-axis"></div>
-          <div class="timeline" id="timeline"></div>
-          <figcaption class="note" id="timeline-note"></figcaption>
-        </figure>
+    <main>
+      <h1 data-slot="title"></h1>
+      <p class="sub" data-slot="subtitle"></p>
+      <div class="kpis" data-slot="kpis" aria-label="关键数字"></div>
+      <section>
+        <h2>任务</h2>
+        <p data-slot="task"></p>
+        <p data-slot="result"></p>
+        <p data-slot="delivery-status"></p>
+        <p class="note" data-slot="limit"></p>
       </section>
-      <section aria-labelledby="cost-heading">
-        <div class="section-head">
-          <div class="eyebrow">成本与效率</div>
-          <h2 id="cost-heading">用了多少</h2>
-        </div>
-        <figure class="figure">
-          <h3>设计负责人和 Codex 的 token 对比</h3>
-          <div class="usage-groups" id="agent-usage"></div>
-          <figcaption class="note" id="agent-note"></figcaption>
-        </figure>
-        <figure class="figure">
-          <h3>本次与上次的 Codex 用量</h3>
-          <div class="usage-groups" id="previous-usage"></div>
-          <figcaption class="note" id="previous-note"></figcaption>
-        </figure>
+      <section>
+        <h2>交付</h2>
+        <div class="wrap" data-slot="deliverables"></div>
       </section>
-      <section aria-labelledby="trend-heading">
-        <div class="section-head">
-          <div class="eyebrow">随时间变化</div>
-          <h2 id="trend-heading">Codex 累计输出</h2>
-        </div>
-        <figure class="figure">
-          <svg
-            class="chart"
-            id="trend"
-            role="img"
-            aria-labelledby="trend-heading trend-note"
-          ></svg>
-          <figcaption class="note" id="trend-note"></figcaption>
-        </figure>
+      <section>
+        <h2>目标核对</h2>
+        <p data-slot="goal-summary"></p>
+        <div data-slot="goals" role="group" aria-label="目标改前改后对比"></div>
+        <div class="wrap" data-slot="goal-table"></div>
       </section>
-      <section aria-labelledby="review-heading">
-        <div class="section-head">
-          <div class="eyebrow">质量</div>
-          <h2 id="review-heading">审查发现与处理</h2>
-        </div>
-        <figure class="figure">
-          <div class="bar-list" id="finding-distribution"></div>
-          <figcaption class="note" id="finding-note"></figcaption>
-        </figure>
-        <ul class="items" id="finding-list"></ul>
+      <section data-section="domain">
+        <h2>领域结果</h2>
+        <p data-slot="domain-intro"></p>
+        <div class="wrap" data-slot="domain"></div>
       </section>
-      <section aria-labelledby="flow-heading">
-        <div class="section-head">
-          <div class="eyebrow">分工与流程</div>
-          <h2 id="flow-heading">谁做了什么</h2>
+      <section>
+        <h2>时间线</h2>
+        <div class="wrap" data-slot="milestones"></div>
+        <div class="controls">
+          <label
+            >日期
+            <select data-slot="timeline-day">
+              <option value="all">全部日期</option>
+            </select></label
+          >
+          <label
+            >类别
+            <select data-slot="timeline-kind">
+              <option value="all">全部类别</option>
+            </select></label
+          >
         </div>
-        <figure class="figure">
-          <svg
-            class="chart"
-            id="flow"
-            role="img"
-            aria-labelledby="flow-heading flow-note"
-          ></svg>
-          <figcaption class="note" id="flow-note"></figcaption>
-        </figure>
+        <p class="legend" data-slot="timeline-legend"></p>
+        <div
+          data-slot="timeline"
+          role="group"
+          aria-label="派发与设计工单甘特图"
+        ></div>
+        <p class="sub" data-slot="timeline-note"></p>
       </section>
-      <footer class="note" id="source-note"></footer>
-      <noscript>请启用 JavaScript，以显示数据驱动的汇报。</noscript>
+      <section>
+        <h2>成本与效率</h2>
+        <div class="wrap" data-slot="cost-summary"></div>
+        <p class="sub" data-slot="cost-note"></p>
+        <div
+          data-slot="cost-chart"
+          role="group"
+          aria-label="Claude 主会话与 Codex 用量对比"
+        ></div>
+        <p data-slot="efficiency"></p>
+        <p class="sub" data-slot="comparison-note"></p>
+        <details>
+          <summary>展开每次派发与审查的用时、输入、缓存、输出</summary>
+          <div class="wrap" data-slot="cost-detail"></div>
+        </details>
+        <details>
+          <summary>展开主会话、独立审查与子代理用量</summary>
+          <div class="wrap" data-slot="other-cost"></div>
+        </details>
+      </section>
+      <section>
+        <h2>质量</h2>
+        <p data-slot="quality"></p>
+        <div class="wrap" data-slot="checks"></div>
+        <p class="sub" data-slot="finding-note"></p>
+        <div class="wrap" data-slot="reviews"></div>
+        <details>
+          <summary>展开审查发现与处理</summary>
+          <div class="wrap" data-slot="findings"></div>
+        </details>
+      </section>
+      <section>
+        <h2>决定</h2>
+        <div class="wrap" data-slot="decisions"></div>
+      </section>
+      <section>
+        <h2>问题与处理</h2>
+        <div class="wrap" data-slot="problems"></div>
+      </section>
+      <section>
+        <h2>流程发现、遗留与下一步</h2>
+        <ul data-slot="next"></ul>
+      </section>
+      <section>
+        <h2>数据口径与缺项</h2>
+        <div class="wrap" data-slot="gaps"></div>
+        <details>
+          <summary>证据入口</summary>
+          <ul data-slot="sources"></ul>
+        </details>
+      </section>
+      <footer data-slot="footer"></footer>
+      <noscript
+        ><p class="note">
+          请启用 JavaScript。统计、图表与正文由本页内嵌数据计算。
+        </p></noscript
+      >
     </main>
     <script>
       {
         const data = [
           {
             type: "report",
-            name: "spec #60",
-            date: "2026-10-16",
-            timezone: "北京时间",
-            title: "复刻 NASA 朋克开场 0:00～0:46",
-            intro:
-              "用本仓库的管线，按句子逐镜复刻参考视频开头：台本、正式配音、风格令牌、镜头、配乐音效和混音。设计负责人做风格令牌和小样，工程工单派给 Codex；用户审片后，开场推拉与 VOID 贴条闪帧经 #74 返工修好，用户确认通过。",
+            repoUrl: "https://github.com/JinhaoFang/video-studio",
+            sourceRef: "workflow-v3",
+            spec: 77,
+            date: "2026-10-29",
+            asOf: "2026-10-29T20:47:22+08:00",
+            timezone: "Asia/Taipei",
+            title: "workflow-v3：按真实使用改进执行流程",
+            goal: "把 PathJX 第一阶段暴露的规则膨胀、派发与合并问题做进可复用的执行技能。",
+            scope:
+              "run-spec、setup-run-spec 及本仓库配置和工作流文档；PathJX 的实际升级另开 spec。",
+            domainIntro: "本次执行技能新增的命令及其作用。",
+            domainHeadings: ["新增命令", "作用"],
+            result:
+              "workflow-v3 已交付，PR 已合并；远端 CI 未启动，本地复现 CI 检查通过。",
+            pr: 91,
+            prState: "已合并",
+            ciUrl:
+              "https://github.com/JinhaoFang/video-studio/actions/runs/40871864994/job/123440663903",
+            ciStatus: "GitHub Actions 因账号付款限制未启动，不能记作远端通过",
+            localVerification:
+              "pnpm verify 与 pnpm check:commits origin/main origin/spec/77-workflow-v3 均通过",
+            localVerificationUrl:
+              "https://github.com/JinhaoFang/video-studio/pull/91#issuecomment-6496437125",
+            testsBefore: 312,
+            testsAfter: 374,
+            limit:
+              "规则篇幅是按模板重新生成的草稿，不代表 PathJX 已完成升级。主会话用量沿用原汇报截点，不含之后未记录的开 PR 与 CI 等待。",
             dispatchNote:
-              "原汇报缺少 #74 工程运行的用时和用量，未计入；审查的记录包含其子代理。",
-            flowNote:
-              "用户定分工；设计负责人定风格并验收；Codex 执行工程与返工。用户审片提出开场推拉、VOID 贴条闪帧两处问题，经 #74 修复后确认通过。",
+              "派发起点取原汇报的分钟级运行记录，终点由已记录的分钟数计算；累计用时包含并行。设计工单的点表示验收关闭时刻，悬停或聚焦可查看工单号、标题和时间；实际起止与用时未知。",
+          },
+          {
+            type: "ticket",
+            id: 78,
+            title:
+              "工单脚本的公共部分：可选配置项、可选参数、共用的 claude 调用",
+            role: "engineering",
+            status: "已关闭",
+            closed: "2026-10-29T10:24:57Z",
             source:
-              "数据来源：docs/reports/spec-60-nasa-punk-opening.html 中的派发数据、主会话用量、上期对照和审查记录。原汇报依据工单验收与审查评论、主会话记录、验收产物及 git 提交时间；时刻均为北京时间。",
+              "https://github.com/JinhaoFang/video-studio/issues/78#issuecomment-6494144831",
           },
           {
-            type: "design",
-            replies: 220,
-            input: 464,
-            cacheWrite: 413954,
-            cacheRead: 35316986,
-            output: 130091,
-            note: "Claude 输入含缓存写入与读取；主会话数据截至写原汇报时，未含开 PR、等 CI。平均上下文以总输入除以回复数估算。",
+            type: "ticket",
+            id: 79,
+            title: "land 把被忽略的工单产物移到保留目录，不再随 worktree 删除",
+            role: "engineering",
+            status: "已关闭",
+            closed: "2026-10-29T10:40:16Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/79#issuecomment-6494462146",
           },
           {
-            type: "previous",
-            name: "spec #54",
-            minutes: 20.36,
-            input: 2981782,
-            output: 19885,
-            note: "上期只是一张脚本小工单，工程规模不同。",
+            type: "ticket",
+            id: 80,
+            title: "spec 汇报的 HTML 模板",
+            role: "engineering",
+            status: "已关闭",
+            closed: "2026-10-29T11:25:59Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/80#issuecomment-6495364714",
           },
           {
-            id: "gh-61",
-            label: "骨架与临时配音",
+            type: "ticket",
+            id: 81,
+            title: "把 PathJX 的现有规则逐条归到三层",
+            role: "engineering",
+            status: "已关闭",
+            closed: "2026-10-29T10:31:01Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/81#issuecomment-6494262951",
+          },
+          {
+            type: "ticket",
+            id: 82,
+            title: "verify 和 pr-check 子命令",
+            role: "engineering",
+            status: "已关闭",
+            closed: "2026-10-29T11:26:29Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/82#issuecomment-6495373696",
+          },
+          {
+            type: "ticket",
+            id: 83,
+            title: "watch 子命令：小模型定时巡检长作业",
+            role: "engineering",
+            status: "已关闭",
+            closed: "2026-10-29T10:42:06Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/83#issuecomment-6494500722",
+          },
+          {
+            type: "ticket",
+            id: 84,
+            title: "review-spec 子命令：派发前的独立审查",
+            role: "engineering",
+            status: "已关闭",
+            closed: "2026-10-29T11:36:27Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/84#issuecomment-6495591225",
+          },
+          {
+            type: "ticket",
+            id: 85,
+            title:
+              "dispatch 按并发上限排队、原地续做、给出 link 命令、只读 spec 正文",
+            role: "engineering",
+            status: "已关闭",
+            closed: "2026-10-29T10:56:41Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/85#issuecomment-6494794754",
+          },
+          {
+            type: "ticket",
+            id: 86,
+            title: "角色模板、setup 和工单约定模板按 v3 改写",
+            role: "design",
+            status: "已关闭",
+            closed: "2026-10-29T10:35:20Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/86#issuecomment-6494356593",
+          },
+          {
+            type: "ticket",
+            id: 87,
+            title: "run-spec 的步骤和汇报写法按 v3 改写",
+            role: "design",
+            status: "已关闭",
+            closed: "2026-10-29T11:55:21Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/87#issuecomment-6495964784",
+          },
+          {
+            type: "ticket",
+            id: 88,
+            title: "本仓库配置、工作流文档和路线图切到 v3",
+            role: "design",
+            status: "已关闭",
+            closed: "2026-10-29T11:55:47Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/88#issuecomment-6495973044",
+          },
+          {
+            type: "ticket",
+            id: 89,
+            title:
+              "land 保留清单去噪、派发重试沿用快照、cleanup 清理巡检和审查输出、测试隔离派发记录",
+            role: "engineering",
+            status: "已关闭",
+            closed: "2026-10-29T11:48:35Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/89#issuecomment-6495832854",
+          },
+          {
+            type: "ticket",
+            id: 90,
+            title: "land 只排除内容和主工作区副本一致的已复制文件",
+            role: "engineering",
+            status: "已关闭",
+            closed: "2026-10-29T12:09:42Z",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/90#issuecomment-6496261595",
+          },
+          {
+            type: "dispatch",
+            id: "gh-78",
+            label: "公共部分",
             kind: "feature",
-            start: "20:21",
-            minutes: 30.6,
-            input: 4857485,
-            cacheRead: 4706176,
-            output: 43368,
-            type: "dispatch",
+            start: "2026-10-29T18:12:00+08:00",
+            minutes: 10.7,
+            input: 2509949,
+            cacheRead: 2381312,
+            output: 24157,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/78#issuecomment-6494144831",
           },
           {
-            id: "gh-62",
-            label: "素材与来源",
+            type: "dispatch",
+            id: "gh-81",
+            label: "PathJX 规则归类",
             kind: "feature",
-            start: "20:21",
-            minutes: 25.7,
-            input: 2159746,
-            cacheRead: 2044416,
-            output: 32122,
-            type: "dispatch",
+            start: "2026-10-29T18:12:00+08:00",
+            minutes: 16.3,
+            input: 4909970,
+            cacheRead: 4781568,
+            output: 24669,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/81#issuecomment-6494262951",
           },
           {
-            id: "gh-63",
-            label: "配音试听",
+            type: "dispatch",
+            id: "gh-79",
+            label: "land 保留目录",
             kind: "feature",
-            start: "20:21",
-            minutes: 34.1,
-            input: 8206287,
-            cacheRead: 8061440,
-            output: 52060,
-            type: "dispatch",
+            start: "2026-10-29T18:24:00+08:00",
+            minutes: 13.4,
+            input: 3294479,
+            cacheRead: 3200128,
+            output: 27472,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/79#issuecomment-6494462146",
           },
           {
-            id: "gh-65",
-            label: "动态自检",
+            type: "dispatch",
+            id: "gh-83",
+            label: "watch 巡检",
             kind: "feature",
-            start: "20:54",
-            minutes: 19.6,
-            input: 2627013,
-            cacheRead: 2512640,
-            output: 28642,
-            type: "dispatch",
+            start: "2026-10-29T18:29:00+08:00",
+            minutes: 10.8,
+            input: 2274759,
+            cacheRead: 2183680,
+            output: 24960,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/83#issuecomment-6494500722",
           },
           {
-            id: "gh-69",
-            label: "正式配音",
+            type: "dispatch",
+            id: "gh-85",
+            label: "派发排队与续做",
             kind: "feature",
-            start: "20:59",
-            minutes: 17.6,
-            input: 3392701,
-            cacheRead: 3286656,
-            output: 27344,
-            type: "dispatch",
+            start: "2026-10-29T18:40:00+08:00",
+            minutes: 13,
+            input: 3134036,
+            cacheRead: 3020032,
+            output: 28169,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/85#issuecomment-6494794754",
           },
           {
-            id: "gh-66",
-            label: "第一章镜头",
-            kind: "feature",
-            start: "21:20",
-            minutes: 66.8,
-            input: 2770228,
-            cacheRead: 2646016,
-            output: 28407,
-            type: "dispatch",
+            type: "subagent",
+            id: "review-77-1-19",
+            label: "/root/standards_review（会话",
+            parent: "review-77-1",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6494710471",
+            minutes: 1.05,
+            input: 464920,
+            cacheRead: 426368,
+            output: 1395,
           },
           {
-            id: "gh-67",
-            label: "第二章上半",
-            kind: "feature",
-            start: "21:20",
-            minutes: 198.7,
-            input: 4287479,
-            cacheRead: 4119424,
-            output: 42348,
-            type: "dispatch",
+            type: "subagent",
+            id: "review-77-1-20",
+            label: "/root/spec_review（会话",
+            parent: "review-77-1",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6494710471",
+            minutes: 3.26,
+            input: 2192736,
+            cacheRead: 2113280,
+            output: 4353,
           },
           {
-            id: "gh-69-2",
-            label: "正式配音 返工 1",
-            kind: "rework",
-            start: "21:21",
-            minutes: 29.5,
-            input: 4898363,
-            cacheRead: 4770944,
-            output: 31656,
             type: "dispatch",
-          },
-          {
-            id: "review-60-1",
-            label: "第一批审查",
+            id: "review-77-1",
+            label: "第一次按批审查",
             kind: "review",
-            start: "21:22",
-            minutes: 21.23,
-            input: 3061627,
-            cacheRead: 2807552,
-            output: 15105,
-            type: "dispatch",
+            start: "2026-10-29T18:43:00+08:00",
+            minutes: 5.8,
+            input: 1694037,
+            cacheRead: 1587712,
+            output: 8862,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6494710471",
           },
           {
-            id: "gh-72",
-            label: "返工：闪现漏报",
+            type: "dispatch",
+            id: "gh-80",
+            label: "汇报模板",
+            kind: "feature",
+            start: "2026-10-29T18:52:00+08:00",
+            minutes: 10.7,
+            input: 1828676,
+            cacheRead: 1763456,
+            output: 25057,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/80#issuecomment-6495364714",
+          },
+          {
+            type: "dispatch",
+            id: "gh-85-rebase",
+            label: "解决 rebase 冲突",
             kind: "rework",
-            start: "21:32",
+            start: "2026-10-29T18:54:00+08:00",
+            minutes: 0.8,
+            input: 121643,
+            cacheRead: 101504,
+            output: 1151,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/85#issuecomment-6494794754",
+          },
+          {
+            type: "dispatch",
+            id: "gh-82",
+            label: "verify 与 pr-check",
+            kind: "feature",
+            start: "2026-10-29T18:57:00+08:00",
             minutes: 11.7,
-            input: 1202253,
-            cacheRead: 1121920,
-            output: 19502,
-            type: "dispatch",
+            input: 3003645,
+            cacheRead: 2923520,
+            output: 23884,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/82#issuecomment-6495373696",
           },
           {
-            id: "gh-69-3",
-            label: "正式配音 返工 2",
-            kind: "rework",
-            start: "21:51",
-            minutes: 24.1,
-            input: 2601210,
-            cacheRead: 2489088,
-            output: 24255,
             type: "dispatch",
-          },
-          {
-            id: "gh-69-4",
-            label: "正式配音 返工 3",
-            kind: "rework",
-            start: "22:17",
-            minutes: 14.4,
-            input: 1529299,
-            cacheRead: 1432192,
-            output: 18645,
-            type: "dispatch",
-          },
-          {
-            id: "gh-70",
-            label: "配乐与混音",
+            id: "gh-84",
+            label: "review-spec",
             kind: "feature",
-            start: "22:34",
-            minutes: 43.4,
-            input: 2428169,
-            cacheRead: 2323456,
-            output: 22274,
-            type: "dispatch",
+            start: "2026-10-29T19:03:00+08:00",
+            minutes: 29.7,
+            input: 6703233,
+            cacheRead: 6607872,
+            output: 37019,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/84#issuecomment-6495591225",
           },
           {
-            id: "gh-68",
-            label: "第二章下半",
-            kind: "feature",
-            start: "24:46",
-            minutes: 65.8,
-            input: 7152427,
-            cacheRead: 6967296,
-            output: 47604,
             type: "dispatch",
+            id: "gh-89",
+            label: "返工单",
+            kind: "rework",
+            start: "2026-10-29T19:36:00+08:00",
+            minutes: 10.2,
+            input: 2515794,
+            cacheRead: 2415360,
+            output: 20425,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/89#issuecomment-6495832854",
           },
           {
-            id: "review-60-2",
-            label: "第二批审查",
+            type: "subagent",
+            id: "review-77-2-27",
+            label: "/root/standards_review（会话",
+            parent: "review-77-2",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6495761612",
+            minutes: 1.39,
+            input: 740515,
+            cacheRead: 689920,
+            output: 1787,
+          },
+          {
+            type: "subagent",
+            id: "review-77-2-28",
+            label: "/root/spec_review（会话",
+            parent: "review-77-2",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6495761612",
+            minutes: 3.12,
+            input: 1250089,
+            cacheRead: 1169408,
+            output: 3824,
+          },
+          {
+            type: "dispatch",
+            id: "review-77-2",
+            label: "第二次按批审查",
             kind: "review",
-            start: "24:47",
-            minutes: 17.72,
-            input: 3743883,
-            cacheRead: 3470720,
-            output: 15793,
-            type: "dispatch",
+            start: "2026-10-29T19:36:00+08:00",
+            minutes: 7.4,
+            input: 2446120,
+            cacheRead: 2332928,
+            output: 9589,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6495761612",
           },
           {
-            id: "gh-71",
-            label: "成片与验收",
-            kind: "feature",
-            start: "25:57",
-            minutes: 19.8,
-            input: 4101404,
-            cacheRead: 3930496,
-            output: 34784,
-            type: "dispatch",
+            type: "subagent",
+            id: "review-77-final-30",
+            label: "/root/standards_review（会话",
+            parent: "review-77-final",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6496114734",
+            minutes: 1.45,
+            input: 698593,
+            cacheRead: 676992,
+            output: 1483,
           },
           {
-            id: "review-60-final",
+            type: "subagent",
+            id: "review-77-final-31",
+            label: "/root/spec_review（会话",
+            parent: "review-77-final",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6496114734",
+            minutes: 2.66,
+            input: 1564976,
+            cacheRead: 1488768,
+            output: 2947,
+          },
+          {
+            type: "dispatch",
+            id: "review-77-final",
             label: "收尾审查",
             kind: "review",
-            start: "26:20",
-            minutes: 9.73,
-            input: 4007762,
-            cacheRead: 3678464,
-            output: 15796,
-            type: "dispatch",
+            start: "2026-10-29T19:55:00+08:00",
+            minutes: 6.0,
+            input: 1788736,
+            cacheRead: 1677440,
+            output: 8578,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6496114734",
           },
           {
-            id: "review-60-rework-74",
-            label: "返工审查",
-            kind: "review",
-            start: "33:18",
-            minutes: 37.07,
-            input: 1685595,
-            cacheRead: 1494784,
-            output: 13101,
             type: "dispatch",
+            id: "gh-90",
+            label: "收尾返工",
+            kind: "rework",
+            start: "2026-10-29T20:02:00+08:00",
+            minutes: 5.5,
+            input: 1091260,
+            cacheRead: 1025280,
+            output: 14207,
+            status: "已完成",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/90#issuecomment-6496261595",
+          },
+          {
+            type: "session",
+            id: "design-main",
+            label: "设计负责人主会话",
+            compare: true,
+            replies: 289,
+            minutes: null,
+            input: 99069234,
+            cacheRead: 98543924,
+            cacheWrite: 524755,
+            output: 248660,
+          },
+          {
+            type: "independent",
+            id: "pre-review",
+            label: "派发前独立审查",
+            minutes: 9.2,
+            input: null,
+            cacheRead: null,
+            output: null,
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6493457898",
+          },
+          {
+            type: "independent",
+            id: "review-spec-77",
+            label: "review-spec 实测",
+            minutes: 10.164166666666667,
+            input: 3661496,
+            cacheRead: 3495540,
+            cacheWrite: 165882,
+            output: 59850,
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6495573759",
+          },
+          {
+            type: "goal",
+            label: "模板生成的三处规则篇幅",
+            before: 10145,
+            after: 10117,
+            unit: "字节",
+            conclusion: "达成",
+            beforeLabel: "改前 · v2 生成",
+            afterLabel: "改后 · v3 草稿",
+            method:
+              "PathJX 5456825 中的 AGENTS.md 角色节与两份角色文档，按同一范围以 UTF-8 字节计；#86 对 b394bfa 的领域画像重新生成草稿。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/86#issuecomment-6494356593",
           },
           {
             type: "finding",
-            id: "review-1-p2",
-            review: "review-60-1",
-            severity: "P2",
-            label: "动态自检漏报切景后闪现",
+            id: "r1-p1",
+            review: "review-77-1",
+            severity: "P1",
+            label: "派发安装失败后重试，会把新放进的文件算成安装产物",
             handling: "返工工单修复",
-            detail: "交 #72 修复。",
+            detail:
+              "审查者在临时仓库里复现了：之后 land 会删掉这些文件。#89 修好。",
+            status: "已处理",
           },
           {
             type: "finding",
-            id: "review-1-p3-1",
-            review: "review-60-1",
-            severity: "P3",
-            label: "第一批文档问题 1",
+            id: "r1-p2",
+            review: "review-77-1",
+            severity: "P2",
+            label: "setup 第 6 步缺后台会话的启动方式",
             handling: "设计负责人当场修复",
-            detail: "原汇报仅记录两项 P3 文档问题，未逐条命名；已修复。",
+            detail: "#86 的正文在执行中加了这一条，验收时读的是修订前的正文。",
+            status: "已处理",
           },
           {
             type: "finding",
-            id: "review-1-p3-2",
-            review: "review-60-1",
-            severity: "P3",
-            label: "第一批文档问题 2",
+            id: "s-m1",
+            review: "review-spec 77",
+            severity: "必须改",
+            label: "本仓库的角色文档和路线图与 v3 的 run-spec 对不上",
             handling: "设计负责人当场修复",
-            detail: "原汇报仅记录两项 P3 文档问题，未逐条命名；已修复。",
+            detail:
+              "在 #88 里给设计负责人文档补了几条指针，路线图去掉「进度」。",
+            status: "已处理",
           },
           {
             type: "finding",
-            id: "review-74-p3",
-            review: "review-60-rework-74",
-            severity: "P3",
-            label: "README 残留描述",
+            id: "s-a1",
+            review: "review-spec 77",
+            severity: "建议改",
+            label: "#89 的测试接缝没列 dispatch",
+            handling: "返工工单修复",
+            detail: "派发前写进 #89 的正文。",
+            status: "已处理",
+          },
+          {
+            type: "finding",
+            id: "s-a2",
+            review: "review-spec 77",
+            severity: "建议改",
+            label: "清理范围漏了审查输出的 .json 和残留目录",
+            handling: "返工工单修复",
+            detail: "派发前写进 #89 的正文。",
+            status: "已处理",
+          },
+          {
+            type: "finding",
+            id: "s-a3",
+            review: "review-spec 77",
+            severity: "建议改",
+            label: "pr-check 透传退出码，和仓库 0/1/2 的约定冲突",
+            handling: "接受不修",
+            detail: "透传是 spec 定的，run-spec 里写明这是例外。",
+            status: "接受不修",
+          },
+          {
+            type: "finding",
+            id: "s-a4",
+            review: "review-spec 77",
+            severity: "建议改",
+            label: "并行的脚本工单可能改到同一份 docs 文档",
+            handling: "返工工单修复",
+            detail: "#89 的边界写明不改 docs/。",
+            status: "已处理",
+          },
+          {
+            type: "finding",
+            id: "s-a5",
+            review: "review-spec 77",
+            severity: "建议改",
+            label: "打 workflow-v3 tag 这一步没人负责",
             handling: "设计负责人当场修复",
-            detail: "返工 #74 范围审查发现，已当场修改。",
+            detail: "写进路线图「下一步」第一条和 PR 正文。",
+            status: "已处理",
           },
           {
-            type: "node",
-            id: "brief",
-            label: "用户定分工",
-            detail: "设计与工程职责写入 spec",
-            row: 0,
-            col: 0,
+            type: "finding",
+            id: "s-a6",
+            review: "review-spec 77",
+            severity: "建议改",
+            label: "#80 的验收口径不够客观",
+            handling: "接受不修",
+            detail: "已按无头浏览器和比较全局变量的方式验收。",
+            status: "接受不修",
           },
           {
-            type: "node",
-            id: "style",
-            label: "设计负责人定风格",
-            detail: "#64 风格令牌与小样",
-            row: 0,
-            col: 1,
+            type: "finding",
+            id: "s-a7",
+            review: "review-spec 77",
+            severity: "建议改",
+            label: "#87、#88 的验收没覆盖要改的内容",
+            handling: "设计负责人当场修复",
+            detail: "验收时逐项核对旧写法已删、新写法都在。",
+            status: "已处理",
           },
           {
-            type: "node",
-            id: "build",
-            label: "Codex 执行工程",
-            detail: "配音、素材、镜头与混音",
-            row: 1,
-            col: 1,
+            type: "finding",
+            id: "s-a8",
+            review: "review-spec 77",
+            severity: "建议改",
+            label: "验证副产物会出现在 land 的保留清单里",
+            handling: "记进待定",
+            detail: "本仓库没有这类文件；PathJX 升级时实测。",
+            status: "待后续实测",
           },
           {
-            type: "node",
-            id: "accept",
-            label: "设计负责人验收",
-            detail: "看图、对照参考、按批审查",
-            row: 1,
-            col: 0,
+            type: "finding",
+            id: "f-p1",
+            review: "review-77-final",
+            severity: "P1",
+            label: "land 失败后重跑，可能删掉更新过的验收产物",
+            handling: "返工工单修复",
+            detail:
+              "#89 带进来的回归，审查者在临时仓库里复现；#90 改为按内容核对，变了就重新复制。",
+            status: "已处理",
           },
           {
-            type: "node",
-            id: "view",
-            label: "用户审片",
-            detail: "提出推拉与贴条闪帧问题",
-            row: 2,
-            col: 0,
+            type: "finding",
+            id: "pre-1",
+            review: "pre-review",
+            severity: "必须改",
+            label: "公共代码撞车",
+            handling: "派发前修订",
+            detail: "新增前置 #78，设置阻塞关系，说明文件由 #87 统一改",
+            status: "已处理",
           },
           {
-            type: "node",
-            id: "rework",
-            label: "Codex 返工",
-            detail: "#74 修复、重渲与复核",
-            row: 2,
-            col: 1,
+            type: "finding",
+            id: "pre-2",
+            review: "pre-review",
+            severity: "必须改",
+            label: "land 的检测办法会每次都停",
+            handling: "派发前修订",
+            detail: "安装后记快照，其余产物移到保留目录，#79 实现",
+            status: "已处理",
           },
           {
-            type: "node",
-            id: "approve",
-            label: "用户确认通过",
-            detail: "允许合并 PR #73",
-            row: 3,
-            col: 1,
+            type: "finding",
+            id: "pre-3",
+            review: "pre-review",
+            severity: "必须改",
+            label: "正在运行的判定未定义",
+            handling: "派发前修订",
+            detail: "以 DispatchDock 全局记录和进程存活判断，#85 实现",
+            status: "已处理",
           },
-          { type: "edge", from: "brief", to: "style" },
-          { type: "edge", from: "style", to: "build" },
-          { type: "edge", from: "build", to: "accept" },
-          { type: "edge", from: "accept", to: "view" },
-          { type: "edge", from: "view", to: "rework" },
-          { type: "edge", from: "rework", to: "approve" },
+          {
+            type: "finding",
+            id: "pre-4",
+            review: "pre-review",
+            severity: "必须改",
+            label: "归类表会被 cleanup 删除",
+            handling: "派发前修订",
+            detail: "归类表进研究目录，由 #81 整理、#86 取舍",
+            status: "已处理",
+          },
+          {
+            type: "finding",
+            id: "pre-5",
+            review: "pre-review",
+            severity: "必须改",
+            label: "角色要求混入用户本人背景",
+            handling: "派发前修订",
+            detail: "改为项目对设计负责人的要求，用户背景放个人配置",
+            status: "已处理",
+          },
+          {
+            type: "finding",
+            id: "pre-6",
+            review: "pre-review",
+            severity: "必须改",
+            label: "记进仓库的规则未按层分流",
+            handling: "派发前修订",
+            detail: "#86 改成三层分流，新增规则先删或合并",
+            status: "已处理",
+          },
+          {
+            type: "finding",
+            id: "pre-7",
+            review: "pre-review",
+            severity: "必须改",
+            label: "语言、路线图和 spec 修订有遗漏",
+            handling: "派发前修订",
+            detail: "#86 改模板，#87 改执行步骤",
+            status: "已处理",
+          },
+          {
+            type: "finding",
+            id: "pre-8",
+            review: "pre-review",
+            severity: "必须改",
+            label: "#87 验收不可客观判断",
+            handling: "派发前修订",
+            detail: "按各子命令和参数的 --help 逐项对照",
+            status: "已处理",
+          },
+          {
+            type: "finding",
+            id: "pre-9",
+            review: "pre-review",
+            severity: "必须改",
+            label: "只读 spec 正文不兼容 v2 的记录方式",
+            handling: "派发前修订",
+            detail: "#88 增加升级须知",
+            status: "已处理",
+          },
+          {
+            type: "review",
+            id: "pre-review",
+            label: "派发前独立审查",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6493457898",
+            status: "已完成",
+            note: "必须改项已全部采纳；其余建议见原文，不计入下表逐项清单",
+          },
+          {
+            type: "review",
+            id: "review-77-1",
+            label: "按批审查一",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6494710471",
+            status: "已完成",
+            note: "两项分别并入返工与补验收",
+          },
+          {
+            type: "review",
+            id: "review-spec 77",
+            label: "review-spec 实测",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6495573759",
+            status: "已完成",
+            note: "必须改项落到 #88；建议分别修复、接受或留待实测",
+          },
+          {
+            type: "review",
+            id: "review-77-2",
+            label: "按批审查二",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6495761612",
+            status: "已完成",
+            note: "无新发现；已安排的返工不重复计数",
+          },
+          {
+            type: "review",
+            id: "review-77-final",
+            label: "收尾审查",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6496114734",
+            status: "已完成",
+            note: "产物丢失回归由 #90 修复",
+          },
+          {
+            type: "delivery",
+            label: "派发、验证、巡检与安全合并",
+            tickets: [78, 79, 82, 83, 84, 85, 89, 90],
+            meaning:
+              "并发满时排队，中断原地续做；验证退出码照实；合并保留工单产物。",
+          },
+          {
+            type: "delivery",
+            label: "角色模板与升级输入",
+            tickets: [81, 86],
+            meaning:
+              "分开仓库规则、本机说明和个人偏好，留下可核查的规则草稿与篇幅预算。",
+          },
+          {
+            type: "delivery",
+            label: "汇报模板与说明文件",
+            tickets: [80, 87],
+            meaning: "提供离线单文件汇报与各命令的使用指针。",
+          },
+          {
+            type: "delivery",
+            label: "本仓库切换至 v3",
+            tickets: [88],
+            meaning: "配置、工作流、路线图和升级须知采用同一版本。",
+          },
+          {
+            type: "domain",
+            cells: ["verify", "屏幕保留尾部摘要，完整输出存日志，退出码照实"],
+          },
+          {
+            type: "domain",
+            cells: ["pr-check", "CI 不可用时运行配置的检查命令"],
+          },
+          {
+            type: "domain",
+            cells: ["watch", "小模型只读巡检长作业，正常时不打断"],
+          },
+          {
+            type: "domain",
+            cells: ["review-spec", "派发前独立审查，支持草稿与已有报告发布"],
+          },
+          {
+            type: "domain",
+            cells: ["slots", "查看正在运行的派发与空余名额"],
+          },
+          {
+            type: "milestone",
+            at: "2026-10-29T09:50:15Z",
+            label: "派发前独立审查",
+            detail: "先修订 spec 和工单草稿再派发",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6493457898",
+          },
+          {
+            type: "milestone",
+            at: "2026-10-29T10:24:57Z",
+            label: "公共部分验收",
+            detail: "后续脚本工单共享配置与 Claude 调用",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/78#issuecomment-6494144831",
+          },
+          {
+            type: "milestone",
+            at: "2026-10-29T12:09:42Z",
+            label: "收尾返工验收",
+            detail: "修复 land 重跑时可能丢失更新产物的回归",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/90#issuecomment-6496261595",
+          },
+          {
+            type: "milestone",
+            at: "2026-10-29T12:17:26Z",
+            label: "本地复现 CI",
+            detail: "远端未启动；本地验证和提交检查均通过",
+            source:
+              "https://github.com/JinhaoFang/video-studio/pull/91#issuecomment-6496437125",
+          },
+          {
+            type: "milestone",
+            at: "2026-10-29T12:47:22Z",
+            label: "PR 合并",
+            detail: "workflow-v3 交付合入主分支",
+            source: "https://github.com/JinhaoFang/video-studio/pull/91",
+          },
+          {
+            type: "decision",
+            owner: "用户",
+            text: "v3 只改 run-spec、setup-run-spec 及本仓库配置、工作流文档和路线图；PathJX 升级另开 spec。",
+            reason: "把真实使用暴露的问题做进可复用技能，实际升级单独执行。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "decision",
+            owner: "用户",
+            text: "规则分为仓库规则、本机说明和个人偏好，模板只生成仓库规则。",
+            reason: "避免个人习惯和本机的坑成为所有接手者必须遵守的规则。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "decision",
+            owner: "用户",
+            text: "把后台会话的启动方式写进 v3 的 setup 交接和本仓库工作流文档。",
+            reason: "让执行会话脱离终端后继续运行，需要时可 attach 进入。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "decision",
+            owner: "用户",
+            text: "本仓库规则按 v3 全面改写留到视频第二阶段收尾。",
+            reason: "原始记录未单独说明理由。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "decision",
+            owner: "用户",
+            text: "PR 合并后打 workflow-v3 tag，推送 tag 前先确认。",
+            reason: "原始记录未单独说明理由。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "第一批和第二批合成一次审查。",
+            reason: "Codex 账号只有两个名额，审查也占一个。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6494710471",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "设计工单也经 land 合并，主工作区只经工单脚本操作。",
+            reason: "当前设计会话被隔离在自己的 worktree 中。",
+            source: "docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "#82 和 #84 往登记表加项的位置分开。",
+            reason: "避免两张并行工单在同一位置发生冲突。",
+            source: "docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "#84 的清理补充项移到返工单 #89。",
+            reason: "避免两张并行工单修改同一处清理逻辑。",
+            source: "docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "巡检名字以 spec 号或工单号开头。",
+            reason: "cleanup 按编号清理本 spec 的巡检记录。",
+            source: "docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "采纳 review-spec 的推荐，在本仓库设计负责人文档补上 v3 判断规则的指针。",
+            reason: "避免 run-spec 引用角色文档中尚不存在的规则。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6495573759",
+          },
+          {
+            type: "decision",
+            owner: "设计负责人",
+            text: "路线图去掉「进度」，已完成事项并进「已定」。",
+            reason: "让本仓库路线图与 v3 只记录变化慢的内容这一约定一致。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6495573759",
+          },
+          {
+            type: "problem",
+            label: "漏验收修订后的工单正文",
+            owner: "设计负责人",
+            impact:
+              "后台会话入口遗漏；按批审查发现后补提交和验收，后续验收重读正文。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/86#issuecomment-6494356593",
+          },
+          {
+            type: "problem",
+            label: "并行工单修改同一登记表",
+            owner: "设计负责人安排／合并冲突",
+            impact: "额外派发 rebase 小任务；后续指定不同插入位置。",
+            source: "docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "problem",
+            label: "组合运行时验证等待真实派发",
+            owner: "测试隔离缺口",
+            impact: "测试读取本机运行记录，#89 隔离记录后修复。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/89#issuecomment-6495832854",
+          },
+          {
+            type: "problem",
+            label: "保留清单噪声与重跑回归",
+            owner: "land 实现",
+            impact:
+              "先由 #89 去噪，再由 #90 按内容核对副本，避免删除更新产物。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/90#issuecomment-6496261595",
+          },
+          {
+            type: "problem",
+            label: "主会话上下文和文档改写量大",
+            owner: "设计负责人",
+            impact:
+              "主会话消耗偏高；可将量篇幅和核对旧写法脚本化，在里程碑交接。",
+            source: "docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "problem",
+            label: "远端 CI 因付款限制未启动",
+            owner: "账号环境",
+            impact: "在最终提交本地复现验证和提交检查，远端检查仍未通过。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/pull/91#issuecomment-6496437125",
+          },
+          {
+            type: "next",
+            text: "流程发现：按批审查发现跨工单组合问题；验收前要重读当前正文，名额紧时可合审。",
+          },
+          {
+            type: "next",
+            text: "遗留：PR 合并后的 workflow-v3 tag 发布由设计负责人处理，原汇报截点尚未记录发布结果。",
+          },
+          {
+            type: "next",
+            text: "下一步：PathJX 另开升级 spec，实测验证副产物是否进入 land 保留清单；随后拆出方法层仓库。",
+          },
+          {
+            type: "next",
+            text: "本仓库规则全面重排留待第二阶段；此次提供的是模板和升级输入。",
+          },
+          {
+            type: "gap",
+            label: "目标核对范围",
+            text: "使用 #77 实施决定中的规则篇幅预算；问题陈述里的用量现状没有在 PathJX 按同范围重测，本次不宣称用量下降。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "gap",
+            label: "设计工单时间",
+            text: "只有验收和关闭时刻，实际起止、分钟未知；甘特图在同一行按验收关闭时刻画点，不把它当成开工或完工时间。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "gap",
+            label: "独立审查用量",
+            text: "派发前记录仅有约数，精确输入、缓存和输出未知；汇总显示已知部分合计并标明缺项数。review-spec 实测另列，可能与 #84 时长重叠。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/77#issuecomment-6493457898",
+          },
+          {
+            type: "gap",
+            label: "时间和 token 口径",
+            text: "派发耗时累计包含并行；Codex 输入包含缓存读取，Claude 输入包含新输入、缓存创建和读取。审查父运行与子代理分别计数，避免重复。主会话分钟数未知。",
+            source: "docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "gap",
+            label: "发现清单覆盖",
+            text: "记录派发前必须改项、按批与收尾审查的问题及 review-spec 实测的必须／建议改项；其余原文建议不逐条复录。发现数是本页已列项，不等于审查全文条数。",
+            source: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "gap",
+            label: "工单数与测试截点",
+            text: "工单按 GitHub 实际子工单列表计算，纠正原汇报遗漏；测试采用 PR 最终提交本地复现的结果，早期 PR 正文的测试数为中间截点。",
+            source:
+              "https://github.com/JinhaoFang/video-studio/pull/91#issuecomment-6496437125",
+          },
+          {
+            type: "check",
+            label: "派发排队",
+            text: "工单 #84 在名额满时实际排队后启动",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/85#issuecomment-6494794754",
+          },
+          {
+            type: "check",
+            label: "合并与 rebase",
+            text: "临时 git 仓库验证 union 合并与 rebase 保留双方追加行；网页合并未测",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/86#issuecomment-6494356593",
+          },
+          {
+            type: "check",
+            label: "离线汇报",
+            text: "工单 #80 验收过浅色、深色和手机截图以及全局名字比较",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/80#issuecomment-6495364714",
+          },
+          {
+            type: "check",
+            label: "后台会话",
+            text: "实际启动、查看日志、停止并删除会话，临时未信任目录不能启动",
+            source:
+              "https://github.com/JinhaoFang/video-studio/issues/88#issuecomment-6495973044",
+          },
+          {
+            type: "source",
+            label: "示例汇报与原始用量数据",
+            url: "https://github.com/JinhaoFang/video-studio/blob/workflow-v3/docs/reports/spec-77-workflow-v3.html",
+          },
+          {
+            type: "source",
+            label: "Spec 正文、审查与处理评论",
+            url: "https://github.com/JinhaoFang/video-studio/issues/77",
+          },
+          {
+            type: "source",
+            label: "PR 状态与本地 CI 证据",
+            url: "https://github.com/JinhaoFang/video-studio/pull/91",
+          },
+          {
+            type: "source",
+            label: "规则篇幅验收",
+            url: "https://github.com/JinhaoFang/video-studio/issues/86#issuecomment-6494356593",
+          },
         ];
-        const select = (type) => data.filter((entry) => entry.type === type);
-        const report = select("report")[0];
-        const design = select("design")[0];
-        const previous = select("previous")[0];
-        const dispatches = select("dispatch");
-        const findings = select("finding");
-        const nodes = select("node");
-        const edges = select("edge");
+        const of = (type) => data.filter((entry) => entry.type === type);
+        const meta = of("report")[0];
+        const tickets = of("ticket");
+        const dispatches = of("dispatch");
+        const children = of("subagent").filter((entry) =>
+          dispatches.some((run) => run.id === entry.parent),
+        );
+        const findings = of("finding");
+        const sessions = of("session");
+        const independent = of("independent");
+        const engineering = dispatches.filter(
+          (entry) => entry.kind !== "review",
+        );
+        const reviews = dispatches.filter((entry) => entry.kind === "review");
+        const codex = [...dispatches, ...children];
         const kinds = {
-          feature: { label: "工程工单", color: "var(--s-feature)" },
-          rework: { label: "返工", color: "var(--s-rework)" },
-          review: { label: "Codex 审查", color: "var(--s-review)" },
+          feature: { label: "首次", color: "var(--a)" },
+          rework: { label: "返工", color: "var(--b)" },
+          review: { label: "审查", color: "var(--c)" },
+          long: { label: "长作业", color: "var(--muted)" },
+          design: { label: "设计工单", color: "var(--d)" },
         };
-        const format = (value) => Math.round(value).toLocaleString("en-US");
-        const minutes = (time) => {
-          const [hour, minute] = time.split(":").map(Number);
-          return hour * 60 + minute;
-        };
-        const clock = (value) => {
-          const rounded = Math.round(value);
-          const day = Math.floor(rounded / (24 * 60));
-          const hour = Math.floor(rounded / 60) % 24;
-          const minute = String(rounded % 60).padStart(2, "0");
-          return `${day ? `+${day}日 ` : ""}${String(hour).padStart(2, "0")}:${minute}`;
-        };
-        const byId = (id) => document.getElementById(id);
-        const setText = (id, value) => {
-          byId(id).textContent = value;
-        };
+        const slot = (name) => document.querySelector(`[data-slot="${name}"]`);
         const element = (tag, className, text) => {
           const node = document.createElement(tag);
           if (className) node.className = className;
           if (text !== undefined) node.textContent = text;
           return node;
         };
-        const svgElement = (tag, attributes = {}, text) => {
-          const node = document.createElementNS(
-            "http://www.w3.org/2000/svg",
-            tag,
+        const text = (name, value) => {
+          slot(name).textContent = value;
+        };
+        const format = (value, digits = 0) =>
+          value == null
+            ? "未知"
+            : value.toLocaleString("en-US", {
+                maximumFractionDigits: digits,
+                minimumFractionDigits: digits,
+              });
+        const sum = (entries, ...keys) => {
+          const values = entries.flatMap((entry) =>
+            keys.map((key) => entry[key]),
           );
-          for (const [key, value] of Object.entries(attributes))
-            node.setAttribute(key, value);
-          if (text !== undefined) node.textContent = text;
+          const knownValues = values.filter((value) => value != null);
+          return {
+            value: knownValues.length
+              ? knownValues.reduce((total, value) => total + value, 0)
+              : null,
+            missing: values.length - knownValues.length,
+          };
+        };
+        const subtotal = ({ value, missing = 0 }, digits = 0, unit = "") =>
+          value == null
+            ? `未知${missing ? `（缺 ${format(missing)} 项）` : ""}`
+            : `${format(value, digits)}${unit}${missing ? `（已知部分合计，缺 ${format(missing)} 项）` : ""}`;
+        const known = (entries, key, digits = 0, unit = "") =>
+          entries.length ? subtotal(sum(entries, key), digits, unit) : "无记录";
+        const percent = (value, maximum) =>
+          maximum > 0 ? Math.max(0, Math.min(100, (value / maximum) * 100)) : 0;
+        const ratio = (numerator, denominator) =>
+          numerator.value == null ||
+          denominator.value == null ||
+          numerator.missing ||
+          denominator.missing
+            ? "未知"
+            : denominator.value > 0
+              ? `${format(numerator.value / denominator.value, 2)} 倍`
+              : "未知（分母无有效记录）";
+        const repo = meta.repoUrl;
+        const link = (url, label) => {
+          const node = element("a", "", label);
+          node.href = url.startsWith("docs/")
+            ? `${repo}/blob/${meta.sourceRef}/${url}`
+            : url;
           return node;
         };
-        const total = dispatches.reduce(
-          (sum, entry) => ({
-            minutes: sum.minutes + entry.minutes,
-            input: sum.input + entry.input,
-            cacheRead: sum.cacheRead + entry.cacheRead,
-            output: sum.output + entry.output,
-          }),
-          { minutes: 0, input: 0, cacheRead: 0, output: 0 },
-        );
-        const reworks = dispatches.filter(
-          (entry) => entry.kind === "rework",
-        ).length;
-        const designInput = design.input + design.cacheWrite + design.cacheRead;
-        const start = dispatches.length
-          ? Math.min(...dispatches.map((entry) => minutes(entry.start)))
-          : 0;
-        const end = dispatches.length
-          ? Math.max(
-              ...dispatches.map(
-                (entry) => minutes(entry.start) + entry.minutes,
-              ),
-            )
-          : 0;
-        const span = end - start || 1;
-        const percent = (value, maximum) =>
-          maximum ? (value / maximum) * 100 : 0;
-        const ratio = (value, reference) =>
-          reference ? `${(value / reference).toFixed(2)} 倍` : "无对照数据";
-
-        document.title = `${report.name} 执行汇报`;
-        setText(
-          "report-meta",
-          `${report.name} · ${report.date} · ${report.timezone}`,
-        );
-        setText("report-title", report.title);
-        setText("report-intro", report.intro);
-        setText("source-note", report.source);
-        setText("flow-note", report.flowNote);
-        for (const [value, unit, label] of [
-          [dispatches.length, "次", "有用量记录的 Codex 运行"],
-          [
-            total.minutes.toFixed(1),
-            "分钟",
-            `累计运行，含并行；返工 ${reworks} 次`,
-          ],
-          [findings.length, "项", "审查发现，处理方式见下图"],
-          [
-            format(designInput / (design.replies || 1)),
-            "tokens",
-            "Claude 主会话平均上下文（输入 / 回复）",
-          ],
-        ]) {
-          const card = element("div", "kpi");
-          const number = element("div", "num", `${value} `);
-          number.append(element("small", "", unit));
-          card.append(number, element("div", "label", label));
-          byId("kpis").append(card);
-        }
-
-        for (const { label, color } of Object.values(kinds)) {
-          const item = element("span", "", label);
-          const swatch = element("i", "swatch");
-          swatch.style.setProperty("--series", color);
-          item.prepend(swatch);
-          byId("timeline-legend").append(item);
-        }
-        for (const value of [start, start + span / 2, end])
-          byId("time-axis").append(element("span", "", clock(value)));
-        for (const entry of dispatches) {
-          const row = element("div", "dispatch");
-          row.dataset.dispatch = entry.id;
-          const heading = element("div", "dispatch-head");
-          const time = `${clock(minutes(entry.start))} → ${clock(minutes(entry.start) + entry.minutes)} · ${entry.minutes.toFixed(1)} 分钟`;
-          heading.append(
-            element(
-              "b",
-              "",
-              `${entry.id} · ${entry.label} · ${kinds[entry.kind].label}`,
-            ),
-            element("span", "", time),
-          );
-          const track = element("div", "track");
-          const bar = element("div", "duration");
-          bar.style.setProperty(
-            "--start",
-            `${percent(minutes(entry.start) - start, span)}%`,
-          );
-          bar.style.setProperty("--length", `${percent(entry.minutes, span)}%`);
-          bar.style.setProperty("--series", kinds[entry.kind].color);
-          track.append(bar);
-          row.append(heading, track);
-          byId("timeline").append(row);
-        }
-        setText(
-          "timeline-note",
-          `${dispatches.length} 次运行共享同一时间轴；横条相互对齐可见并行。返工 ${reworks} 次；跨度 ${(end - start).toFixed(1)} 分钟，累计运行 ${total.minutes.toFixed(1)} 分钟。${report.dispatchNote}`,
-        );
-
-        const addBar = (parent, label, value, maximum, color, valueLabel) => {
+        const issue = (number) =>
+          link(`${repo}/issues/${number}`, `#${number}`);
+        const evidence = (label, url) => link(url, label);
+        const statement = (value, url) => {
+          const node = element("span", "", value);
+          if (url) node.append(" ", link(url, "证据"));
+          return node;
+        };
+        const dated = (value, options) =>
+          new Intl.DateTimeFormat("zh-CN", {
+            timeZone: meta.timezone,
+            hour12: false,
+            ...options,
+          }).format(new Date(value));
+        const day = (value) =>
+          dated(value, { year: "numeric", month: "2-digit", day: "2-digit" });
+        const time = (value) =>
+          value
+            ? dated(value, {
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "未知";
+        const table = (name, headings, rows) => {
+          const node = element("table", "responsive");
+          const header = element("thead");
+          const headingRow = element("tr");
+          for (const heading of headings) {
+            const cell = element("th", "", heading);
+            cell.scope = "col";
+            headingRow.append(cell);
+          }
+          header.append(headingRow);
+          const body = element("tbody");
+          for (const values of rows) {
+            const row = element("tr");
+            for (const [index, value] of values.entries()) {
+              const cell = element("td");
+              cell.dataset.label = headings[index];
+              const content = element("span");
+              content.append(
+                value instanceof Node
+                  ? value
+                  : document.createTextNode(String(value)),
+              );
+              cell.append(content);
+              row.append(cell);
+            }
+            body.append(row);
+          }
+          node.append(header, body);
+          slot(name).replaceChildren(node);
+        };
+        const comparison = (parent, label, entries) => {
           const row = element("div", "bar-row");
-          const heading = element("div", "bar-label");
-          heading.append(
-            element("span", "", label),
-            element("span", "bar-value", valueLabel),
+          row.append(element("div", "", label));
+          const group = element("div", "bar-group");
+          const maximum = Math.max(
+            0,
+            ...entries
+              .filter((entry) => entry.value != null)
+              .map((entry) => entry.value),
           );
-          const track = element("div", "bar-track");
-          const bar = element("div", "bar-fill");
-          bar.style.setProperty("--length", `${percent(value, maximum)}%`);
-          bar.style.setProperty("--series", color);
-          track.append(bar);
-          row.append(heading, track);
+          for (const entry of entries) {
+            const track = element("div", "compare-bar");
+            if (entry.value != null) {
+              const fill = element("span", "compare-fill");
+              fill.style.width = `${percent(entry.value, maximum)}%`;
+              fill.style.background = entry.color;
+              track.append(fill);
+            }
+            track.append(
+              element(
+                "span",
+                "compare-value",
+                `${entry.label} ${subtotal(entry, 0, ` ${entry.unit}`)}`,
+              ),
+            );
+            group.append(track);
+          }
+          row.append(group);
           parent.append(row);
         };
-        const usageGroup = (parent, title, entries, unit) => {
-          const group = element("div", "usage-group");
-          group.append(element("b", "label", title));
-          const maximum = Math.max(0, ...entries.map((entry) => entry.value));
-          for (const entry of entries)
-            addBar(
-              group,
-              entry.label,
-              entry.value,
-              maximum,
-              entry.color,
-              `${unit === "分钟" ? entry.value.toFixed(1) : format(entry.value)} ${unit}`,
-            );
-          byId(parent).append(group);
-        };
-        for (const [key, title, designValue] of [
-          ["input", "输入（含缓存）", designInput],
-          ["output", "输出", design.output],
+        document.title = `Spec #${meta.spec}：${meta.title}`;
+        text("title", document.title);
+        slot("subtitle").append(
+          `${meta.date} · 设计负责人汇报 · `,
+          issue(meta.spec),
+          " · ",
+          link(`${repo}/pull/${meta.pr}`, `PR #${meta.pr} · ${meta.prState}`),
+        );
+        const goals = of("goal");
+        const achieved = goals.filter(
+          (goal) => goal.conclusion === "达成",
+        ).length;
+        for (const [value, label] of [
+          [
+            format(tickets.length),
+            `张子工单，已关闭 ${format(tickets.filter((entry) => entry.status === "已关闭").length)}`,
+          ],
+          [format(dispatches.length), "次有用量记录的 Codex 派发与审查"],
+          [
+            known(dispatches, "minutes", 1, " 分"),
+            "派发累计用时，含并行，不含子代理",
+          ],
+          [format(meta.testsAfter), "项最终提交本地测试通过"],
+          [`${format(achieved)}/${format(goals.length)}`, "目标"],
+          [format(findings.length), "项本页列出的审查发现"],
         ]) {
-          usageGroup(
-            "agent-usage",
-            title,
-            [
-              {
-                label: "Claude · 设计负责人",
-                value: designValue,
-                color: "var(--accent)",
-              },
-              {
-                label: "Codex · 工程与审查",
-                value: total[key],
-                color: "var(--s-feature)",
-              },
-            ],
-            "tokens",
-          );
+          const card = element("div", "kpi");
+          card.append(element("b", "", value), element("span", "", label));
+          slot("kpis").append(card);
         }
-        setText(
-          "agent-note",
-          `Claude / Codex 输入比 ${ratio(designInput, total.input)}；输出比 ${ratio(design.output, total.output)}。Claude 主会话 ${design.replies} 次回复；Codex 输入中缓存读取 ${format(total.cacheRead)} tokens。${design.note}`,
+        text("task", `${meta.goal} ${meta.scope}`);
+        slot("result").append(element("b", "", "结果："), meta.result);
+        slot("delivery-status").append(
+          link(`${repo}/pull/${meta.pr}`, `PR #${meta.pr} · ${meta.prState}`),
+          "；CI：",
+          link(meta.ciUrl, meta.ciStatus),
+          `。本地：${meta.localVerification}。`,
         );
-        for (const [key, title, unit] of [
-          ["input", "输入（含缓存）", "tokens"],
-          ["output", "输出", "tokens"],
-          ["minutes", "累计用时（含并行）", "分钟"],
-        ]) {
-          usageGroup(
-            "previous-usage",
-            title,
-            [
-              {
-                label: `本次 · ${report.name}`,
-                value: total[key],
-                color: "var(--s-feature)",
-              },
-              {
-                label: `上次 · ${previous.name}`,
-                value: previous[key],
-                color: "var(--s-prev)",
-              },
-            ],
-            unit,
-          );
-        }
-        setText(
-          "previous-note",
-          `本次 Codex 输出是 ${previous.name} 的 ${ratio(total.output, previous.output)}。${previous.note}各指标独立刻度，每组两条共用刻度。`,
+        text("limit", meta.limit);
+        table(
+          "deliverables",
+          ["交付", "工单", "对用户的意义"],
+          of("delivery").map((entry) => {
+            const links = element("span");
+            for (const [index, number] of entry.tickets.entries()) {
+              if (index) links.append("、");
+              links.append(issue(number));
+            }
+            return [entry.label, links, entry.meaning];
+          }),
         );
-
-        const groups = new Map();
-        for (const finding of findings)
-          groups.set(finding.handling, (groups.get(finding.handling) || 0) + 1);
-        for (const [handling, count] of groups)
-          addBar(
-            byId("finding-distribution"),
-            handling,
-            count,
-            findings.length,
-            "var(--accent)",
-            `${count} 项 · ${percent(count, findings.length).toFixed(0)}%`,
-          );
-        if (!findings.length)
-          byId("finding-distribution").append(
-            element("p", "note", "无审查发现"),
-          );
-        setText(
-          "finding-note",
-          `共 ${findings.length} 条审查发现，按处理方式归组；每条发现计一次。`,
+        const goalCounts = [
+          `${format(achieved)} 项达成`,
+          ...["部分达成", "未达成"].flatMap((conclusion) => {
+            const count = goals.filter(
+              (goal) => goal.conclusion === conclusion,
+            ).length;
+            return count ? [`${format(count)} 项${conclusion}`] : [];
+          }),
+        ];
+        const unknownGoals = goals.filter(
+          (goal) => !["达成", "部分达成", "未达成"].includes(goal.conclusion),
+        ).length;
+        if (unknownGoals) goalCounts.push(`${format(unknownGoals)} 项结论未知`);
+        text(
+          "goal-summary",
+          `${format(goals.length)} 项目标：${goalCounts.join("，")}。`,
         );
-        for (const finding of findings) {
-          const item = element("li", "");
-          item.dataset.finding = finding.id;
-          item.append(
-            element("b", "", `${finding.severity} · ${finding.label}`),
-            element(
-              "p",
-              "",
-              `${finding.review} · ${finding.handling} · ${finding.detail}`,
+        const numericGoals = goals.filter(
+          (goal) =>
+            Number.isFinite(goal.before) &&
+            Number.isFinite(goal.after) &&
+            typeof goal.unit === "string" &&
+            goal.unit.trim(),
+        );
+        for (const goal of numericGoals) {
+          comparison(slot("goals"), goal.label, [
+            {
+              label: goal.beforeLabel ?? "改前",
+              value: goal.before,
+              unit: goal.unit,
+              color: "var(--a)",
+            },
+            {
+              label: goal.afterLabel ?? "改后",
+              value: goal.after,
+              unit: goal.unit,
+              color: "var(--d)",
+            },
+          ]);
+          const method = element("p", "sub");
+          method.append(
+            statement(
+              `结论：${goal.conclusion ?? "未知"}。${goal.method ?? "方法未知"}`,
+              goal.source,
             ),
           );
-          byId("finding-list").append(item);
+          slot("goals").append(method);
         }
-
-        const chartWidth = (svg) => {
-          const container = svg.parentElement;
-          const style = getComputedStyle(container);
-          return (
-            container.clientWidth -
-            parseFloat(style.paddingLeft) -
-            parseFloat(style.paddingRight)
-          );
-        };
-        const drawTrend = () => {
-          const svg = byId("trend");
-          const width = chartWidth(svg);
-          const height = 220;
-          const left = 56,
-            right = 16,
-            upper = 20,
-            lower = height - 40;
-          svg.replaceChildren();
-          svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-          svg.append(svgElement("title", {}, "每次派发完成时累计计入该次输出"));
-          const points = dispatches
-            .map((entry) => ({
-              time: minutes(entry.start) + entry.minutes,
-              output: entry.output,
-              label: entry.id,
-            }))
-            .sort((a, b) => a.time - b.time);
-          const maximum = total.output || 1;
-          const x = (time) =>
-            left + ((time - start) / span) * (width - left - right);
-          const y = (value) => lower - (value / maximum) * (lower - upper);
-          for (const value of [0, total.output / 2, total.output]) {
-            svg.append(
-              svgElement("line", {
-                x1: left,
-                x2: width - right,
-                y1: y(value),
-                y2: y(value),
-                class: "grid-line",
-              }),
-            );
-            svg.append(
-              svgElement(
-                "text",
-                { x: left - 6, y: y(value) + 4, "text-anchor": "end" },
-                `${(value / 1000).toFixed(0)}k`,
-              ),
-            );
-          }
-          for (const [time, anchor] of [
-            [start, "start"],
-            [start + span / 2, "middle"],
-            [end, "end"],
-          ])
-            svg.append(
-              svgElement(
-                "text",
-                { x: x(time), y: height - 12, "text-anchor": anchor },
-                clock(time),
-              ),
-            );
-          let cumulative = 0;
-          const vertices = [[x(start), y(0)]];
-          for (const point of points) {
-            cumulative += point.output;
-            vertices.push([x(point.time), y(cumulative)]);
-            point.cumulative = cumulative;
-          }
-          svg.append(
-            svgElement("polyline", {
-              points: vertices.map((point) => point.join(",")).join(" "),
-              class: "trend-line",
-            }),
-          );
-          for (const point of points) {
-            const marker = svgElement("circle", {
-              cx: x(point.time),
-              cy: y(point.cumulative),
-              r: 3,
-              class: "point",
-            });
-            marker.append(
-              svgElement(
-                "title",
-                {},
-                `${clock(point.time)} · ${point.label} · 累计 ${format(point.cumulative)} tokens`,
-              ),
-            );
-            svg.append(marker);
-          }
-          setText(
-            "trend-note",
-            `${clock(start)} → ${clock(end)}，${dispatches.length} 次运行累计输出 ${format(total.output)} tokens；纵轴 k = 千 tokens。按完成时刻计入整次输出，点间连线只表示趋势。`,
-          );
-        };
-
-        const drawFlow = () => {
-          const svg = byId("flow");
-          const width = chartWidth(svg);
-          const compact = window.matchMedia("(max-width: 720px)").matches;
-          const inset = 16,
-            gap = 56,
-            boxHeight = 72,
-            step = boxHeight + gap;
-          const boxWidth = compact
-            ? width - inset * 2
-            : (width - inset * 2 - gap) / 2;
-          const positions = new Map(
-            nodes.map((node, index) => [
-              node.id,
-              {
-                x: inset + (compact ? 0 : node.col) * (boxWidth + gap),
-                y: inset + (compact ? index : node.row) * step,
-              },
+        const otherGoals = goals.filter((goal) => !numericGoals.includes(goal));
+        if (otherGoals.length)
+          table(
+            "goal-table",
+            ["目标", "改前", "改后", "单位", "方法", "结论与证据"],
+            otherGoals.map((goal) => [
+              goal.label,
+              format(goal.before),
+              format(goal.after),
+              goal.unit || "无",
+              goal.method ?? "未知",
+              statement(goal.conclusion ?? "未知", goal.source),
             ]),
           );
-          const height =
-            Math.max(
-              0,
-              ...[...positions.values()].map(
-                (position) => position.y + boxHeight,
-              ),
-            ) + inset;
-          svg.replaceChildren();
-          svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-          const defs = svgElement("defs");
-          const arrow = svgElement("marker", {
-            id: "flow-arrow",
-            viewBox: "0 0 10 10",
-            refX: 10,
-            refY: 5,
-            markerWidth: 6,
-            markerHeight: 6,
-            orient: "auto-start-reverse",
-          });
-          arrow.append(
-            svgElement("path", {
-              d: "M 0 0 L 10 5 L 0 10 Z",
-              fill: "var(--accent)",
-            }),
+        if (!goals.length)
+          slot("goals").append(
+            element(
+              "p",
+              "note",
+              "目标数据未知；请在数据口径与缺项中写明判断依据。",
+            ),
           );
-          defs.append(arrow);
-          svg.append(defs);
-          for (const edge of edges) {
-            const from = positions.get(edge.from),
-              to = positions.get(edge.to);
-            const horizontal = from.y === to.y;
-            const forward = horizontal ? to.x > from.x : to.y > from.y;
-            const x1 =
-              from.x + (horizontal ? (forward ? boxWidth : 0) : boxWidth / 2);
-            const x2 =
-              to.x + (horizontal ? (forward ? 0 : boxWidth) : boxWidth / 2);
-            const y1 =
-              from.y + (horizontal ? boxHeight / 2 : forward ? boxHeight : 0);
-            const y2 =
-              to.y + (horizontal ? boxHeight / 2 : forward ? 0 : boxHeight);
-            const line = svgElement("line", {
-              x1,
-              y1,
-              x2,
-              y2,
-              class: "edge",
-              "marker-end": "url(#flow-arrow)",
-            });
-            line.append(
-              svgElement(
-                "title",
-                {},
-                `${nodes.find((node) => node.id === edge.from).label} → ${nodes.find((node) => node.id === edge.to).label}`,
+        const domain = of("domain");
+        if (domain.length) {
+          text("domain-intro", meta.domainIntro);
+          table(
+            "domain",
+            meta.domainHeadings,
+            domain.map((entry) =>
+              meta.domainHeadings.map(
+                (_, index) => entry.cells?.[index] ?? "未知",
               ),
+            ),
+          );
+        } else document.querySelector('[data-section="domain"]').remove();
+        table(
+          "milestones",
+          ["时间", "关键节点", "结果"],
+          of("milestone").map((entry) => [
+            time(entry.at),
+            evidence(entry.label, entry.source),
+            entry.detail,
+          ]),
+        );
+        const timeline = [
+          ...dispatches.map((entry) => ({
+            ...entry,
+            end:
+              entry.start && entry.minutes != null
+                ? new Date(
+                    Date.parse(entry.start) + entry.minutes * 60000,
+                  ).toISOString()
+                : null,
+          })),
+          ...tickets
+            .filter((entry) => entry.role === "design")
+            .map((entry) => ({
+              id: `design-${entry.id}`,
+              ticket: entry.id,
+              label: entry.title,
+              kind: "design",
+              start: entry.start ?? null,
+              end: entry.end ?? null,
+              minutes:
+                entry.minutes ??
+                (entry.start && entry.end
+                  ? (Date.parse(entry.end) - Date.parse(entry.start)) / 60000
+                  : null),
+              status: entry.status,
+              source: entry.source,
+              closed: entry.closed,
+            })),
+        ];
+        const daySelect = slot("timeline-day");
+        const kindSelect = slot("timeline-kind");
+        for (const date of [
+          ...new Set(
+            timeline
+              .filter((entry) => entry.start || entry.closed)
+              .map((entry) => day(entry.start ?? entry.closed)),
+          ),
+        ].sort()) {
+          const option = element("option", "", date);
+          option.value = date;
+          daySelect.append(option);
+        }
+        if (timeline.some((entry) => !entry.start && !entry.closed)) {
+          const option = element("option", "", "起止未知");
+          option.value = "unknown";
+          daySelect.append(option);
+        }
+        for (const [key, kind] of Object.entries(kinds)) {
+          const option = element("option", "", kind.label);
+          option.value = key;
+          kindSelect.append(option);
+          const swatch = element("span", "swatch");
+          swatch.style.background = kind.color;
+          slot("timeline-legend").append(swatch, kind.label);
+        }
+        const drawTimeline = () => {
+          const entries = timeline.filter(
+            (entry) =>
+              (kindSelect.value === "all" || entry.kind === kindSelect.value) &&
+              (daySelect.value === "all" ||
+                (entry.start || entry.closed
+                  ? day(entry.start ?? entry.closed)
+                  : "unknown") === daySelect.value),
+          );
+          const timed = entries.filter((entry) => entry.start && entry.end);
+          const milestones = entries.filter(
+            (entry) =>
+              entry.kind === "design" &&
+              !(entry.start && entry.end) &&
+              entry.closed,
+          );
+          const instants = milestones.map((entry) => Date.parse(entry.closed));
+          const start =
+            timed.length || instants.length
+              ? Math.min(
+                  ...timed.map((entry) => Date.parse(entry.start)),
+                  ...instants,
+                )
+              : 0;
+          const end =
+            timed.length || instants.length
+              ? Math.max(
+                  ...timed.map((entry) => Date.parse(entry.end)),
+                  ...instants,
+                )
+              : start;
+          const span = end - start;
+          const container = slot("timeline");
+          container.replaceChildren();
+          if (timed.length || milestones.length) {
+            const axis = element("div", "axis");
+            axis.append(
+              element("span", "", time(new Date(start).toISOString())),
+              element("span", "", "北京时间"),
+              element("span", "", time(new Date(end).toISOString())),
             );
-            svg.append(line);
+            container.append(axis);
           }
-          for (const node of nodes) {
-            const { x, y } = positions.get(node.id);
-            const group = svgElement("g", { "data-node": node.id });
-            group.append(
-              svgElement("rect", {
-                x,
-                y,
-                width: boxWidth,
-                height: boxHeight,
-                rx: 8,
-                class: "node",
-              }),
+          if (!entries.length)
+            container.append(element("p", "sub", "该筛选下无记录。"));
+          for (const entry of entries) {
+            if (milestones.includes(entry)) continue;
+            const row = element("div", "timeline-row");
+            row.dataset.run = entry.id;
+            const label = element("div", "timeline-label");
+            const detail = element("small");
+            detail.append(
+              `${time(entry.start)}–${time(entry.end)}`,
+              element("br"),
+              `${format(entry.minutes, 1)} 分 · ${entry.status}${entry.closed ? `；验收关闭 ${time(entry.closed)}` : ""}`,
             );
-            group.append(
-              svgElement(
-                "text",
-                {
-                  x: x + boxWidth / 2,
-                  y: y + 28,
-                  "text-anchor": "middle",
-                  class: "node-title",
-                },
-                node.label,
-              ),
+            label.append(
+              `${entry.id} · ${entry.label} · ${kinds[entry.kind].label}`,
+              detail,
             );
-            group.append(
-              svgElement(
-                "text",
-                {
-                  x: x + boxWidth / 2,
-                  y: y + 50,
-                  "text-anchor": "middle",
-                  class: "node-detail",
-                },
-                node.detail,
-              ),
-            );
-            svg.append(group);
+            const track = element("div", "track");
+            if (entry.start && entry.end) {
+              const bar = element("span", "bar");
+              bar.style.left = `${percent(Date.parse(entry.start) - start, span)}%`;
+              bar.style.width = `${percent(Date.parse(entry.end) - Date.parse(entry.start), span)}%`;
+              bar.style.background = kinds[entry.kind].color;
+              track.title = `${entry.id} ${time(entry.start)}–${time(entry.end)}，${format(entry.minutes, 1)} 分，${entry.status}`;
+              track.append(bar);
+            } else
+              track.append(element("span", "compare-value", "起止／分钟未知"));
+            row.append(label, track);
+            container.append(row);
           }
+          if (milestones.length) {
+            const row = element("div", "timeline-row");
+            const label = element("div", "timeline-label", "设计工单");
+            label.append(element("small", "", "验收关闭时刻"));
+            const track = element("div", "track milestone-track");
+            for (const entry of milestones) {
+              const lane = element("div", "milestone-lane");
+              const point = evidence("", entry.source);
+              const description = `#${entry.ticket} · ${entry.label} · ${entry.status} · 验收关闭 ${time(entry.closed)}`;
+              point.className = "timeline-point";
+              point.dataset.run = entry.id;
+              point.title = description;
+              point.setAttribute("aria-label", description);
+              point.style.left = `${span > 0 ? percent(Date.parse(entry.closed) - start, span) : 50}%`;
+              point.style.background = kinds.design.color;
+              lane.append(point);
+              track.append(lane);
+            }
+            row.append(label, track);
+            container.append(row);
+          }
+          text(
+            "timeline-note",
+            `${format(entries.length)} 条当前记录；${meta.dispatchNote}`,
+          );
         };
-        const redraw = () => {
-          drawTrend();
-          drawFlow();
-        };
-        redraw();
-        new ResizeObserver(redraw).observe(byId("trend").parentElement);
+        daySelect.addEventListener("change", drawTimeline);
+        kindSelect.addEventListener("change", drawTimeline);
+        drawTimeline();
+        const costRow = (label, entries) => [
+          label,
+          known(entries, "minutes", 1),
+          known(entries, "input"),
+          known(entries, "cacheRead"),
+          known(entries, "output"),
+        ];
+        const costHeadings = [
+          "范围",
+          "累计分钟",
+          "输入 tokens",
+          "其中缓存读取",
+          "输出 tokens",
+        ];
+        table("cost-summary", costHeadings, [
+          costRow("Codex 工程派发（含返工）", engineering),
+          costRow("Codex 按批与收尾审查（父运行）", reviews),
+          ...sessions.map((entry) => costRow(entry.label, [entry])),
+          costRow("Claude 独立审查", independent),
+          costRow("Codex 审查子代理", children),
+        ]);
+        const comparedSessions = sessions.filter(
+          (entry) => entry.compare === true,
+        );
+        const comparedSession =
+          comparedSessions.length === 1 ? comparedSessions[0] : null;
+        const comparisonSessions = comparedSession ? [comparedSession] : [];
+        const comparisonLabel =
+          comparedSession?.label ?? "未知（未指定唯一的对比主会话）";
+        const allCosts = [...codex, ...sessions, ...independent];
+        text(
+          "cost-note",
+          meta.costNote ??
+            `输入含缓存；其中缓存列仅列缓存读取。${allCosts.some((entry) => entry.cacheWrite != null) ? "已记录的缓存创建也计入输入。" : ""}累计用时包含并行与嵌套，不相加成墙钟时间；${format(allCosts.filter((entry) => entry.minutes == null).length)} 条记录缺用时。`,
+        );
+        text(
+          "comparison-note",
+          `用于对比的主会话：${comparisonLabel}。${meta.comparisonNote ?? `对比范围为该主会话与全部 Codex 运行（工程、审查及其子代理）；${independent.length ? `独立 Claude 审查另列：输入 ${known(independent, "input")} tokens，输出 ${known(independent, "output")} tokens。` : "无独立审查记录。"}`}`,
+        );
+        const mainInput = sum(comparisonSessions, "input"),
+          mainOutput = sum(comparisonSessions, "output");
+        const codexInput = sum(codex, "input"),
+          codexOutput = sum(codex, "output");
+        for (const [label, mainValue, codexValue] of [
+          ["输入（含缓存）", mainInput, codexInput],
+          ["输出", mainOutput, codexOutput],
+        ]) {
+          comparison(slot("cost-chart"), label, [
+            {
+              label: comparisonLabel,
+              ...mainValue,
+              unit: "tokens",
+              color: "var(--d)",
+            },
+            {
+              label: "Codex 全部",
+              ...codexValue,
+              unit: "tokens",
+              color: "var(--a)",
+            },
+          ]);
+        }
+        text(
+          "efficiency",
+          `主会话 / Codex 总用量比（输入＋输出）：${ratio(sum(comparisonSessions, "input", "output"), sum(codex, "input", "output"))}；输入比 ${ratio(mainInput, codexInput)}，输出比 ${ratio(mainOutput, codexOutput)}。主会话平均上下文：${mainInput.value != null && !mainInput.missing && comparedSession?.replies > 0 ? format(mainInput.value / comparedSession.replies) + " tokens / 回复" : "未知"}（含缓存输入 ÷ ${format(comparedSession?.replies)} 次回复）。`,
+        );
+        table(
+          "cost-detail",
+          ["派发／类别", "起止／状态", "分钟", "输入", "缓存读取", "输出"],
+          dispatches.map((entry) => {
+            const run = timeline.find((candidate) => candidate.id === entry.id);
+            return [
+              evidence(
+                `${entry.id} · ${kinds[entry.kind].label}`,
+                entry.source,
+              ),
+              `${time(run.start)}–${time(run.end)} · ${entry.status}`,
+              format(entry.minutes, 1),
+              format(entry.input),
+              format(entry.cacheRead),
+              format(entry.output),
+            ];
+          }),
+        );
+        table(
+          "other-cost",
+          costHeadings,
+          [...sessions, ...independent, ...children].map((entry) =>
+            costRow(entry.label + (entry.parent ? ` · ${entry.parent}` : ""), [
+              entry,
+            ]),
+          ),
+        );
+        const quality = slot("quality");
+        quality.append(
+          `测试基线 ${format(meta.testsBefore)} → 最终 ${format(meta.testsAfter)} 项，增加 ${meta.testsBefore != null && meta.testsAfter != null ? format(meta.testsAfter - meta.testsBefore) : "未知"} 项。CI：`,
+          link(meta.ciUrl, meta.ciStatus),
+          "；本地：",
+          statement(
+            meta.localVerification ?? "未知",
+            meta.localVerificationUrl,
+          ),
+          "。",
+        );
+        table(
+          "checks",
+          ["关键实测", "结论与证据"],
+          of("check").map((entry) => [
+            entry.label,
+            statement(entry.text, entry.source),
+          ]),
+        );
+        text(
+          "finding-note",
+          `本页逐项列出 ${format(findings.length)} 项发现；表中发现数由清单计算，覆盖口径见数据口径与缺项。`,
+        );
+        table(
+          "reviews",
+          ["审查", "状态", "本页发现数", "取舍"],
+          of("review").map((entry) => [
+            evidence(entry.label, entry.source),
+            entry.status,
+            format(
+              findings.filter((finding) => finding.review === entry.id).length,
+            ),
+            entry.note,
+          ]),
+        );
+        table(
+          "findings",
+          ["发现", "来源", "处理", "状态"],
+          findings.map((entry) => {
+            const review = of("review").find(
+              (candidate) => candidate.id === entry.review,
+            );
+            return [
+              `${entry.severity} · ${entry.label}`,
+              review ? evidence(review.label, review.source) : entry.review,
+              `${entry.handling}：${entry.detail}`,
+              entry.status,
+            ];
+          }),
+        );
+        table(
+          "decisions",
+          ["谁", "决定", "理由"],
+          of("decision").map((entry) => [
+            entry.owner,
+            statement(entry.text, entry.source),
+            entry.reason,
+          ]),
+        );
+        table(
+          "problems",
+          ["问题与责任", "影响与处理"],
+          of("problem").map((entry) => [
+            `${entry.label}（${entry.owner}）`,
+            statement(entry.impact, entry.source),
+          ]),
+        );
+        for (const entry of of("next"))
+          slot("next").append(element("li", "", entry.text));
+        table(
+          "gaps",
+          ["口径／缺项", "说明"],
+          of("gap").map((entry) => [
+            entry.label,
+            statement(entry.text, entry.source),
+          ]),
+        );
+        for (const entry of of("source")) {
+          const item = element("li");
+          item.append(evidence(entry.label, entry.url));
+          slot("sources").append(item);
+        }
+        slot("footer").append(
+          `数据截点：${time(meta.asOf)}（${meta.timezone}）；主会话用量截点见数据口径。来源：`,
+        );
+        for (const [index, entry] of of("source").entries()) {
+          if (index) slot("footer").append(" · ");
+          slot("footer").append(evidence(entry.label, entry.url));
+        }
       }
     </script>
   </body>

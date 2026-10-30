@@ -33,7 +33,7 @@ description: 执行 GitHub 上的 spec 和工单：选出可做的工单，role:
 
 ## 3. 按执行角色分流
 
-- `role:design`：在主会话、主工作区亲手做，一次一张。做下去发现量大到想并行，先把手上这件做成定稿，余量照定稿写成 `role:engineering` 工单。量大的调研和数据查看也派给 Codex；子代理只做小而急的只读查找。工单的交付物由你或 Codex 完成。按工单的验收标准验证，`verify` 通过后提交，提交信息按 `AGENTS.md` 的格式写，尾注 `Refs: #T`、`Role: design`。改动要在下一次 `land` 之前提交，`land` 要求主工作区干净。做完转到第 5 步写验收评论。
+- `role:design`：在主会话、主工作区亲手做，一次一张。做下去发现量大到想并行，先把手上这件做成定稿，余量照定稿写成 `role:engineering` 工单。量大的调研和数据查看也派给 Codex；子代理只做小而急的只读查找。工单的交付物由你或 Codex 完成。按工单的验收标准验证，`verify` 通过后提交，提交信息按 `AGENTS.md` 的格式写，尾注 `Refs: #T`、`Role: design`。改动要在下一次 `land` 之前提交，`land` 要求主工作区干净。提交后推送集成分支，再转到第 5 步写验收评论：`accept` 只认远端集成分支上的提交。
 - `ready-for-human`：告诉用户要做什么、做完要交回什么，然后等用户。
 - 没有执行角色标签：按 `docs/roles/design.md` 的判断标准定一个，补上标签。
 - `role:engineering`：转到第 4 步。
@@ -47,7 +47,7 @@ node .claude/skills/run-spec/scripts/tickets.ts dispatch <T> [--note <补充说�
 ```
 
 - 要靠整体判断验收的工单（效果、结构是否合理、行文），派发前确认工单写明了定稿在哪，验收逐项对照。
-- 它建好 worktree（接软链接、装依赖、记下安装产物的快照），返工时复用原来的 worktree，然后派给 Codex，等到 Codex 结束才退出，退出码跟随 Codex。到了并发上限就排队，有名额后自动开始。
+- 它建好 worktree（接软链接、装依赖、记下安装产物的快照），返工时复用原来的 worktree，然后派给 Codex，等到 Codex 结束才退出，退出码跟随 Codex。到了并发上限就排队，有名额后自动开始。配置了 `verificationEnv` 的，安装和 Codex 都带上这些变量；开了 `exclusiveVerification` 的，派发指令要求 Codex 用主工作区的 `tickets.ts verify <T>` 做完整验证，和别的验证排队。
 - 补充说明写工单里没有、这一次派发才有的情况：并行的工单会改同一处时，写"只加自己那一项"，最好再指定各自加在哪里；返工时写上一轮验收的问题（脚本会自动要求另起提交）；派发时临时做的决定。脚本先把它评论到工单上再派发，清理以后仍有记录。说明里有引号或换行时用 `--note-file`。
 - 验收要 CI 运行链接的工单加 `--allow-push`：Codex 只推本工单分支、不开 PR，`cleanup` 收尾时删掉远端分支。
 - 中断后（后端出错、机器重启）用 `--resume` 在原 worktree 里续做，未提交的改动留着；还有活着的运行或进行中的 rebase 时它会拒绝。
@@ -61,10 +61,10 @@ node .claude/skills/run-spec/scripts/tickets.ts dispatch <T> [--note <补充说�
 ## 5. 验收并写回
 
 1. 读 worktree 里的汇报 `.codex-runs/<记录名>.md` 和 `git log spec/<S>-<英文短名>..HEAD --stat`；确认 worktree 干净，改动没有越过工单的「边界」。
-2. 用 `tickets.ts verify <T>` 在 worktree 里跑验证，再逐条核对工单的验收标准。验收产物要亲自看：图片用 Read 看，命令自己重跑。
+2. 用 `tickets.ts verify <T>` 在 worktree 里跑验证（带上 `verificationEnv`，开了 `exclusiveVerification` 时排队），再逐条核对工单的验收标准。验收产物要亲自看：图片用 Read 看，命令自己重跑。
 3. 汇报里的每一条 `TODO(design)` 和推断清单都要给出处理：接受，或者做决定、写进后续工单，或者自己动手改。
-4. 通过就合并：`tickets.ts land <T>`。它 rebase、重装依赖、验证、快进合并、推送，复制派发记录和验收产物，把其余被忽略的文件移到保留目录并列出（要用的拷回主工作区），再删掉 worktree 和工单分支，每步一行结果。停下时按提示处理后重跑同一条命令：rebase 冲突就在 worktree 里解决、`git add`，验证失败就当作需返工。需返工的不合并，直接写评论。
-5. 写验收评论：把四个字段分别写进文件，运行 `tickets.ts accept <T> --result 通过|需返工 --commits-file <文件> --verification-file <文件> --design-file <文件> --remaining-file <文件>`。「提交」写 `land` 之后的提交号（rebase 会改提交号）。脚本自动在「验证」里附上这张工单每次派发的用时和 token，清理本地记录后写汇报靠它。通过就评论并关闭；需返工只评论，然后带补充说明回到第 4 步。
+4. 通过就合并：`tickets.ts land <T>`。它 rebase、重装依赖、验证、快进合并、推送，复制派发记录和验收产物，删掉匹配 `disposableIgnored` 的被忽略文件，把其余被忽略的文件移到保留目录并列出（要用的拷回主工作区），再删掉 worktree 和工单分支，每步一行结果。停下时按提示处理后重跑同一条命令：rebase 冲突就在 worktree 里解决、`git add`，验证失败就当作需返工。需返工的不合并，直接写评论。
+5. 写验收评论：把四个字段分别写进文件，运行 `tickets.ts accept <T> --result 通过|需返工 --commits-file <文件> --verification-file <文件> --design-file <文件> --remaining-file <文件>`。「提交」写 `land` 之后的提交号（rebase 会改提交号）；以通过关闭前，脚本核对每个提交号都在远端集成分支上，没推送、没合并或不是本仓库的提交会以 1 退出、不写 GitHub。没有提交的只读工单加 `--no-commits`。字段内容以 `-` 开头时用文件参数。脚本自动在「验证」里附上这张工单每次派发的用时和 token，清理本地记录后写汇报靠它。通过就评论并关闭；需返工只评论，然后带补充说明回到第 4 步。
 
 完成标准：每条验收标准都有证据，每条 TODO(design) 和推断都有处理，评论已发出，分支已推送。这一轮派出的工单都合并后做第 6 步。
 
@@ -87,10 +87,11 @@ node <派发脚本> "用 code-review 技能审查固定点 B 到 HEAD 的改动�
 
 所有工单都关闭后：
 
-1. 按第 6 步以 `main` 为固定点审一次整个分支，要修的返工做完。
-2. `gh pr create --base main` 开 PR，正文按 `pr` 技能的格式写，包含 `Closes #S` 和接受不修的审查意见。用 `tickets.ts pr-check <PR号>` 等检查跑完（配置的 PR 检查命令，CI 不能用时配成本机 CI，退出码是检查命令自己的）：集成分支推送不跑 CI，这是整个 spec 在 CI 环境里的唯一一次验证。失败就查原因，本 spec 引入的按返工处理，既有的写进 PR 正文和汇报。
-3. 按 [report.md](report.md) 写 HTML 汇报，存进配置说明里写的汇报目录。仓库有路线图这类新会话入口时，在同一个提交里只更新它的「已定」和「待定」，进度不写进路线图。提交并推送到同一分支，把文件路径告诉用户。
-4. 运行 `tickets.ts cleanup <S>`，清理本 spec 的记录、日志、验收产物、保留目录、残留的 worktree 和工单分支（含远端），范围见 `--help`，其他 spec 的保留。它先打印清单再删，保留目录里还要用的先拷回主工作区。不干净的 worktree 会被跳过，看过里面的改动再处理，然后重跑。
+1. **目标核对**：把 spec 问题陈述里的现状（数量、体积、用时、出错数……）按同一口径重测，量大就派给 Codex 只读去做。没达到的开返工工单，或者写进 PR 正文和汇报；问题陈述没有可度量现状的，写明用什么判断目标达成。结果进汇报的「目标核对」。
+2. 按第 6 步以 `main` 为固定点审一次整个分支，要修的返工做完。
+3. `gh pr create --base main` 开 PR，正文按 `pr` 技能的格式写，包含 `Closes #S` 和接受不修的审查意见。用 `tickets.ts pr-check <PR号>` 等检查跑完（配置的 PR 检查命令，CI 不能用时配成本机 CI，退出码是检查命令自己的）：集成分支推送不跑 CI，这是整个 spec 在 CI 环境里的唯一一次验证。失败就查原因，本 spec 引入的按返工处理，既有的写进 PR 正文和汇报。
+4. 按 [report.md](report.md) 写 HTML 汇报，存进配置说明里写的汇报目录。仓库有路线图这类新会话入口时，在同一个提交里只更新它的「已定」和「待定」，进度不写进路线图。提交并推送到同一分支，把文件路径告诉用户。
+5. 运行 `tickets.ts cleanup <S>`，清理本 spec 的记录、日志、验收产物、保留目录、残留的 worktree 和工单分支（含远端），范围见 `--help`，其他 spec 的保留。它先打印清单再删，保留目录里还要用的先拷回主工作区。不干净的 worktree 会被跳过，看过里面的改动再处理，然后重跑。
 
 完成标准：用户拿到了 PR 链接、CI 结果和汇报。
 

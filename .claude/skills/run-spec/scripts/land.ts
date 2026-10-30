@@ -17,6 +17,11 @@
  * Refresh changed/missing copies, including new leaves on retries; failed
  * refreshes remain protected. Dry runs compare the same leaves and report
  * structural copy blockers, otherwise assuming planned copies succeed.
+ * Installation/verification apply verificationEnv; verification shares the
+ * repository mutex when exclusiveVerification is enabled.
+ * disposableIgnored discards matched ignored leaves outside .codex-runs and
+ * the current spec's QA directory at retention; matching and counts are also
+ * available in dry runs, with [] preserving v3.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -45,11 +50,13 @@ import {
   github,
   matchesRecord,
   ticketIntegration,
+  verificationEnvironment,
   type Command,
   type Values,
 } from "./shared.ts";
+import { runVerification } from "./verification-lock.ts";
 
-const land = (values: Values, numbers: number[]): void => {
+const land = async (values: Values, numbers: number[]): Promise<void> => {
   const checkout = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
   const config = dispatchConfig(checkout);
   const root = git(checkout, ["worktree", "list", "--porcelain"])
@@ -146,7 +153,8 @@ const land = (values: Values, numbers: number[]): void => {
     throw new CheckFailure(
       `派发记录和验收产物尚未复制，但工单 worktree 不存在：${worktree}`,
     );
-  const artifacts = join(config.acceptanceRoot, `spec-${spec}`, String(ticket));
+  const specArtifacts = join(config.acceptanceRoot, `spec-${spec}`);
+  const artifacts = join(specArtifacts, String(ticket));
   const records = join(worktree, ".codex-runs");
   const names = existsSync(records)
     ? readdirSync(records).filter((name) => matchesRecord(name, `gh-${ticket}`))
@@ -249,6 +257,8 @@ const land = (values: Values, numbers: number[]): void => {
         `${root}.worktrees/.kept/${ticket}`,
         true,
         merged && journal!.copied ? checkedCopyPaths(true) : copyPaths(),
+        config.disposableIgnored,
+        [".codex-runs", specArtifacts],
       );
     console.log(
       !registered && !existsSync(worktree)
@@ -290,6 +300,7 @@ const land = (values: Values, numbers: number[]): void => {
     const [installProgram, ...installArgs] = config.installCommand;
     const installation = spawnSync(installProgram, installArgs, {
       cwd: worktree,
+      env: { ...process.env, ...verificationEnvironment(config, root) },
       stdio: ["inherit", "pipe", "pipe"],
       encoding: "utf8",
       maxBuffer: Infinity,
@@ -312,10 +323,17 @@ const land = (values: Values, numbers: number[]): void => {
     }
     console.log("安装命令已完成");
     const [program, ...args] = config.verificationCommand;
-    const verification = spawnSync(program, args, {
-      cwd: worktree,
-      stdio: "inherit",
-    });
+    const verification = await runVerification(
+      checkout,
+      config.exclusiveVerification,
+      program,
+      args,
+      {
+        cwd: worktree,
+        env: { ...process.env, ...verificationEnvironment(config, root) },
+        stdio: "inherit",
+      },
+    );
     if (verification.error || verification.signal)
       throw new Error("验证命令运行出错；未合并，worktree 已保留");
     if (verification.status !== 0)
@@ -365,6 +383,8 @@ const land = (values: Values, numbers: number[]): void => {
       `${root}.worktrees/.kept/${ticket}`,
       false,
       checkedCopyPaths(false),
+      config.disposableIgnored,
+      [".codex-runs", specArtifacts],
     );
     git(root, ["worktree", "remove", worktree]);
     console.log(`已删除 worktree：${worktree}`);
@@ -383,6 +403,11 @@ export const landCommand: Command = {
   help: `${entry} land <工单> [--dry-run]
 主工作区必须干净且在集成分支上；工单 worktree 干净且有新提交。
 每次 rebase 完成后（含冲突解决后重跑），先运行配置的安装命令，再验证。
+安装和验证应用 verificationEnv，替换配置值中的 {mainRoot}，保留已有同名进程环境变量。
+exclusiveVerification 开启时，验证步骤与 verify、自定义 pr-check 共用仓库锁，等待信息每 5 分钟最多一行。
+POSIX 独立进程组全部退出后才回收；Windows 不支持进程组，仍只按持锁进程及启动时间回收。
+子进程继承 RUN_SPEC_VERIFICATION_LOCK；嵌套 verify、land、自定义 pr-check 核对属主后复用锁，
+过期或其他锁的标记照常排队。
 安装成功只打印一行；失败回放输出、非零退出，保留现场，不验证也不合并。
 安装失败修好后重跑同一条命令会重新安装；验证通过后快进合并并推送 origin。
 安装后记录文件粒度的忽略条目快照；重装不会把已有工单产物算成安装产物。
@@ -390,7 +415,11 @@ export const landCommand: Command = {
 有变化或缺少副本的条目重新复制并列出，复制失败则移入保留目录。
 复制完成后，将其余快照外的忽略条目移到
 <仓库目录>.worktrees/.kept/<工单>/，保持相对路径，再删除 worktree 和工单分支。
-配置的目录软链接照旧删除，不访问目标；没有原始快照的旧 worktree 保留其余全部条目。
+disposableIgnored 默认为 []；配置非空时按 Git 的 gitignore 规则直接删除匹配的被忽略文件，
+输出删除和保留的文件数量；--dry-run 只列将删除、将保留的数量，不改文件。
+整个 .codex-runs 和 <acceptanceRoot>/spec-<S>/ 始终受保护，S 为本工单的父 spec 号，
+即使匹配模式也不按模式删除；acceptanceRoot 下的其他路径按模式删除或移入保留目录。
+配置的目录软链接照旧删除，不访问目标；没有原始快照的旧 worktree 也应用上述删除与保护规则。
 移走清单只列顶层路径和文件数，最多 20 项；需要的文件请拷回主工作区。
 保留目录已有同名条目时，旧副本自动归档到其中的 .previous-<随机后缀>/，不覆盖。
 冲突以 1 退出并保留现场；解决并暂存后重跑可继续。
