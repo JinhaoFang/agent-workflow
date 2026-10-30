@@ -8,7 +8,6 @@
  * --dry-run prints the plan without running verification or writing a log.
  * Apply verificationEnv and serialize the verification action when configured.
  */
-import { spawnSync } from "node:child_process";
 import {
   appendFileSync,
   closeSync,
@@ -28,7 +27,7 @@ import {
   type Command,
   type Values,
 } from "./shared.ts";
-import { withVerificationLock } from "./verification-lock.ts";
+import { runVerification } from "./verification-lock.ts";
 
 const tailLines = 20;
 
@@ -59,24 +58,25 @@ const verify = async (values: Values, numbers: number[]): Promise<void> => {
     console.log(`完整日志：${log}（仅预览，不写入）`);
     return;
   }
-  const result = await withVerificationLock(
-    checkout,
-    config.exclusiveVerification,
-    () => {
-      mkdirSync(directory, { recursive: true });
-      const descriptor = openSync(log, "wx");
-      try {
-        const [program, ...args] = config.verificationCommand;
-        return spawnSync(program, args, {
-          cwd,
-          env: { ...process.env, ...verificationEnvironment(config, root) },
-          stdio: ["inherit", descriptor, descriptor],
-        });
-      } finally {
-        closeSync(descriptor);
-      }
-    },
-  );
+  mkdirSync(directory, { recursive: true });
+  const descriptor = openSync(log, "wx");
+  const [program, ...args] = config.verificationCommand;
+  let result: Awaited<ReturnType<typeof runVerification>>;
+  try {
+    result = await runVerification(
+      checkout,
+      config.exclusiveVerification,
+      program,
+      args,
+      {
+        cwd,
+        env: { ...process.env, ...verificationEnvironment(config, root) },
+        stdio: ["inherit", descriptor, descriptor],
+      },
+    );
+  } finally {
+    closeSync(descriptor);
+  }
   if (result.error || result.signal)
     appendFileSync(
       log,
@@ -111,7 +111,10 @@ export const verifyCommand: Command = {
 给工单号时在 <主工作区>.worktrees/<工单号>/ 运行，不经 shell。
 应用 verificationEnv（默认 {}），替换配置值中的 {mainRoot}，保留已有同名进程环境变量。
 exclusiveVerification 默认 false；开启时验证前取 git 公共目录中的仓库锁，等待信息每 5 分钟最多一行；
-持锁进程退出或被杀后可自动回收，启动时间用于识别复用的进程号。
+POSIX 平台由独立进程组运行验证，组内全部作业退出后才回收；启动时间用于识别复用的进程号。
+Windows 不支持进程组，保持按持锁进程及启动时间回收，无法保证孤儿子进程已退出。
+子进程继承 RUN_SPEC_VERIFICATION_LOCK 标记；嵌套 verify、land、自定义 pr-check 核对当前锁属主后复用，
+过期或其他锁的标记仍照常排队。
 完整标准输出和错误输出合并写入主工作区 .codex-runs/verify-<工单号或 main>-<时间>-<进程号>.log，
 每次生成独立日志；屏幕只打印末尾 ${tailLines} 行和一行结论（通过或失败、退出码、日志绝对路径）。
 退出码与验证命令一致；程序无法启动或被信号中断时以 2 退出。

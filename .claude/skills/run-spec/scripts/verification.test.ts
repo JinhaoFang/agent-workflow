@@ -4,8 +4,9 @@
  * installer, verifier and Codex dispatcher. Observable events capture effective
  * environment, lock presence, prompts and ordering; no internal helper is tested.
  * File gates coordinate concurrent checks and forced-death recovery, including
- * stale owners whose PID is live with a different start identity. Run with
- * node --test or pnpm verify. TICKET_97_EVIDENCE captures output/events before
+ * stale owners whose PID is live with a different start identity, surviving
+ * verification descendants and nested CLI invocations. Run with node --test
+ * or pnpm verify. TICKET_97_EVIDENCE captures output/events before
  * fixture cleanup; all GitHub calls stay inside the fake executable.
  */
 import assert from "node:assert/strict";
@@ -46,6 +47,10 @@ type Event = {
   env: Record<string, string>;
   locked: boolean;
   args: string[];
+  pid: number;
+  parent: number;
+  time: number;
+  marker?: string;
 };
 const evidence = (name: string, value: unknown) => {
   if (!process.env.TICKET_97_EVIDENCE) return;
@@ -91,10 +96,10 @@ const fixture = () => {
     runner,
     `const fs = require("node:fs");
 const phase = process.argv[2];
-const record = {phase, label:process.env.TEST_LABEL || phase, cwd:process.cwd(), env:Object.fromEntries(${JSON.stringify(keys)}.map(key => [key, process.env[key]])), args:process.argv.slice(3)};
-const event = name => fs.appendFileSync(process.env.TEST_CALLS, JSON.stringify({...record,event:name,locked:fs.existsSync(${JSON.stringify(lock)})}) + "\\n");
+const record = {phase, label:process.env.TEST_LABEL || phase, cwd:process.cwd(), env:Object.fromEntries(${JSON.stringify(keys)}.map(key => [key, process.env[key]])), args:process.argv.slice(3), pid:process.pid, parent:process.ppid, marker:process.env.RUN_SPEC_VERIFICATION_LOCK};
+const event = name => fs.appendFileSync(process.env.TEST_CALLS, JSON.stringify({...record,event:name,time:Date.now(),locked:fs.existsSync(${JSON.stringify(lock)})}) + "\\n");
 event("start");
-const end = () => { event("end"); process.exitCode = Number(process.env.TEST_EXIT || 0); };
+const end = () => { event("end"); process.exitCode = !process.env.TEST_EXIT_PHASE || process.env.TEST_EXIT_PHASE === phase ? Number(process.env.TEST_EXIT || 0) : 0; };
 if (process.env.TEST_GATE && phase !== "install") {
  const deadline = Date.now() + 15000;
  const timer = setInterval(() => {
@@ -172,10 +177,11 @@ else process.exitCode = 91;
     label: string,
     cwd = root,
     gate?: string,
+    extra: NodeJS.ProcessEnv = {},
   ) => {
     const child = spawn(process.execPath, [cli, command, ...args], {
       cwd,
-      env: { ...env, TEST_LABEL: label, TEST_GATE: gate },
+      env: { ...env, TEST_LABEL: label, TEST_GATE: gate, ...extra },
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -497,7 +503,12 @@ test("killed verification owner is reclaimed by a waiting verify", async () => {
     if (process.platform === "win32") {
       first.child.kill("SIGKILL");
       writeFileSync(gate, "");
-    } else process.kill(-first.child.pid!, "SIGKILL");
+    } else {
+      const owner = readdirSync(f.lock)[0];
+      const record = JSON.parse(readFileSync(join(f.lock, owner), "utf8"));
+      process.kill(-record.processGroup, "SIGKILL");
+      first.child.kill("SIGKILL");
+    }
     const results = await Promise.all(children.map((child) => child.done));
     assert.equal(results[0].code, null);
     assert.equal(results[1].code, 0, results[1].stderr);
@@ -540,3 +551,404 @@ test("stale identity with a live reused PID and an abandoned empty lock both rec
     f.cleanup();
   }
 });
+
+test(
+  "a killed tickets verify keeps waiters queued until its verification child exits",
+  { skip: process.platform === "win32" },
+  async () => {
+    for (const killed of ["tickets", "lock-owner"]) {
+      const f = fixture();
+      const gate = join(f.temporary, "release");
+      const children: ReturnType<typeof f.start>[] = [];
+      try {
+        f.configure({ exclusiveVerification: true });
+        const first = f.start("verify", [], "orphan", f.root, gate);
+        children.push(first);
+        await until(() => f.events().some((event) => event.label === "orphan"));
+        const second = f.start("verify", [], "waiter");
+        children.push(second);
+        await until(() => second.output().includes("排队中"));
+        const ownerFile = readdirSync(f.lock)[0];
+        const ownerRecord = JSON.parse(
+          readFileSync(join(f.lock, ownerFile), "utf8"),
+        );
+        const childPid = f.events()[0].pid;
+        if (killed === "lock-owner")
+          process.kill(ownerRecord.processGroup, "SIGKILL");
+        first.child.kill("SIGKILL");
+        await delay(1400);
+        process.kill(childPid, 0);
+        const queued = !f.events().some((event) => event.label === "waiter");
+        const heldEvents = f.events();
+        writeFileSync(gate, "");
+        const results = await Promise.all(children.map((child) => child.done));
+        evidence(`orphaned-verification-${killed}`, {
+          commands: children.map(() => [process.execPath, cli, "verify"]),
+          killedPid: first.child.pid,
+          childPid,
+          ownerFile,
+          ownerRecord,
+          childSurvived: true,
+          queued,
+          heldEvents,
+          results,
+          events: f.events(),
+        });
+        assert.ok(queued, "验证子进程仍在运行时，第二套验证提前开始");
+        assert.equal(results[0].code, null);
+        assert.equal(results[1].code, 0, results[1].stderr);
+        assert.deepEqual(
+          f.events().map((event) => [event.label, event.event]),
+          [
+            ["orphan", "start"],
+            ["orphan", "end"],
+            ["waiter", "start"],
+            ["waiter", "end"],
+          ],
+        );
+        assert.ok(!existsSync(f.lock));
+      } finally {
+        writeFileSync(gate, "");
+        await Promise.all(children.map((child) => child.done));
+        f.cleanup();
+      }
+    }
+  },
+);
+
+test("custom PR checks can call tickets verify without deadlocking and preserve exit codes", async () => {
+  for (const status of [0, 7]) {
+    const f = fixture();
+    const nested = join(f.temporary, "nested.cjs");
+    const gate = join(f.temporary, "release");
+    try {
+      writeFileSync(
+        nested,
+        `const {spawnSync} = require("node:child_process");
+const result = spawnSync(process.execPath, ${JSON.stringify([cli, "verify"])}, {stdio:"inherit", timeout:10000});
+if (result.error) console.error("出错：嵌套验证超时");
+process.exitCode = result.status ?? 92;
+`,
+      );
+      f.configure({
+        exclusiveVerification: true,
+        prCheckCommand: [process.execPath, nested],
+      });
+      writeFileSync(gate, "");
+      const result = f.run("pr-check", ["93"], f.root, {
+        TEST_EXIT: String(status),
+        TEST_GATE: gate,
+      });
+      evidence(`nested-pr-check-${status}`, {
+        command: [process.execPath, cli, "pr-check", "93"],
+        status: result.status,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        events: f.events(),
+      });
+      assert.equal(result.status, status, result.stderr);
+      assert.deepEqual(
+        f.events().map((event) => event.event),
+        ["start", "end"],
+      );
+      assert.ok(f.events().every((event) => event.locked));
+      assert.ok(!existsSync(f.lock));
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
+test(
+  "normal command completion retains the lock while background descendants are alive",
+  { skip: process.platform === "win32" },
+  async () => {
+    const f = fixture();
+    const gate = join(f.temporary, "release");
+    const launcher = join(f.temporary, "background.cjs");
+    const children: ReturnType<typeof f.start>[] = [];
+    try {
+      writeFileSync(
+        launcher,
+        `const {spawn} = require("node:child_process");
+spawn(process.execPath, ${JSON.stringify([f.runner, "verify"])}, {stdio:"ignore"}).unref();
+`,
+      );
+      f.configure({
+        exclusiveVerification: true,
+        verificationCommand: [process.execPath, launcher],
+      });
+      const first = f.start("verify", [], "background", f.root, gate);
+      children.push(first);
+      await until(() =>
+        f.events().some((event) => event.label === "background"),
+      );
+      assert.equal((await first.done).code, 0);
+      assert.ok(existsSync(f.lock));
+      f.configure({ exclusiveVerification: true });
+      const second = f.start("verify", [], "waiter");
+      children.push(second);
+      await until(() => second.output().includes("排队中"));
+      await delay(1200);
+      assert.ok(!f.events().some((event) => event.label === "waiter"));
+      writeFileSync(gate, "");
+      assert.equal((await second.done).code, 0);
+      assert.deepEqual(
+        f.events().map((event) => [event.label, event.event]),
+        [
+          ["background", "start"],
+          ["background", "end"],
+          ["waiter", "start"],
+          ["waiter", "end"],
+        ],
+      );
+      assert.ok(!existsSync(f.lock));
+      evidence("background-descendants", {
+        events: f.events(),
+        results: await Promise.all(children.map((child) => child.done)),
+      });
+    } finally {
+      writeFileSync(gate, "");
+      await Promise.all(children.map((child) => child.done));
+      f.cleanup();
+    }
+  },
+);
+
+test("verify and land verification commands inherit the lock when they invoke verify again", () => {
+  for (const command of ["verify", "land"]) {
+    for (const status of [0, 7]) {
+      const f = fixture();
+      const nested = join(f.temporary, "nested.cjs");
+      try {
+        writeFileSync(
+          nested,
+          `if (process.env.TEST_NESTED === "1") {
+process.argv.splice(2, 0, "verify"); require(${JSON.stringify(f.runner)});
+} else {
+const result = require("node:child_process").spawnSync(process.execPath, ${JSON.stringify([cli, "verify", "21"])}, {stdio:"inherit", timeout:10000, env:{...process.env, TEST_NESTED:"1"}});
+process.exitCode = result.status ?? 92;
+}
+`,
+        );
+        f.configure({
+          exclusiveVerification: true,
+          verificationCommand: [process.execPath, nested],
+        });
+        f.commitConfig();
+        f.addWorktree();
+        if (command === "land") f.remote();
+        const result = f.run(command, ["21"], f.root, {
+          TEST_EXIT: String(status),
+          TEST_EXIT_PHASE: "verify",
+        });
+        assert.equal(
+          result.status,
+          command === "land" && status !== 0 ? 1 : status,
+          result.stdout + result.stderr,
+        );
+        const events = f.events().filter((event) => event.phase === "verify");
+        assert.deepEqual(
+          events.map((event) => event.event),
+          ["start", "end"],
+        );
+        assert.ok(events.every((event) => event.locked));
+        assert.ok(!existsSync(f.lock));
+        evidence(`nested-${command}-${status}`, {
+          status: result.status,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          events: f.events(),
+        });
+      } finally {
+        f.cleanup();
+      }
+    }
+  }
+});
+
+test("expired, mismatched and malformed inherited markers queue behind the actual owner", async () => {
+  const f = fixture();
+  const foreign = fixture();
+  const gate = join(f.temporary, "release");
+  const foreignGate = join(foreign.temporary, "release");
+  const children: ReturnType<typeof f.start>[] = [];
+  try {
+    f.configure({ exclusiveVerification: true });
+    foreign.configure({ exclusiveVerification: true });
+    assert.equal(
+      f.run("verify", [], f.root, { TEST_LABEL: "previous" }).status,
+      0,
+    );
+    const expired = f.events()[0].marker!;
+    const holder = f.start("verify", [], "holder", f.root, gate);
+    const other = foreign.start(
+      "verify",
+      [],
+      "foreign",
+      foreign.root,
+      foreignGate,
+    );
+    children.push(holder, other);
+    await until(
+      () =>
+        f.events().some((event) => event.label === "holder") &&
+        foreign.events().length > 0,
+    );
+    const actual = JSON.parse(
+      f.events().find((event) => event.label === "holder")!.marker!,
+    );
+    const markers = {
+      expired,
+      foreign: foreign.events()[0].marker!,
+      mismatch: JSON.stringify({
+        ...actual,
+        owner: actual.owner.replace(/-[^.]+\./, "-previous."),
+      }),
+      malformed: "{",
+    };
+    for (const [label, marker] of Object.entries(markers)) {
+      const waiter = f.start("verify", [], label, f.root, undefined, {
+        RUN_SPEC_VERIFICATION_LOCK: marker,
+      });
+      children.push(waiter);
+      await until(() => waiter.output().includes("排队中"));
+    }
+    await delay(1200);
+    assert.ok(!f.events().some((event) => Object.hasOwn(markers, event.label)));
+    writeFileSync(gate, "");
+    writeFileSync(foreignGate, "");
+    const results = await Promise.all(children.map((child) => child.done));
+    for (const result of results) assert.equal(result.code, 0, result.stderr);
+    const events = f.events().filter((event) => event.label !== "previous");
+    let active = 0;
+    for (const event of events) {
+      active += event.event === "start" ? 1 : -1;
+      assert.ok(active >= 0 && active <= 1, "同一仓库同时运行了多套验证");
+    }
+    assert.equal(active, 0);
+    assert.ok(!existsSync(f.lock));
+    evidence("invalid-inherited-markers", { markers, results, events });
+  } finally {
+    writeFileSync(gate, "");
+    writeFileSync(foreignGate, "");
+    await Promise.all(children.map((child) => child.done));
+    f.cleanup();
+    foreign.cleanup();
+  }
+});
+
+test("verify, land and PR check help explain group recovery and validated nested inheritance", () => {
+  const f = fixture();
+  try {
+    for (const command of ["verify", "land", "pr-check"]) {
+      const result = f.run(command, ["--help"]);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /POSIX.*进程组/);
+      assert.match(result.stdout, /Windows.*不支持进程组/);
+      assert.match(result.stdout, /RUN_SPEC_VERIFICATION_LOCK/);
+      assert.match(result.stdout, /嵌套/);
+      assert.match(result.stdout, /过期.*排队/);
+      evidence(`help-${command}`, { stdout: result.stdout });
+    }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("exclusive verification preserves launch/signal failures and releases the job lock", () => {
+  const f = fixture();
+  try {
+    for (const command of ["verify", "pr-check"]) {
+      for (const scenario of ["missing-program", "signal"]) {
+        const verificationCommand =
+          scenario === "missing-program"
+            ? [join(f.temporary, "absent-program")]
+            : [process.execPath, "-e", 'process.kill(process.pid, "SIGTERM");'];
+        f.configure({
+          exclusiveVerification: true,
+          verificationCommand,
+          prCheckCommand: verificationCommand,
+        });
+        const result = f.run(command, command === "pr-check" ? ["93"] : []);
+        assert.equal(result.status, 2, result.stdout + result.stderr);
+        assert.match(result.stdout + result.stderr, /出错：/);
+        assert.ok(!existsSync(f.lock));
+      }
+    }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test(
+  "a live unrelated process group with a reused owner PID cannot keep a stale lock",
+  { skip: process.platform === "win32" },
+  async () => {
+    const f = fixture();
+    const unrelated = spawn(
+      process.execPath,
+      ["-e", "setInterval(() => {}, 1000)"],
+      { detached: true, stdio: "ignore" },
+    );
+    const done = new Promise<void>((resolveDone, reject) => {
+      unrelated.once("error", reject);
+      unrelated.once("close", () => resolveDone());
+    });
+    try {
+      f.configure({ exclusiveVerification: true });
+      mkdirSync(f.lock);
+      writeFileSync(
+        join(
+          f.lock,
+          `${unrelated.pid}-previous.${Buffer.from("previous process start").toString("base64url")}`,
+        ),
+        JSON.stringify({ processGroup: unrelated.pid }),
+      );
+      const result = f.run("verify");
+      assert.equal(result.status, 0, result.stderr);
+      process.kill(unrelated.pid!, 0);
+      assert.ok(!existsSync(f.lock));
+    } finally {
+      unrelated.kill("SIGKILL");
+      await done;
+      f.cleanup();
+    }
+  },
+);
+
+test(
+  "terminating tickets verify forwards the signal to the job group and unblocks waiters",
+  { skip: process.platform === "win32" },
+  async () => {
+    const f = fixture();
+    const gate = join(f.temporary, "release");
+    const children: ReturnType<typeof f.start>[] = [];
+    try {
+      f.configure({ exclusiveVerification: true });
+      const first = f.start("verify", [], "terminated", f.root, gate);
+      children.push(first);
+      await until(() => f.events().length > 0);
+      const second = f.start("verify", [], "waiter");
+      children.push(second);
+      await until(() => second.output().includes("排队中"));
+      first.child.kill("SIGTERM");
+      const results = await Promise.all(children.map((child) => child.done));
+      assert.equal(results[0].code, 2, results[0].stderr);
+      assert.equal(results[1].code, 0, results[1].stderr);
+      assert.deepEqual(
+        f.events().map((event) => [event.label, event.event]),
+        [
+          ["terminated", "start"],
+          ["waiter", "start"],
+          ["waiter", "end"],
+        ],
+      );
+      assert.ok(!existsSync(f.lock));
+    } finally {
+      writeFileSync(gate, "");
+      await Promise.all(children.map((child) => child.done));
+      f.cleanup();
+    }
+  },
+);

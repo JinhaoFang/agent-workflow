@@ -53,7 +53,7 @@ import {
   type Command,
   type Values,
 } from "./shared.ts";
-import { withVerificationLock } from "./verification-lock.ts";
+import { runVerification } from "./verification-lock.ts";
 
 const land = async (values: Values, numbers: number[]): Promise<void> => {
   const checkout = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
@@ -321,15 +321,16 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
     }
     console.log("安装命令已完成");
     const [program, ...args] = config.verificationCommand;
-    const verification = await withVerificationLock(
+    const verification = await runVerification(
       checkout,
       config.exclusiveVerification,
-      () =>
-        spawnSync(program, args, {
-          cwd: worktree,
-          env: { ...process.env, ...verificationEnvironment(config, root) },
-          stdio: "inherit",
-        }),
+      program,
+      args,
+      {
+        cwd: worktree,
+        env: { ...process.env, ...verificationEnvironment(config, root) },
+        stdio: "inherit",
+      },
     );
     if (verification.error || verification.signal)
       throw new Error("验证命令运行出错；未合并，worktree 已保留");
@@ -402,6 +403,9 @@ export const landCommand: Command = {
 每次 rebase 完成后（含冲突解决后重跑），先运行配置的安装命令，再验证。
 安装和验证应用 verificationEnv，替换配置值中的 {mainRoot}，保留已有同名进程环境变量。
 exclusiveVerification 开启时，验证步骤与 verify、自定义 pr-check 共用仓库锁，等待信息每 5 分钟最多一行。
+POSIX 独立进程组全部退出后才回收；Windows 不支持进程组，仍只按持锁进程及启动时间回收。
+子进程继承 RUN_SPEC_VERIFICATION_LOCK；嵌套 verify、land、自定义 pr-check 核对属主后复用锁，
+过期或其他锁的标记照常排队。
 安装成功只打印一行；失败回放输出、非零退出，保留现场，不验证也不合并。
 安装失败修好后重跑同一条命令会重新安装；验证通过后快进合并并推送 origin。
 安装后记录文件粒度的忽略条目快照；重装不会把已有工单产物算成安装产物。
