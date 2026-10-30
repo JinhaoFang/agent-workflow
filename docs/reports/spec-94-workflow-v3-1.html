@@ -1,0 +1,2160 @@
+<!doctype html>
+<!--
+spec #94（workflow-v3.1）第二轮单文件汇报，浏览器直接打开，系统字体，支持离线、深浅色与手机。
+从 06fe379 后的最新模板复制，只替换本说明、title 和 data；样式、正文结构和脚本逻辑不变。
+数据来自 #94 正文、#95～#106 与 #108 验收、派发日志、Claude 主会话、目标核对及收尾取舍。
+六项各一条 goal，五组数字画条、accept 列表；两条 session 仅 spec 创建之后 compare: true。
+领域结果按名字、默认、解决什么三列显示；缺项写 null，不按零算，两个主会话范围不可相加。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spec #94：workflow-v3.1 汇报</title>
+    <style>
+      :root {
+        --bg: #fafaf8;
+        --fg: #1d1d1b;
+        --muted: #6b6b66;
+        --line: #deddd8;
+        --card: #fff;
+        --a: #2f6fb0;
+        --b: #c0762a;
+        --c: #4f8a4a;
+        --d: #8a5ab0;
+        --e: #b04a4a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #171716;
+          --fg: #ecebe6;
+          --muted: #a3a29c;
+          --line: #383835;
+          --card: #21211f;
+          --a: #6aa4e0;
+          --b: #e0a160;
+          --c: #86c27f;
+          --d: #b991dc;
+          --e: #e07a7a;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          15px/1.6 system-ui,
+          -apple-system,
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      main {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+      }
+      h1 {
+        font-size: 24px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 32px 0 10px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 4px;
+      }
+      .sub {
+        color: var(--muted);
+        margin: 0 0 16px;
+      }
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 10px;
+      }
+      .kpi {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      .kpi b {
+        display: block;
+        font-size: 22px;
+      }
+      .kpi span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        background: var(--card);
+        table-layout: fixed;
+      }
+      th,
+      td {
+        border: 1px solid var(--line);
+        padding: 6px 8px;
+        text-align: left;
+        vertical-align: top;
+        overflow-wrap: anywhere;
+      }
+      th {
+        font-weight: 600;
+      }
+      .wrap {
+        width: 100%;
+        min-width: 0;
+      }
+      svg text {
+        fill: var(--fg);
+        font-size: 12px;
+      }
+      svg .muted {
+        fill: var(--muted);
+      }
+      ul,
+      ol {
+        padding-left: 20px;
+      }
+      code {
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      a {
+        color: var(--a);
+        text-underline-offset: 2px;
+        overflow-wrap: anywhere;
+      }
+      p {
+        margin: 10px 0;
+      }
+      button,
+      select {
+        font: inherit;
+        color: var(--fg);
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 4px 8px;
+        max-width: 100%;
+      }
+      .note {
+        border-left: 3px solid var(--b);
+        padding: 7px 11px;
+        background: var(--card);
+      }
+      .controls {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        margin: 12px 0;
+      }
+      .timeline-row,
+      .bar-row {
+        display: grid;
+        grid-template-columns: minmax(135px, 23%) minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        margin: 7px 0;
+      }
+      .timeline-label {
+        font-size: 12px;
+        overflow-wrap: anywhere;
+        line-height: 1.4;
+      }
+      .timeline-label small {
+        display: block;
+        color: var(--muted);
+      }
+      .track {
+        height: 19px;
+        background: var(--line);
+        position: relative;
+        border-radius: 3px;
+        min-width: 0;
+      }
+      .bar {
+        position: absolute;
+        top: 2px;
+        bottom: 2px;
+        min-width: 2px;
+        border-radius: 3px;
+      }
+      .milestone-track {
+        height: auto;
+      }
+      .milestone-lane {
+        height: 19px;
+        position: relative;
+      }
+      .timeline-point {
+        position: absolute;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+      }
+      .axis {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--muted);
+        margin: 5px 0 12px;
+      }
+      .legend {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .swatch {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        margin: 0 3px 0 10px;
+      }
+      .bar-row {
+        grid-template-columns: minmax(135px, 23%) minmax(0, 1fr);
+      }
+      .bar-group {
+        display: grid;
+        gap: 5px;
+      }
+      .compare-bar {
+        background: var(--line);
+        border-radius: 3px;
+        min-height: 23px;
+        position: relative;
+        overflow: hidden;
+      }
+      .compare-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        opacity: 0.25;
+      }
+      .compare-value {
+        position: relative;
+        display: block;
+        padding: 1px 5px;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .status-pending {
+        color: var(--b);
+      }
+      details {
+        margin: 15px 0;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--a);
+      }
+      td.num,
+      th.num {
+        font-variant-numeric: tabular-nums;
+      }
+      footer {
+        margin-top: 28px;
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      @media (max-width: 600px) {
+        main {
+          padding: 20px 12px 36px;
+        }
+        h1 {
+          font-size: 21px;
+        }
+        .kpis {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .kpi b {
+          font-size: 20px;
+        }
+        table.responsive thead {
+          display: none;
+        }
+        table.responsive,
+        table.responsive tbody {
+          display: block;
+        }
+        table.responsive tr {
+          display: block;
+          border: 1px solid var(--line);
+          margin-bottom: 9px;
+        }
+        table.responsive td,
+        table.responsive th {
+          display: grid;
+          grid-template-columns: minmax(76px, 28%) minmax(0, 1fr);
+          gap: 8px;
+          border: 0;
+          border-bottom: 1px solid var(--line);
+          padding: 5px 8px;
+          min-width: 0;
+        }
+        table.responsive td:before,
+        table.responsive th:before {
+          content: attr(data-label);
+          color: var(--muted);
+          font-weight: 400;
+        }
+        table.responsive td:last-child {
+          border-bottom: 0;
+        }
+        .timeline-row,
+        .bar-row {
+          grid-template-columns: minmax(95px, 31%) minmax(0, 1fr);
+          gap: 6px;
+        }
+        .timeline-label {
+          font-size: 11px;
+        }
+      }
+      @media print {
+        details {
+          display: block;
+        }
+        details > * {
+          display: block;
+        }
+        select,
+        .controls {
+          display: none;
+        }
+        a {
+          color: inherit;
+        }
+        .track,
+        .compare-fill {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 data-slot="title"></h1>
+      <p class="sub" data-slot="subtitle"></p>
+      <div class="kpis" data-slot="kpis" aria-label="关键数字"></div>
+      <section>
+        <h2>任务</h2>
+        <p data-slot="task"></p>
+        <p data-slot="result"></p>
+        <p data-slot="delivery-status"></p>
+        <p class="note" data-slot="limit"></p>
+      </section>
+      <section>
+        <h2>交付</h2>
+        <div class="wrap" data-slot="deliverables"></div>
+      </section>
+      <section>
+        <h2>目标核对</h2>
+        <p data-slot="goal-summary"></p>
+        <div data-slot="goals" role="group" aria-label="目标改前改后对比"></div>
+        <div class="wrap" data-slot="goal-table"></div>
+      </section>
+      <section data-section="domain">
+        <h2>领域结果</h2>
+        <p data-slot="domain-intro"></p>
+        <div class="wrap" data-slot="domain"></div>
+      </section>
+      <section>
+        <h2>时间线</h2>
+        <div class="wrap" data-slot="milestones"></div>
+        <div class="controls">
+          <label
+            >日期
+            <select data-slot="timeline-day">
+              <option value="all">全部日期</option>
+            </select></label
+          >
+          <label
+            >类别
+            <select data-slot="timeline-kind">
+              <option value="all">全部类别</option>
+            </select></label
+          >
+        </div>
+        <p class="legend" data-slot="timeline-legend"></p>
+        <div
+          data-slot="timeline"
+          role="group"
+          aria-label="派发与设计工单甘特图"
+        ></div>
+        <p class="sub" data-slot="timeline-note"></p>
+      </section>
+      <section>
+        <h2>成本与效率</h2>
+        <div class="wrap" data-slot="cost-summary"></div>
+        <p class="sub" data-slot="cost-note"></p>
+        <div
+          data-slot="cost-chart"
+          role="group"
+          aria-label="Claude 主会话与 Codex 用量对比"
+        ></div>
+        <p data-slot="efficiency"></p>
+        <p class="sub" data-slot="comparison-note"></p>
+        <details>
+          <summary>展开每次派发与审查的用时、输入、缓存、输出</summary>
+          <div class="wrap" data-slot="cost-detail"></div>
+        </details>
+        <details>
+          <summary>展开主会话、独立审查与子代理用量</summary>
+          <div class="wrap" data-slot="other-cost"></div>
+        </details>
+      </section>
+      <section>
+        <h2>质量</h2>
+        <p data-slot="quality"></p>
+        <div class="wrap" data-slot="checks"></div>
+        <p class="sub" data-slot="finding-note"></p>
+        <div class="wrap" data-slot="reviews"></div>
+        <details>
+          <summary>展开审查发现与处理</summary>
+          <div class="wrap" data-slot="findings"></div>
+        </details>
+      </section>
+      <section>
+        <h2>决定</h2>
+        <div class="wrap" data-slot="decisions"></div>
+      </section>
+      <section>
+        <h2>问题与处理</h2>
+        <div class="wrap" data-slot="problems"></div>
+      </section>
+      <section>
+        <h2>流程发现、遗留与下一步</h2>
+        <ul data-slot="next"></ul>
+      </section>
+      <section>
+        <h2>数据口径与缺项</h2>
+        <div class="wrap" data-slot="gaps"></div>
+        <details>
+          <summary>证据入口</summary>
+          <ul data-slot="sources"></ul>
+        </details>
+      </section>
+      <footer data-slot="footer"></footer>
+      <noscript
+        ><p class="note">
+          请启用 JavaScript。统计、图表与正文由本页内嵌数据计算。
+        </p></noscript
+      >
+    </main>
+    <script>
+      {
+        const data = [
+  {
+    "type": "report",
+    "spec": 94,
+    "date": "2026-10-31",
+    "asOf": "2026-10-30T17:38:27.951837+00:00",
+    "timezone": "Asia/Taipei",
+    "title": "workflow-v3.1：把 PathJX 实测问题做进执行技能",
+    "goal": "把 PathJX #208、#209 实测暴露的问题（迁移记录第 80～87 条）做进执行技能。",
+    "scope": "范围是 run-spec、setup-run-spec 和本仓库规则文档；PathJX 的实测另开 spec。",
+    "result": "workflow-v3.1 交付，13 张工单全部关闭，含收尾返工 #104、#105、PathJX 验证 spec 审查暴露的 #106，以及本次汇报套用时暴露的模板返工 #108；目标核对六项全部达成。",
+    "pr": 107,
+    "prState": "待合并",
+    "ciUrl": "https://github.com/JinhaoFang/video-studio/actions/runs/41086408933",
+    "ciStatus": "GitHub Actions 因账号付款限制未启动验证（运行记录为 failure、无执行步骤）",
+    "localVerification": "pnpm verify（409 项）通过；#106 收尾时提交格式检查 17 个提交通过，#108 合入后本轮同命令检查 20 个提交通过",
+    "testsBefore": 374,
+    "testsAfter": 409,
+    "domainIntro": "三个新配置项均可选；本仓库都不写，采用默认值。表中同时列出名字、默认值和解决的问题；accept 另新增一个显式参数。",
+    "domainHeadings": [
+      "名字",
+      "默认",
+      "解决什么"
+    ],
+    "limit": "PR #107 待合并；打 workflow-v3.1 tag、空仓库安装实测和其他仓库重装由设计负责人合并后完成。PathJX 的实际效果由验证 spec #233 检验。两个主会话范围有包含关系，成本图与比值只用 spec 创建之后的一条。",
+    "dispatchNote": "起止取各进度日志首行和最后一条时间戳；原有九次为 10 月 30 日，首轮汇报与 #108 为 10 月 31 日，统一 Asia/Taipei（UTC+8）。分钟由差值计算。设计工单只有关闭时刻，合在一行画点；实际起止、分钟未知。累计用时含并行，不含两个审查子代理。",
+    "repoUrl": "https://github.com/JinhaoFang/video-studio",
+    "sourceRef": "06fe379dd1223e8f103b0f444d5e94d79ba5cb34",
+    "localVerificationUrl": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362",
+    "costNote": "输入含缓存；缓存读取列是输入的一部分，Claude 缓存创建也已计入输入。累计分钟含并行和嵌套，不能相加为墙钟。主会话分别报告整个会话和 spec 创建之后，两个范围不可相加；其分钟为覆盖区间，不是模型活跃耗时。",
+    "comparisonNote": "与全部 Codex 运行（工程、返工、首轮写汇报、收尾审查及两个子代理）比较；整个会话另列，不参与比值。派发前 Claude 独立审查用量齐全，单独报告。当前这轮重写尚未结束，用量未纳入。"
+  },
+  {
+    "type": "subagent",
+    "id": "01a18d34-5ebb-7c91-8386-678fa7e3d156",
+    "parent": "review-94-final",
+    "label": "收尾审查 · Spec",
+    "minutes": 5.928733333333333,
+    "input": 1666258,
+    "cacheRead": 1553536,
+    "output": 6485,
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "subagent",
+    "id": "01a18d34-0e01-7192-b9ea-32d52cd6cbff",
+    "parent": "review-94-final",
+    "label": "收尾审查 · Standards",
+    "minutes": 6.495500000000001,
+    "input": 1574930,
+    "cacheRead": 1485184,
+    "output": 6113,
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "independent",
+    "id": "pre-review",
+    "label": "派发前独立审查 · claude -p",
+    "minutes": 7.2117,
+    "input": 1411286,
+    "cacheRead": 1267068,
+    "cacheWrite": 144184,
+    "output": 40710,
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6524444984"
+  },
+  {
+    "type": "delivery",
+    "label": "判定标准第二版、文档生命周期与目标核对",
+    "tickets": [
+      100
+    ],
+    "meaning": "五类加可删除；规则归类覆盖先读引用；开 PR 前按问题陈述重测目标。"
+  },
+  {
+    "type": "delivery",
+    "label": "accept 在通过关闭前核对提交",
+    "tickets": [
+      96
+    ],
+    "meaning": "远端集成分支缺提交就拒绝，区分先 land 和先推送；只读工单可显式声明没有提交。"
+  },
+  {
+    "type": "delivery",
+    "label": "验证环境与完整验证排队",
+    "tickets": [
+      97
+    ],
+    "meaning": "配置里的环境自动进入验证、安装和派发；完整验证按仓库共用锁，避免抢端口和 CPU。"
+  },
+  {
+    "type": "delivery",
+    "label": "可直接删除的被忽略文件",
+    "tickets": [
+      98
+    ],
+    "meaning": "缓存、字节码和构建输出按模式删除，其他工单产物继续保留。"
+  },
+  {
+    "type": "delivery",
+    "label": "以 PathJX spec #27 为底重做汇报",
+    "tickets": [
+      95,
+      99,
+      105,
+      108
+    ],
+    "meaning": "以 PathJX spec #27 为底，先报交付和目标；缺项显示未知，多目标、两条主会话和三列领域表均由数据驱动，关键实测正文加句末证据链接。"
+  },
+  {
+    "type": "delivery",
+    "label": "本仓库规则重排与卸载旧技能",
+    "tickets": [
+      101,
+      103
+    ],
+    "meaning": "规则篇幅下降，个人偏好移到用户级；video-studio 和 design-system 都卸掉 dual-role-workflow。"
+  },
+  {
+    "type": "delivery",
+    "label": "配置说明、升级须知与版本号",
+    "tickets": [
+      102
+    ],
+    "meaning": "技能正文和 setup 模板同步三个新配置项、accept 参数及 v3→v3.1 升级方法。"
+  },
+  {
+    "type": "delivery",
+    "label": "验证锁收尾返工",
+    "tickets": [
+      104
+    ],
+    "meaning": "按整个验证作业的进程组回收锁，嵌套验证沿用同一把锁，防止提前回收和死锁。"
+  },
+  {
+    "type": "delivery",
+    "label": "删除规则只保护本 spec 的验收产物",
+    "tickets": [
+      106
+    ],
+    "meaning": "保护 .codex-runs 和 acceptanceRoot/spec-<S>/，验收产物根目录下的其他测试输出仍可匹配删除。"
+  },
+  {
+    "type": "milestone",
+    "at": "2026-10-30T13:34:29Z",
+    "label": "spec #94 创建",
+    "detail": "复盘后的改进收进 v3.1；派发前独立审查的必须改项随后并入正文。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94"
+  },
+  {
+    "type": "milestone",
+    "at": "2026-10-30T13:46:30Z",
+    "label": "判定标准与目标核对验收",
+    "detail": "角色模板生成部分 6,632 字节，保持 v3 预算。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/100#issuecomment-6524339065"
+  },
+  {
+    "type": "milestone",
+    "at": "2026-10-30T13:56:33Z",
+    "label": "两个仓库卸掉旧技能",
+    "detail": "design-system PR #84 已合并；本仓库由 #101 完成卸载。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/103#issuecomment-6524555285"
+  },
+  {
+    "type": "milestone",
+    "at": "2026-10-30T14:24:35Z",
+    "label": "首批九张工单全部关闭",
+    "detail": "模板返工四处后通过；之后把全部批次合成一次收尾审查。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/99#issuecomment-6525128736"
+  },
+  {
+    "type": "milestone",
+    "at": "2026-10-30T22:33:52+08:00",
+    "label": "收尾审查完成",
+    "detail": "0384743..b3e0b29：11 个提交、28 个文件，4 项发现全部安排修复。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6525368008"
+  },
+  {
+    "type": "milestone",
+    "at": "2026-10-30T15:51:57Z",
+    "label": "收尾返工验收完成",
+    "detail": "#105 缺项修复与 #104 锁修复通过，旧归类表已补废弃标记。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6525368008"
+  },
+  {
+    "type": "milestone",
+    "at": "2026-10-30T16:02:53Z",
+    "label": "保护范围返工验收",
+    "detail": "PathJX 验证 spec 的独立审查发现问题，#106 收窄保护目录。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/106#issuecomment-6527284199"
+  },
+  {
+    "type": "milestone",
+    "at": "2026-10-30T16:03:34Z",
+    "label": "PR #107 创建，待合并",
+    "detail": "创建时头提交 56a36c5，本地 409 项和 17 个提交格式检查通过；远端 CI 因付款限制未执行验证。",
+    "source": "https://github.com/JinhaoFang/video-studio/pull/107"
+  },
+  {
+    "type": "review",
+    "id": "pre-review",
+    "label": "派发前独立审查 · Claude",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6524444984",
+    "status": "已完成",
+    "note": "本页列三项必须改；已并入 spec 正文与工单安排。其余建议不逐条计数，详见原文及 #94 修订记录。"
+  },
+  {
+    "type": "review",
+    "id": "review-94-final",
+    "label": "收尾审查 · Codex 双轴",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6525368008",
+    "status": "已完成",
+    "note": "全部批次合审；4 项全部修复，无接受不修项。Standards 1 项，Spec 3 项，最高 P1；取舍见 review-final-decisions.md。"
+  },
+  {
+    "type": "review",
+    "id": "pathjx-233-pre",
+    "label": "PathJX 验证 spec 的独立审查",
+    "source": "https://github.com/JinhaoFang/PathJX-01/issues/233",
+    "status": "关联问题已处理",
+    "note": "本页只计与 #94 关联的保护范围问题，落到 #106；PathJX 审查全文的总发现数未知，不作推断。"
+  },
+  {
+    "type": "review",
+    "id": "after-rework",
+    "label": "#104、#105 合并后的单独复审",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6525368008",
+    "status": "未单独执行",
+    "note": "设计负责人决定小范围返工在验收时逐条实测；不能把没有复审写成复审无发现。"
+  },
+  {
+    "type": "finding",
+    "id": "pre-1",
+    "review": "pre-review",
+    "severity": "必须改",
+    "label": "accept 的远端核对会挡住设计工单，失败提示未区分原因",
+    "handling": "派发前修订",
+    "detail": "提交只在本地集成分支时提示先推送，本地也没有时提示先 land；设计工单验收前先推送。",
+    "status": "已处理"
+  },
+  {
+    "type": "finding",
+    "id": "pre-2",
+    "review": "pre-review",
+    "severity": "必须改",
+    "label": "design-system 卸载与合并后发布缺少承接，发布不能卡住开 PR",
+    "handling": "派发前修订",
+    "detail": "补 #103 承接跨仓库卸载；打 tag、空仓安装、重装和 doctor 明确交给合并后收尾。",
+    "status": "已处理"
+  },
+  {
+    "type": "finding",
+    "id": "pre-3",
+    "review": "pre-review",
+    "severity": "必须改",
+    "label": "规则模板、本仓库重排和配置说明缺少先后依赖",
+    "handling": "派发前修订",
+    "detail": "补 #101 等 #100、#102 等 #101 的安排，并明确固定篇幅基线和新增配置说明的边界。",
+    "status": "已处理"
+  },
+  {
+    "type": "finding",
+    "id": "final-p1",
+    "review": "review-94-final",
+    "severity": "P1",
+    "label": "持锁父进程死掉后，验证子进程还在跑，锁却被回收",
+    "handling": "返工 #104",
+    "detail": "回收前确认整个验证作业的进程组退出；等待者不能提前启动。",
+    "status": "已处理"
+  },
+  {
+    "type": "finding",
+    "id": "final-p2-lock",
+    "review": "review-94-final",
+    "severity": "P2",
+    "label": "自定义 PR 检查里嵌套 verify 会互等死锁",
+    "handling": "返工 #104",
+    "detail": "同一验证作业继承持锁标记，内层沿用锁；退出码照实传回。",
+    "status": "已处理"
+  },
+  {
+    "type": "finding",
+    "id": "final-p2-usage",
+    "review": "review-94-final",
+    "severity": "P2",
+    "label": "模板把缺失用量按零算进图表和比值",
+    "handling": "返工 #105",
+    "detail": "汇总保留已知部分及缺项数，相关比值写未知；真实的 0 继续显示 0。",
+    "status": "已处理"
+  },
+  {
+    "type": "finding",
+    "id": "final-p3",
+    "review": "review-94-final",
+    "severity": "P3",
+    "label": "旧三层归类表的文件头未标明已被取代",
+    "handling": "设计负责人补改",
+    "detail": "31c7408（Refs #101）在旧表头写明已被判定标准第二版取代。",
+    "status": "已处理"
+  },
+  {
+    "type": "finding",
+    "id": "pathjx-protection",
+    "review": "pathjx-233-pre",
+    "severity": "原记录未分级",
+    "label": "disposableIgnored 保护整个验收产物根目录，PathJX 测试输出删不掉",
+    "handling": "返工 #106",
+    "detail": "保护范围改成 acceptanceRoot/spec-<S>/，.codex-runs 保持受保护；其他路径照常按模式处理。",
+    "status": "已处理"
+  },
+  {
+    "type": "decision",
+    "owner": "用户",
+    "text": "任务全权交给设计负责人统筹。",
+    "reason": "由设计负责人安排执行、验收与授权范围内的合并。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "decision",
+    "owner": "用户",
+    "text": "汇报以 PathJX spec #27 为底，用量照报，但不和上一期比。",
+    "reason": "先看交付和结果，图只在更清楚时使用。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94"
+  },
+  {
+    "type": "decision",
+    "owner": "设计负责人",
+    "text": "合并 video-studio PR #93、PathJX PR #227 和 #228、design-system PR #84。",
+    "reason": "属于全权负责的授权范围；#84 对应本 spec 的旧技能卸载。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "decision",
+    "owner": "设计负责人",
+    "text": "全部批次合成一次收尾审查，中间批不单独审。",
+    "reason": "安排见 brief；没有另行记录更具体的理由。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6525368008"
+  },
+  {
+    "type": "decision",
+    "owner": "设计负责人",
+    "text": "#104、#105 合并后不再单独审查，验收时逐条实测。",
+    "reason": "返工范围小；取舍文件明确记录，最后一批不单独审。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6525368008"
+  },
+  {
+    "type": "decision",
+    "owner": "设计负责人",
+    "text": "本仓库三个新配置项都不写。",
+    "reason": "验证一分钟内完成，并发不互相干扰；合并后的保留目录为空。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/102#issuecomment-6525069300"
+  },
+  {
+    "type": "decision",
+    "owner": "设计负责人",
+    "text": "升级须知只写 v3→v3.1，v2 指向 workflow-v3 tag 的原文。",
+    "reason": "本次是 v3 的修正版，旧迁移步骤保留单一来源。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/102#issuecomment-6525069300"
+  },
+  {
+    "type": "decision",
+    "owner": "设计负责人",
+    "text": "#99 首轮四处返工：整格链接、决定挤成两行、设计工单未知空行、任务一段挤三件事。",
+    "reason": "按 spec #27 定稿逐项核对，保持正文、决定和时间线可读。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/99#issuecomment-6525128736"
+  },
+  {
+    "type": "decision",
+    "owner": "设计负责人",
+    "text": "设计工单的图例色用 Claude 用量条的颜色。",
+    "reason": "设计工单由 Claude 执行，颜色对应成本图，并与工程首次派发区分。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/99#issuecomment-6525128736"
+  },
+  {
+    "type": "problem",
+    "label": "#97 验收漏测孤儿验证进程和嵌套验证",
+    "owner": "实现与设计负责人验收覆盖不足",
+    "impact": "收尾审查复现 P1 提前回收和 P2 死锁；#104 改为进程组回收与嵌套复用，验收补真实临时仓库场景。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/104#issuecomment-6527048905"
+  },
+  {
+    "type": "problem",
+    "label": "模板缺项被按零计入比值",
+    "owner": "模板实现与验收覆盖不足",
+    "impact": "缺失输入使对比失真；#105 修复，16 个离线场景覆盖缺项、真实零值和数据联动。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/105#issuecomment-6525530106"
+  },
+  {
+    "type": "problem",
+    "label": "#98 保护目录过宽，未对照 PathJX 目录结构",
+    "owner": "设计负责人验收遗漏",
+    "impact": "PathJX 验证 spec 的独立审查才发现测试输出删不掉；#106 把保护收窄到本 spec 的验收产物，并补回归验证。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/106#issuecomment-6527284199"
+  },
+  {
+    "type": "problem",
+    "label": "#99 第一轮不合格",
+    "owner": "模板实现与验收返工",
+    "impact": "基础布局与浏览器检查通过，但四处展示不符定稿；重新派发一次后逐项验收通过。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/99#issuecomment-6525128736"
+  },
+  {
+    "type": "problem",
+    "label": "land 99、105、104 推送遭遇 TLS 中断",
+    "owner": "网络环境",
+    "impact": "land 99 重跑同一命令从推送继续，没有重复合并；land 105、104 后两次推送中断也经重跑恢复。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/99#issuecomment-6525128736"
+  },
+  {
+    "type": "problem",
+    "label": "accept 字段内容以短横线开头时被当成选项",
+    "owner": "命令参数传递",
+    "impact": "报参数错误；改用文件参数传入验收正文，技能正文已写明这种用法。",
+    "source": "https://github.com/JinhaoFang/video-studio/blob/06fe379dd1223e8f103b0f444d5e94d79ba5cb34/.claude/skills/run-spec/SKILL.md"
+  },
+  {
+    "type": "problem",
+    "label": "主会话混有复盘和其他仓库合并",
+    "owner": "设计负责人用量归属",
+    "impact": "不能把整个会话全算给本 spec。分别报告整个会话和创建之后的范围；成本图、比值、平均上下文采用创建之后。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "problem",
+    "label": "远端 CI 因付款限制未执行验证",
+    "owner": "账号环境",
+    "impact": "运行记录为 failure 且无执行步骤；最终提交本地 pnpm verify 409 项及 17 个提交格式检查通过，远端状态仍不记为通过。",
+    "source": "https://github.com/JinhaoFang/video-studio/actions/runs/41086408933"
+  },
+  {
+    "type": "next",
+    "text": "流程发现：独立审查要核对用户故事是否反过来增加重复；逐张验收不能代替收尾时按原口径重测目标。锁的真实作业生命周期和目标仓库的目录结构，都需要组合场景验证。"
+  },
+  {
+    "type": "next",
+    "text": "下一步：PathJX 用 v3.1 跑验证 spec #233（工单 #234～#239，独立审查后已修订）：安装 v3.1、配置三项、收掉 #208 重测剩下的 U1–U7/D1–D10、验证工具链复用、清理本机 CI 旧现场、处理端到端超时，并重写 #208/#209 汇报。"
+  },
+  {
+    "type": "next",
+    "text": "PathJX #208 的目标只部分达到：重测报告最终版中，六个结果平均从 14.33 降到 7.00 个现行文件；设计负责人中途向用户报过的 12.33→6.33 是定稿前数字。本页采用最终口径，这不是本 spec 的实测成效。"
+  },
+  {
+    "type": "next",
+    "text": "遗留：模板在 #99 验收时为 76,848 字节，大于 v3 的 39,603 字节；工单没有篇幅上限，增加来自定稿样式和完整示例数据。该数为当时验收截点，不代表 #105 修复后的模板大小。"
+  },
+  {
+    "type": "next",
+    "text": "合并后：设计负责人在合并提交上打 workflow-v3.1 tag，并在空仓库实测带点 tag 的安装命令；PathJX、design-system 重装后运行 doctor，产品线机器也要重装 v3.1 并补用户级语言偏好。"
+  },
+  {
+    "type": "next",
+    "text": "平台限制：#104 的进程组行为只在 Linux 本机实测；Windows 回收时只看持锁进程，不能保证孤儿子进程已经退出，非 Linux 平台仍需对应环境实测。"
+  },
+  {
+    "type": "check",
+    "label": "验证环境与排队",
+    "text": "#97 实测环境替换和优先级、主工作区与工单 worktree 串行、land 与自定义 pr-check 共锁；#104 补测父进程被杀后子进程仍在时继续排队，退出后再运行，以及嵌套 verify 的 0/7 退出码。Linux 通过，其他平台未知。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/104#issuecomment-6527048905"
+  },
+  {
+    "type": "check",
+    "label": "删除与保护目录",
+    "text": "#98 验证匹配删除、不匹配保留；#106 的修复前回归失败、修复后通过：本 spec 验收产物与 .codex-runs 受保护，根目录下其他匹配测试输出被删。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/106#issuecomment-6527284199"
+  },
+  {
+    "type": "check",
+    "label": "模板缺项",
+    "text": "#105 的 16 个离线场景通过：缺项显示未知和已知部分合计，比值不按零算；真实零保留；375 宽无横向滚动，无新增全局名字。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/105#issuecomment-6525530106"
+  },
+  {
+    "type": "check",
+    "label": "本次报告的浏览器检查",
+    "text": "断网打开浅色、深色和 375 像素手机页面；核对零报错零警告、无新增全局名字、无横向滚动、五组目标条与一项行为表、两条主会话和三列领域表。筛选与删除数据联动结果见检查产物。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "check",
+    "label": "最终本地验证与提交格式",
+    "text": "本轮 pnpm verify：409 项通过、失败 0；提交格式检查 20 个非合并提交通过。历史 #106 截点的 17 个提交检查也通过。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "source",
+    "label": "spec #94 正文与修订记录",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94"
+  },
+  {
+    "type": "source",
+    "label": "PR #107 状态、交付和本地 Evidence",
+    "url": "https://github.com/JinhaoFang/video-studio/pull/107"
+  },
+  {
+    "type": "source",
+    "label": "目标核对六项",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "source",
+    "label": "派发前独立审查",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6524444984"
+  },
+  {
+    "type": "source",
+    "label": "收尾审查及四项发现",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6525368008"
+  },
+  {
+    "type": "source",
+    "label": "收尾取舍",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6525368008"
+  },
+  {
+    "type": "source",
+    "label": "Claude 两种用量口径",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "source",
+    "label": "Codex 派发起止与用量",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "source",
+    "label": "Codex 审查父子运行用量",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "source",
+    "label": "基线 374 项日志",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/101#issuecomment-6524683088"
+  },
+  {
+    "type": "source",
+    "label": "最终提交 409 项原日志",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "source",
+    "label": "本轮 verify（409 项）",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "source",
+    "label": "本轮提交格式检查（20 个）",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "source",
+    "label": "本次浏览器检查",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "source",
+    "label": "PathJX 验证 spec #233",
+    "url": "https://github.com/JinhaoFang/PathJX-01/issues/233"
+  },
+  {
+    "type": "ticket",
+    "id": 95,
+    "title": "docs(skills): 汇报写法以 PathJX spec #27 为底重写",
+    "role": "design",
+    "status": "已关闭",
+    "closed": "2026-10-30T13:42:18Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/95#issuecomment-6524252878"
+  },
+  {
+    "type": "ticket",
+    "id": 96,
+    "title": "feat(skills): accept 以通过关闭前核对提交已合并",
+    "role": "engineering",
+    "status": "已关闭",
+    "closed": "2026-10-30T14:05:10Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/96#issuecomment-6524736413"
+  },
+  {
+    "type": "ticket",
+    "id": 97,
+    "title": "feat(skills): 新增验证环境和验证排队两个可选配置",
+    "role": "engineering",
+    "status": "已关闭",
+    "closed": "2026-10-30T14:06:57Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/97#issuecomment-6524774049"
+  },
+  {
+    "type": "ticket",
+    "id": 98,
+    "title": "feat(skills): land 直接删除配置列出的验证副产物",
+    "role": "engineering",
+    "status": "已关闭",
+    "closed": "2026-10-30T14:19:05Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/98#issuecomment-6525030499"
+  },
+  {
+    "type": "ticket",
+    "id": 99,
+    "title": "feat(skills): 以 spec #27 的汇报为底重做汇报模板",
+    "role": "engineering",
+    "status": "已关闭",
+    "closed": "2026-10-30T14:24:35Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/99#issuecomment-6525128736"
+  },
+  {
+    "type": "ticket",
+    "id": 100,
+    "title": "docs(skills): 判定标准第二版、文档生命周期和目标核对写进技能",
+    "role": "design",
+    "status": "已关闭",
+    "closed": "2026-10-30T13:46:30Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/100#issuecomment-6524339065"
+  },
+  {
+    "type": "ticket",
+    "id": 101,
+    "title": "docs(repo): 按判定标准第二版重排本仓库规则",
+    "role": "design",
+    "status": "已关闭",
+    "closed": "2026-10-30T14:02:39Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/101#issuecomment-6524683088"
+  },
+  {
+    "type": "ticket",
+    "id": 102,
+    "title": "docs(workflow): 配置说明、升级须知和版本号切到 v3.1",
+    "role": "design",
+    "status": "已关闭",
+    "closed": "2026-10-30T14:20:55Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/102#issuecomment-6525069300"
+  },
+  {
+    "type": "ticket",
+    "id": 103,
+    "title": "chore(repo): 卸掉 design-system 的 dual-role-workflow",
+    "role": "design",
+    "status": "已关闭",
+    "closed": "2026-10-30T13:56:33Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/103#issuecomment-6524555285"
+  },
+  {
+    "type": "ticket",
+    "id": 104,
+    "title": "fix(skills): 验证锁回收覆盖整个验证作业，嵌套调用继承锁",
+    "role": "engineering",
+    "status": "已关闭",
+    "closed": "2026-10-30T15:51:57Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/104#issuecomment-6527048905"
+  },
+  {
+    "type": "ticket",
+    "id": 105,
+    "title": "fix(skills): 汇报模板的用量缺项不按零算",
+    "role": "engineering",
+    "status": "已关闭",
+    "closed": "2026-10-30T14:44:06Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/105#issuecomment-6525530106"
+  },
+  {
+    "type": "ticket",
+    "id": 106,
+    "title": "fix(skills): disposableIgnored 只保护本 spec 的验收产物目录",
+    "role": "engineering",
+    "status": "已关闭",
+    "closed": "2026-10-30T16:02:53Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/106#issuecomment-6527284199"
+  },
+  {
+    "type": "ticket",
+    "id": 108,
+    "title": "fix(skills): 汇报模板的目标核对支持多项，去掉写死的示例文字",
+    "role": "engineering",
+    "status": "已关闭",
+    "closed": "2026-10-30T17:35:02Z",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/108#issuecomment-6529229570"
+  },
+  {
+    "type": "dispatch",
+    "id": "gh-96",
+    "label": "accept 核对远端提交",
+    "kind": "feature",
+    "start": "2026-10-30T21:51:53+08:00",
+    "minutes": 8.55,
+    "input": 1424694,
+    "cacheRead": 1365120,
+    "output": 17646,
+    "status": "已完成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/96#issuecomment-6524736413"
+  },
+  {
+    "type": "dispatch",
+    "id": "gh-97",
+    "label": "验证环境与验证排队",
+    "kind": "feature",
+    "start": "2026-10-30T21:52:15+08:00",
+    "minutes": 11.7,
+    "input": 2397974,
+    "cacheRead": 2281984,
+    "output": 25984,
+    "status": "已完成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/97#issuecomment-6524774049"
+  },
+  {
+    "type": "dispatch",
+    "id": "gh-98",
+    "label": "删除匹配的验证副产物",
+    "kind": "feature",
+    "start": "2026-10-30T22:07:17+08:00",
+    "minutes": 9.966666666666667,
+    "input": 1594429,
+    "cacheRead": 1528448,
+    "output": 19362,
+    "status": "已完成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/98#issuecomment-6525030499"
+  },
+  {
+    "type": "dispatch",
+    "id": "gh-99",
+    "label": "汇报模板首轮",
+    "kind": "feature",
+    "start": "2026-10-30T22:00:32+08:00",
+    "minutes": 11.766666666666667,
+    "input": 2903984,
+    "cacheRead": 2804480,
+    "output": 31231,
+    "status": "首轮需返工，已由 gh-99-2 完成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/99#issuecomment-6524916211"
+  },
+  {
+    "type": "dispatch",
+    "id": "gh-99-2",
+    "label": "汇报模板四处返工",
+    "kind": "rework",
+    "start": "2026-10-30T22:13:49+08:00",
+    "minutes": 8.016666666666667,
+    "input": 1806680,
+    "cacheRead": 1707904,
+    "output": 18024,
+    "status": "已完成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/99#issuecomment-6525128736"
+  },
+  {
+    "type": "dispatch",
+    "id": "review-94-final",
+    "label": "收尾审查：全部批次合审",
+    "kind": "review",
+    "start": "2026-10-30T22:24:50+08:00",
+    "minutes": 9.033333333333333,
+    "input": 2546291,
+    "cacheRead": 2435328,
+    "output": 10579,
+    "status": "已完成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6525368008"
+  },
+  {
+    "type": "dispatch",
+    "id": "gh-104",
+    "label": "验证锁按进程组回收及嵌套复用",
+    "kind": "rework",
+    "start": "2026-10-30T22:35:02+08:00",
+    "minutes": 19.1,
+    "input": 1893089,
+    "cacheRead": 1817344,
+    "output": 30758,
+    "status": "已完成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/104#issuecomment-6527048905"
+  },
+  {
+    "type": "dispatch",
+    "id": "gh-105",
+    "label": "模板缺项保留未知",
+    "kind": "rework",
+    "start": "2026-10-30T22:35:30+08:00",
+    "minutes": 6.683333333333334,
+    "input": 1050084,
+    "cacheRead": 994944,
+    "output": 16186,
+    "status": "已完成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/105#issuecomment-6525530106"
+  },
+  {
+    "type": "dispatch",
+    "id": "gh-106",
+    "label": "只保护本 spec 的验收产物",
+    "kind": "rework",
+    "start": "2026-10-30T23:53:16+08:00",
+    "minutes": 6.583333333333333,
+    "input": 1207103,
+    "cacheRead": 1144064,
+    "output": 12459,
+    "status": "已完成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/106#issuecomment-6527284199"
+  },
+  {
+    "type": "dispatch",
+    "id": "review-94-report",
+    "label": "首轮编写本 spec 汇报",
+    "kind": "long",
+    "status": "首轮草稿完成；模板问题经 #108 修复，本页已重写",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362",
+    "start": "2026-10-31T00:04:34+08:00",
+    "minutes": 17.25,
+    "input": 2682921,
+    "cacheRead": 2591360,
+    "output": 34402
+  },
+  {
+    "type": "dispatch",
+    "id": "gh-108",
+    "label": "模板多项目标与数据适配返工",
+    "kind": "rework",
+    "status": "已完成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/108#issuecomment-6529229570",
+    "start": "2026-10-31T00:24:08+08:00",
+    "minutes": 11.516666666666667,
+    "input": 2329040,
+    "cacheRead": 2264064,
+    "output": 26383
+  },
+  {
+    "type": "session",
+    "id": "design-main-whole-session",
+    "label": "设计负责人主会话 · 整个会话",
+    "compare": false,
+    "replies": 343,
+    "minutes": 270.93106666666665,
+    "input": 69332112,
+    "cacheRead": 68655234,
+    "cacheWrite": 676178,
+    "output": 261596,
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "session",
+    "id": "design-main-since-spec-created",
+    "label": "设计负责人主会话 · spec 创建之后",
+    "compare": true,
+    "replies": 261,
+    "minutes": 241.01883333333333,
+    "input": 57807350,
+    "cacheRead": 57371524,
+    "cacheWrite": 435292,
+    "output": 185093,
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "goal",
+    "label": "accept 在 #211 场景下拒绝关闭",
+    "before": "通过并关闭（#211 后来重开更正）",
+    "after": "退出 1，提示先 land，不写 GitHub",
+    "unit": "",
+    "method": "本仓库用只在工单分支上的提交 18f0ddb 跑 accept 99 --result 通过 --dry-run；#96 另有临时仓库加 bare origin 的复现。",
+    "conclusion": "达成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "goal",
+    "label": "角色模板生成部分的篇幅",
+    "before": 6632,
+    "after": 6632,
+    "unit": "字节",
+    "method": "roles.md 生成用代码块的 UTF-8 字节合计，按同一提取口径（roles.md 里代码块内的字节合计）；不超过 workflow-v3。",
+    "conclusion": "达成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "goal",
+    "label": "本仓库六份规则文档的篇幅",
+    "before": 35723,
+    "after": 33456,
+    "unit": "字节",
+    "method": "固定六份文档，基线 0384743，wc -c 合计；减少 2,267 字节（6.3%）。截点为 #101 重排，不把后续 #102 配置说明新增量混入预算。",
+    "conclusion": "达成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "goal",
+    "label": "本仓库规则里的个人偏好",
+    "before": 1,
+    "after": 0,
+    "unit": "条",
+    "method": "逐条对照判定标准第二版；改前有对话和思考语言一条，改后移至用户级。",
+    "conclusion": "达成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/101#issuecomment-6524683088"
+  },
+  {
+    "type": "goal",
+    "label": "dual-role-workflow 的安装处",
+    "before": 2,
+    "after": 0,
+    "unit": "处",
+    "method": "核对 video-studio 主工作区、design-system 和用户级技能目录；两处旧安装均已卸载。",
+    "conclusion": "达成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "goal",
+    "label": "汇报模板里的四类图",
+    "before": 4,
+    "after": 0,
+    "unit": "类",
+    "method": "搜索模板文字和图元素：累计输出折线、按处理方式分组的发现图、通用分工流程图、和上一期比用量均已删除。",
+    "conclusion": "达成",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "domain",
+    "cells": [
+      "verificationEnv",
+      "{}",
+      "字符串到字符串的验证环境；{mainRoot} 替换为主工作区路径，进程已有值优先。供验证、安装和派发使用；实际值进派发记录，不放密钥。"
+    ]
+  },
+  {
+    "type": "domain",
+    "cells": [
+      "exclusiveVerification",
+      "false",
+      "完整验证按仓库共用锁排队；verify、land 及自定义 pr-check 共用。Linux 按作业进程组回收，同一作业嵌套沿用锁；Windows 仅看持锁进程。"
+    ]
+  },
+  {
+    "type": "domain",
+    "cells": [
+      "disposableIgnored",
+      "[]",
+      "land 按 gitignore 模式直接删除被忽略副产物；保护 .codex-runs 和 acceptanceRoot/spec-<S>/，验收根目录下其他测试输出仍可匹配删除。"
+    ]
+  },
+  {
+    "type": "domain",
+    "cells": [
+      "accept --no-commits",
+      "不启用",
+      "没有提交的只读工单必须显式声明才可通过关闭；有提交逐个核对远端集成分支。需返工不做提交核对。"
+    ]
+  },
+  {
+    "type": "milestone",
+    "at": "2026-10-31T00:21:49+08:00",
+    "label": "首轮汇报完成，发现模板适配问题",
+    "detail": "模板写死 #77 的形状；先保存草稿，再开 #108 修复。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "milestone",
+    "at": "2026-10-30T17:35:02Z",
+    "label": "#108 验收通过，13 张工单全部关闭",
+    "detail": "模板多目标、主会话与三列表格实测通过；集成头 06fe379，本轮 409 项与 20 个提交格式检查通过，PR 待合并。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/108#issuecomment-6529229570"
+  },
+  {
+    "type": "problem",
+    "label": "用模板写本 spec 汇报才发现写死了 #77 的形状",
+    "owner": "模板实现与设计负责人验收遗漏",
+    "impact": "多项目标无法完整表达，关键实测整格是链接，成本说明固定；开 #108 改为由 data 驱动，修复后按新格式重写本汇报。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/108#issuecomment-6529229570"
+  },
+  {
+    "type": "gap",
+    "label": "目标核对六项",
+    "text": "goal-check.md 每项各一条 goal；两项篇幅与三项计数共五组对比条，accept 行为一项列表。六项均达成；PathJX 尚待实测的实际效果不算进本 spec。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "gap",
+    "label": "规则篇幅的范围与截点",
+    "text": "角色模板为生成用代码块合计；六份仓库文档对照基线 0384743，截点为 #101 重排。33,456 字节不是整个最终工作区的文档总量，后续配置说明新增量不混入预算。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/101#issuecomment-6524683088"
+  },
+  {
+    "type": "gap",
+    "label": "主会话 · 整个会话",
+    "text": "从首条带用量的回复 2026-10-30T13:04:34.266Z 至 2026-10-30T17:35:30.130Z，共 343 次去重回复；输入 69,332,112，其中缓存读取 68,655,234、创建 676,178，输出 261,596 tokens。包含 21:04 开始的 v3 复盘和 PathJX PR #227、#228 合并，不能全算给本 spec；只单列，不参与对比。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "gap",
+    "label": "主会话 · spec 创建之后",
+    "text": "起点 2026-10-30T13:34:29Z，末条用量 2026-10-30T17:35:30.130Z；261 次回复，输入 57,807,350，缓存读取 57,371,524、创建 435,292，输出 185,093 tokens。唯一 compare: true，用于图、比值和平均上下文；时间切分仍不能完全剥离跨仓库操作。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "gap",
+    "label": "主会话统计方法",
+    "text": "按 message.id 去重取最后 usage，跳过 isSidechain。输入=新输入+缓存读取+缓存创建，平均上下文=含缓存输入÷该范围回复数。两条主会话互相包含、不可相加；分钟是各自覆盖区间。当前重写的派发尚未结束，未纳入；主会话用量已更新到 #108 验收后。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "gap",
+    "label": "Codex 与审查子代理",
+    "text": "工程 token 与验收评论逐项交叉核对；收尾审查和首轮汇报补自原始日志最后 turn.completed。两个收尾子代理按 session_meta 父线程关联并读最后 total_token_usage，独立计费量与父运行分别列。分钟含并行与嵌套，不能相加为墙钟。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "gap",
+    "label": "派发次数与日期",
+    "text": "共 10 次工程派发：8 张工程工单，#99 额外返工一次，再加首轮写汇报 review-94-report；另 1 次收尾审查父运行，总计 11 次。#108 归返工，review-94-report 实际为写汇报，归长作业；claude -p 和两个审查子代理另列。日志首末秒级时间优先于评论的约数，两次补录按 10 月 31 日记录。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "gap",
+    "label": "设计工单时间",
+    "text": "5 张设计工单只有验收关闭时刻；开工、结束和活跃耗时未知。甘特图中的点仅代表关闭，不用提交时间倒推开工。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94"
+  },
+  {
+    "type": "gap",
+    "label": "Claude 独立审查与额外子代理",
+    "text": "派发前 claude -p 的 durationMs 与 usage 取 review-spec-94-1.json，输入含缓存创建，用量齐全。未发现其他带实际数值的 Claude subagent_tokens 通知；额外子代理用量未知，不按零算。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6524444984"
+  },
+  {
+    "type": "gap",
+    "label": "测试与提交检查截点",
+    "text": "374 项取自 #101 验收时的 pnpm verify（只改文档，等于基线 0384743 的测试集合）；409 项取自 56a36c5 上的 pnpm verify。#108 后 06fe379 本轮再跑仍为 409 项。17 个提交格式通过是 #106 收尾时的历史记录；含路线图收尾与 #108 两提交后，本轮检查 20 个非合并提交通过，两种截点均保留。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "gap",
+    "label": "审查清单覆盖",
+    "text": "派发前只列三项必须改，收尾列四项全部发现，PathJX 验证 spec 只列关联 #106 的一项，共八项，不是三份全文的总发现数。#104/#105 合入后未单独复审，按验收实测收尾；#108 来自套用汇报时的发现，列在问题表，不虚构独立审查。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6525368008"
+  },
+  {
+    "type": "gap",
+    "label": "模板与证据链接",
+    "text": "从集成分支 06fe379 的最新模板复制，仅替换文件头、title 与 data；六个 goal、两条 session、domain.cells 三列均用新格式。repoUrl、sourceRef 和本地验证证据由 data 提供，不保留旧 #77 的固定片段。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "gap",
+    "label": "PR、CI 与发布截点",
+    "text": "PR #107 待合并，头提交 06fe379。运行 41086408933 为 failure、无执行步骤；付款限制按 brief 与 PR 说明记录，不能当 CI 通过。发布 tag、空仓安装和跨仓重装均是合并后事项，本页不宣称完成。页面截点为本轮采集时刻，主会话末条时间分别列明。",
+    "source": "https://github.com/JinhaoFang/video-studio/pull/107"
+  },
+  {
+    "type": "check",
+    "label": "模板的多项数据支持",
+    "text": "#108 的 14 组数据、20 次断网检查通过：目标汇总、多条主会话的唯一 compare、三列领域表和句末证据链接正确，原示例其余数字不变。本汇报按新格式重写并再次实测。",
+    "source": "https://github.com/JinhaoFang/video-studio/issues/108#issuecomment-6529229570"
+  },
+  {
+    "type": "source",
+    "label": "#108 模板返工验收",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/108#issuecomment-6529229570"
+  },
+  {
+    "type": "source",
+    "label": "历史 17 个提交格式检查",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  },
+  {
+    "type": "source",
+    "label": "首轮写汇报的派发记录",
+    "url": "https://github.com/JinhaoFang/video-studio/issues/94#issuecomment-6530845362"
+  }
+];
+        const of = (type) => data.filter((entry) => entry.type === type);
+        const meta = of("report")[0];
+        const tickets = of("ticket");
+        const dispatches = of("dispatch");
+        const children = of("subagent").filter((entry) =>
+          dispatches.some((run) => run.id === entry.parent),
+        );
+        const findings = of("finding");
+        const sessions = of("session");
+        const independent = of("independent");
+        const engineering = dispatches.filter(
+          (entry) => entry.kind !== "review",
+        );
+        const reviews = dispatches.filter((entry) => entry.kind === "review");
+        const codex = [...dispatches, ...children];
+        const kinds = {
+          feature: { label: "首次", color: "var(--a)" },
+          rework: { label: "返工", color: "var(--b)" },
+          review: { label: "审查", color: "var(--c)" },
+          long: { label: "长作业", color: "var(--muted)" },
+          design: { label: "设计工单", color: "var(--d)" },
+        };
+        const slot = (name) => document.querySelector(`[data-slot="${name}"]`);
+        const element = (tag, className, text) => {
+          const node = document.createElement(tag);
+          if (className) node.className = className;
+          if (text !== undefined) node.textContent = text;
+          return node;
+        };
+        const text = (name, value) => {
+          slot(name).textContent = value;
+        };
+        const format = (value, digits = 0) =>
+          value == null
+            ? "未知"
+            : value.toLocaleString("en-US", {
+                maximumFractionDigits: digits,
+                minimumFractionDigits: digits,
+              });
+        const sum = (entries, ...keys) => {
+          const values = entries.flatMap((entry) =>
+            keys.map((key) => entry[key]),
+          );
+          const knownValues = values.filter((value) => value != null);
+          return {
+            value: knownValues.length
+              ? knownValues.reduce((total, value) => total + value, 0)
+              : null,
+            missing: values.length - knownValues.length,
+          };
+        };
+        const subtotal = ({ value, missing = 0 }, digits = 0, unit = "") =>
+          value == null
+            ? `未知${missing ? `（缺 ${format(missing)} 项）` : ""}`
+            : `${format(value, digits)}${unit}${missing ? `（已知部分合计，缺 ${format(missing)} 项）` : ""}`;
+        const known = (entries, key, digits = 0, unit = "") =>
+          entries.length ? subtotal(sum(entries, key), digits, unit) : "无记录";
+        const percent = (value, maximum) =>
+          maximum > 0 ? Math.max(0, Math.min(100, (value / maximum) * 100)) : 0;
+        const ratio = (numerator, denominator) =>
+          numerator.value == null ||
+          denominator.value == null ||
+          numerator.missing ||
+          denominator.missing
+            ? "未知"
+            : denominator.value > 0
+              ? `${format(numerator.value / denominator.value, 2)} 倍`
+              : "未知（分母无有效记录）";
+        const repo = meta.repoUrl;
+        const link = (url, label) => {
+          const node = element("a", "", label);
+          node.href = url.startsWith("docs/")
+            ? `${repo}/blob/${meta.sourceRef}/${url}`
+            : url;
+          return node;
+        };
+        const issue = (number) =>
+          link(`${repo}/issues/${number}`, `#${number}`);
+        const evidence = (label, url) => link(url, label);
+        const statement = (value, url) => {
+          const node = element("span", "", value);
+          if (url) node.append(" ", link(url, "证据"));
+          return node;
+        };
+        const dated = (value, options) =>
+          new Intl.DateTimeFormat("zh-CN", {
+            timeZone: meta.timezone,
+            hour12: false,
+            ...options,
+          }).format(new Date(value));
+        const day = (value) =>
+          dated(value, { year: "numeric", month: "2-digit", day: "2-digit" });
+        const time = (value) =>
+          value
+            ? dated(value, {
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "未知";
+        const table = (name, headings, rows) => {
+          const node = element("table", "responsive");
+          const header = element("thead");
+          const headingRow = element("tr");
+          for (const heading of headings) {
+            const cell = element("th", "", heading);
+            cell.scope = "col";
+            headingRow.append(cell);
+          }
+          header.append(headingRow);
+          const body = element("tbody");
+          for (const values of rows) {
+            const row = element("tr");
+            for (const [index, value] of values.entries()) {
+              const cell = element("td");
+              cell.dataset.label = headings[index];
+              const content = element("span");
+              content.append(
+                value instanceof Node
+                  ? value
+                  : document.createTextNode(String(value)),
+              );
+              cell.append(content);
+              row.append(cell);
+            }
+            body.append(row);
+          }
+          node.append(header, body);
+          slot(name).replaceChildren(node);
+        };
+        const comparison = (parent, label, entries) => {
+          const row = element("div", "bar-row");
+          row.append(element("div", "", label));
+          const group = element("div", "bar-group");
+          const maximum = Math.max(
+            0,
+            ...entries
+              .filter((entry) => entry.value != null)
+              .map((entry) => entry.value),
+          );
+          for (const entry of entries) {
+            const track = element("div", "compare-bar");
+            if (entry.value != null) {
+              const fill = element("span", "compare-fill");
+              fill.style.width = `${percent(entry.value, maximum)}%`;
+              fill.style.background = entry.color;
+              track.append(fill);
+            }
+            track.append(
+              element(
+                "span",
+                "compare-value",
+                `${entry.label} ${subtotal(entry, 0, ` ${entry.unit}`)}`,
+              ),
+            );
+            group.append(track);
+          }
+          row.append(group);
+          parent.append(row);
+        };
+        document.title = `Spec #${meta.spec}：${meta.title}`;
+        text("title", document.title);
+        slot("subtitle").append(
+          `${meta.date} · 设计负责人汇报 · `,
+          issue(meta.spec),
+          " · ",
+          link(`${repo}/pull/${meta.pr}`, `PR #${meta.pr} · ${meta.prState}`),
+        );
+        const goals = of("goal");
+        const achieved = goals.filter(
+          (goal) => goal.conclusion === "达成",
+        ).length;
+        for (const [value, label] of [
+          [
+            format(tickets.length),
+            `张子工单，已关闭 ${format(tickets.filter((entry) => entry.status === "已关闭").length)}`,
+          ],
+          [format(dispatches.length), "次有用量记录的 Codex 派发与审查"],
+          [
+            known(dispatches, "minutes", 1, " 分"),
+            "派发累计用时，含并行，不含子代理",
+          ],
+          [format(meta.testsAfter), "项最终提交本地测试通过"],
+          [`${format(achieved)}/${format(goals.length)}`, "目标"],
+          [format(findings.length), "项本页列出的审查发现"],
+        ]) {
+          const card = element("div", "kpi");
+          card.append(element("b", "", value), element("span", "", label));
+          slot("kpis").append(card);
+        }
+        text("task", `${meta.goal} ${meta.scope}`);
+        slot("result").append(element("b", "", "结果："), meta.result);
+        slot("delivery-status").append(
+          link(`${repo}/pull/${meta.pr}`, `PR #${meta.pr} · ${meta.prState}`),
+          "；CI：",
+          link(meta.ciUrl, meta.ciStatus),
+          `。本地：${meta.localVerification}。`,
+        );
+        text("limit", meta.limit);
+        table(
+          "deliverables",
+          ["交付", "工单", "对用户的意义"],
+          of("delivery").map((entry) => {
+            const links = element("span");
+            for (const [index, number] of entry.tickets.entries()) {
+              if (index) links.append("、");
+              links.append(issue(number));
+            }
+            return [entry.label, links, entry.meaning];
+          }),
+        );
+        const goalCounts = [
+          `${format(achieved)} 项达成`,
+          ...["部分达成", "未达成"].flatMap((conclusion) => {
+            const count = goals.filter(
+              (goal) => goal.conclusion === conclusion,
+            ).length;
+            return count ? [`${format(count)} 项${conclusion}`] : [];
+          }),
+        ];
+        const unknownGoals = goals.filter(
+          (goal) => !["达成", "部分达成", "未达成"].includes(goal.conclusion),
+        ).length;
+        if (unknownGoals) goalCounts.push(`${format(unknownGoals)} 项结论未知`);
+        text(
+          "goal-summary",
+          `${format(goals.length)} 项目标：${goalCounts.join("，")}。`,
+        );
+        const numericGoals = goals.filter(
+          (goal) =>
+            Number.isFinite(goal.before) &&
+            Number.isFinite(goal.after) &&
+            typeof goal.unit === "string" &&
+            goal.unit.trim(),
+        );
+        for (const goal of numericGoals) {
+          comparison(slot("goals"), goal.label, [
+            {
+              label: goal.beforeLabel ?? "改前",
+              value: goal.before,
+              unit: goal.unit,
+              color: "var(--a)",
+            },
+            {
+              label: goal.afterLabel ?? "改后",
+              value: goal.after,
+              unit: goal.unit,
+              color: "var(--d)",
+            },
+          ]);
+          const method = element("p", "sub");
+          method.append(
+            statement(
+              `结论：${goal.conclusion ?? "未知"}。${goal.method ?? "方法未知"}`,
+              goal.source,
+            ),
+          );
+          slot("goals").append(method);
+        }
+        const otherGoals = goals.filter((goal) => !numericGoals.includes(goal));
+        if (otherGoals.length)
+          table(
+            "goal-table",
+            ["目标", "改前", "改后", "单位", "方法", "结论与证据"],
+            otherGoals.map((goal) => [
+              goal.label,
+              format(goal.before),
+              format(goal.after),
+              goal.unit || "无",
+              goal.method ?? "未知",
+              statement(goal.conclusion ?? "未知", goal.source),
+            ]),
+          );
+        if (!goals.length)
+          slot("goals").append(
+            element(
+              "p",
+              "note",
+              "目标数据未知；请在数据口径与缺项中写明判断依据。",
+            ),
+          );
+        const domain = of("domain");
+        if (domain.length) {
+          text("domain-intro", meta.domainIntro);
+          table(
+            "domain",
+            meta.domainHeadings,
+            domain.map((entry) =>
+              meta.domainHeadings.map(
+                (_, index) => entry.cells?.[index] ?? "未知",
+              ),
+            ),
+          );
+        } else document.querySelector('[data-section="domain"]').remove();
+        table(
+          "milestones",
+          ["时间", "关键节点", "结果"],
+          of("milestone").map((entry) => [
+            time(entry.at),
+            evidence(entry.label, entry.source),
+            entry.detail,
+          ]),
+        );
+        const timeline = [
+          ...dispatches.map((entry) => ({
+            ...entry,
+            end:
+              entry.start && entry.minutes != null
+                ? new Date(
+                    Date.parse(entry.start) + entry.minutes * 60000,
+                  ).toISOString()
+                : null,
+          })),
+          ...tickets
+            .filter((entry) => entry.role === "design")
+            .map((entry) => ({
+              id: `design-${entry.id}`,
+              ticket: entry.id,
+              label: entry.title,
+              kind: "design",
+              start: entry.start ?? null,
+              end: entry.end ?? null,
+              minutes:
+                entry.minutes ??
+                (entry.start && entry.end
+                  ? (Date.parse(entry.end) - Date.parse(entry.start)) / 60000
+                  : null),
+              status: entry.status,
+              source: entry.source,
+              closed: entry.closed,
+            })),
+        ];
+        const daySelect = slot("timeline-day");
+        const kindSelect = slot("timeline-kind");
+        for (const date of [
+          ...new Set(
+            timeline
+              .filter((entry) => entry.start || entry.closed)
+              .map((entry) => day(entry.start ?? entry.closed)),
+          ),
+        ].sort()) {
+          const option = element("option", "", date);
+          option.value = date;
+          daySelect.append(option);
+        }
+        if (timeline.some((entry) => !entry.start && !entry.closed)) {
+          const option = element("option", "", "起止未知");
+          option.value = "unknown";
+          daySelect.append(option);
+        }
+        for (const [key, kind] of Object.entries(kinds)) {
+          const option = element("option", "", kind.label);
+          option.value = key;
+          kindSelect.append(option);
+          const swatch = element("span", "swatch");
+          swatch.style.background = kind.color;
+          slot("timeline-legend").append(swatch, kind.label);
+        }
+        const drawTimeline = () => {
+          const entries = timeline.filter(
+            (entry) =>
+              (kindSelect.value === "all" || entry.kind === kindSelect.value) &&
+              (daySelect.value === "all" ||
+                (entry.start || entry.closed
+                  ? day(entry.start ?? entry.closed)
+                  : "unknown") === daySelect.value),
+          );
+          const timed = entries.filter((entry) => entry.start && entry.end);
+          const milestones = entries.filter(
+            (entry) =>
+              entry.kind === "design" &&
+              !(entry.start && entry.end) &&
+              entry.closed,
+          );
+          const instants = milestones.map((entry) => Date.parse(entry.closed));
+          const start =
+            timed.length || instants.length
+              ? Math.min(
+                  ...timed.map((entry) => Date.parse(entry.start)),
+                  ...instants,
+                )
+              : 0;
+          const end =
+            timed.length || instants.length
+              ? Math.max(
+                  ...timed.map((entry) => Date.parse(entry.end)),
+                  ...instants,
+                )
+              : start;
+          const span = end - start;
+          const container = slot("timeline");
+          container.replaceChildren();
+          if (timed.length || milestones.length) {
+            const axis = element("div", "axis");
+            axis.append(
+              element("span", "", time(new Date(start).toISOString())),
+              element("span", "", "北京时间"),
+              element("span", "", time(new Date(end).toISOString())),
+            );
+            container.append(axis);
+          }
+          if (!entries.length)
+            container.append(element("p", "sub", "该筛选下无记录。"));
+          for (const entry of entries) {
+            if (milestones.includes(entry)) continue;
+            const row = element("div", "timeline-row");
+            row.dataset.run = entry.id;
+            const label = element("div", "timeline-label");
+            const detail = element("small");
+            detail.append(
+              `${time(entry.start)}–${time(entry.end)}`,
+              element("br"),
+              `${format(entry.minutes, 1)} 分 · ${entry.status}${entry.closed ? `；验收关闭 ${time(entry.closed)}` : ""}`,
+            );
+            label.append(
+              `${entry.id} · ${entry.label} · ${kinds[entry.kind].label}`,
+              detail,
+            );
+            const track = element("div", "track");
+            if (entry.start && entry.end) {
+              const bar = element("span", "bar");
+              bar.style.left = `${percent(Date.parse(entry.start) - start, span)}%`;
+              bar.style.width = `${percent(Date.parse(entry.end) - Date.parse(entry.start), span)}%`;
+              bar.style.background = kinds[entry.kind].color;
+              track.title = `${entry.id} ${time(entry.start)}–${time(entry.end)}，${format(entry.minutes, 1)} 分，${entry.status}`;
+              track.append(bar);
+            } else
+              track.append(element("span", "compare-value", "起止／分钟未知"));
+            row.append(label, track);
+            container.append(row);
+          }
+          if (milestones.length) {
+            const row = element("div", "timeline-row");
+            const label = element("div", "timeline-label", "设计工单");
+            label.append(element("small", "", "验收关闭时刻"));
+            const track = element("div", "track milestone-track");
+            for (const entry of milestones) {
+              const lane = element("div", "milestone-lane");
+              const point = evidence("", entry.source);
+              const description = `#${entry.ticket} · ${entry.label} · ${entry.status} · 验收关闭 ${time(entry.closed)}`;
+              point.className = "timeline-point";
+              point.dataset.run = entry.id;
+              point.title = description;
+              point.setAttribute("aria-label", description);
+              point.style.left = `${span > 0 ? percent(Date.parse(entry.closed) - start, span) : 50}%`;
+              point.style.background = kinds.design.color;
+              lane.append(point);
+              track.append(lane);
+            }
+            row.append(label, track);
+            container.append(row);
+          }
+          text(
+            "timeline-note",
+            `${format(entries.length)} 条当前记录；${meta.dispatchNote}`,
+          );
+        };
+        daySelect.addEventListener("change", drawTimeline);
+        kindSelect.addEventListener("change", drawTimeline);
+        drawTimeline();
+        const costRow = (label, entries) => [
+          label,
+          known(entries, "minutes", 1),
+          known(entries, "input"),
+          known(entries, "cacheRead"),
+          known(entries, "output"),
+        ];
+        const costHeadings = [
+          "范围",
+          "累计分钟",
+          "输入 tokens",
+          "其中缓存读取",
+          "输出 tokens",
+        ];
+        table("cost-summary", costHeadings, [
+          costRow("Codex 工程派发（含返工）", engineering),
+          costRow("Codex 按批与收尾审查（父运行）", reviews),
+          ...sessions.map((entry) => costRow(entry.label, [entry])),
+          costRow("Claude 独立审查", independent),
+          costRow("Codex 审查子代理", children),
+        ]);
+        const comparedSessions = sessions.filter(
+          (entry) => entry.compare === true,
+        );
+        const comparedSession =
+          comparedSessions.length === 1 ? comparedSessions[0] : null;
+        const comparisonSessions = comparedSession ? [comparedSession] : [];
+        const comparisonLabel =
+          comparedSession?.label ?? "未知（未指定唯一的对比主会话）";
+        const allCosts = [...codex, ...sessions, ...independent];
+        text(
+          "cost-note",
+          meta.costNote ??
+            `输入含缓存；其中缓存列仅列缓存读取。${allCosts.some((entry) => entry.cacheWrite != null) ? "已记录的缓存创建也计入输入。" : ""}累计用时包含并行与嵌套，不相加成墙钟时间；${format(allCosts.filter((entry) => entry.minutes == null).length)} 条记录缺用时。`,
+        );
+        text(
+          "comparison-note",
+          `用于对比的主会话：${comparisonLabel}。${meta.comparisonNote ?? `对比范围为该主会话与全部 Codex 运行（工程、审查及其子代理）；${independent.length ? `独立 Claude 审查另列：输入 ${known(independent, "input")} tokens，输出 ${known(independent, "output")} tokens。` : "无独立审查记录。"}`}`,
+        );
+        const mainInput = sum(comparisonSessions, "input"),
+          mainOutput = sum(comparisonSessions, "output");
+        const codexInput = sum(codex, "input"),
+          codexOutput = sum(codex, "output");
+        for (const [label, mainValue, codexValue] of [
+          ["输入（含缓存）", mainInput, codexInput],
+          ["输出", mainOutput, codexOutput],
+        ]) {
+          comparison(slot("cost-chart"), label, [
+            {
+              label: comparisonLabel,
+              ...mainValue,
+              unit: "tokens",
+              color: "var(--d)",
+            },
+            {
+              label: "Codex 全部",
+              ...codexValue,
+              unit: "tokens",
+              color: "var(--a)",
+            },
+          ]);
+        }
+        text(
+          "efficiency",
+          `主会话 / Codex 总用量比（输入＋输出）：${ratio(sum(comparisonSessions, "input", "output"), sum(codex, "input", "output"))}；输入比 ${ratio(mainInput, codexInput)}，输出比 ${ratio(mainOutput, codexOutput)}。主会话平均上下文：${mainInput.value != null && !mainInput.missing && comparedSession?.replies > 0 ? format(mainInput.value / comparedSession.replies) + " tokens / 回复" : "未知"}（含缓存输入 ÷ ${format(comparedSession?.replies)} 次回复）。`,
+        );
+        table(
+          "cost-detail",
+          ["派发／类别", "起止／状态", "分钟", "输入", "缓存读取", "输出"],
+          dispatches.map((entry) => {
+            const run = timeline.find((candidate) => candidate.id === entry.id);
+            return [
+              evidence(
+                `${entry.id} · ${kinds[entry.kind].label}`,
+                entry.source,
+              ),
+              `${time(run.start)}–${time(run.end)} · ${entry.status}`,
+              format(entry.minutes, 1),
+              format(entry.input),
+              format(entry.cacheRead),
+              format(entry.output),
+            ];
+          }),
+        );
+        table(
+          "other-cost",
+          costHeadings,
+          [...sessions, ...independent, ...children].map((entry) =>
+            costRow(entry.label + (entry.parent ? ` · ${entry.parent}` : ""), [
+              entry,
+            ]),
+          ),
+        );
+        const quality = slot("quality");
+        quality.append(
+          `测试基线 ${format(meta.testsBefore)} → 最终 ${format(meta.testsAfter)} 项，增加 ${meta.testsBefore != null && meta.testsAfter != null ? format(meta.testsAfter - meta.testsBefore) : "未知"} 项。CI：`,
+          link(meta.ciUrl, meta.ciStatus),
+          "；本地：",
+          statement(
+            meta.localVerification ?? "未知",
+            meta.localVerificationUrl,
+          ),
+          "。",
+        );
+        table(
+          "checks",
+          ["关键实测", "结论与证据"],
+          of("check").map((entry) => [
+            entry.label,
+            statement(entry.text, entry.source),
+          ]),
+        );
+        text(
+          "finding-note",
+          `本页逐项列出 ${format(findings.length)} 项发现；表中发现数由清单计算，覆盖口径见数据口径与缺项。`,
+        );
+        table(
+          "reviews",
+          ["审查", "状态", "本页发现数", "取舍"],
+          of("review").map((entry) => [
+            evidence(entry.label, entry.source),
+            entry.status,
+            format(
+              findings.filter((finding) => finding.review === entry.id).length,
+            ),
+            entry.note,
+          ]),
+        );
+        table(
+          "findings",
+          ["发现", "来源", "处理", "状态"],
+          findings.map((entry) => {
+            const review = of("review").find(
+              (candidate) => candidate.id === entry.review,
+            );
+            return [
+              `${entry.severity} · ${entry.label}`,
+              review ? evidence(review.label, review.source) : entry.review,
+              `${entry.handling}：${entry.detail}`,
+              entry.status,
+            ];
+          }),
+        );
+        table(
+          "decisions",
+          ["谁", "决定", "理由"],
+          of("decision").map((entry) => [
+            entry.owner,
+            statement(entry.text, entry.source),
+            entry.reason,
+          ]),
+        );
+        table(
+          "problems",
+          ["问题与责任", "影响与处理"],
+          of("problem").map((entry) => [
+            `${entry.label}（${entry.owner}）`,
+            statement(entry.impact, entry.source),
+          ]),
+        );
+        for (const entry of of("next"))
+          slot("next").append(element("li", "", entry.text));
+        table(
+          "gaps",
+          ["口径／缺项", "说明"],
+          of("gap").map((entry) => [
+            entry.label,
+            statement(entry.text, entry.source),
+          ]),
+        );
+        for (const entry of of("source")) {
+          const item = element("li");
+          item.append(evidence(entry.label, entry.url));
+          slot("sources").append(item);
+        }
+        slot("footer").append(
+          `数据截点：${time(meta.asOf)}（${meta.timezone}）；主会话用量截点见数据口径。来源：`,
+        );
+        for (const [index, entry] of of("source").entries()) {
+          if (index) slot("footer").append(" · ");
+          slot("footer").append(evidence(entry.label, entry.url));
+        }
+      }
+    </script>
+  </body>
+</html>
