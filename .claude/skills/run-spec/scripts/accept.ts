@@ -4,9 +4,13 @@
  * worktree, deduplicating copied records by name. Duration comes from the
  * progress footer; tokens (including cached input) come from raw .log
  * turn.completed usage. Missing/changed formats are marked incomplete.
- * --dry-run still reads GitHub but only prints write arguments and the
- * acceptance comment preview. Comment files are temporary and removed after
- * each run. Established in #4: CLI option names.
+ * Passing acceptance requires every 7+ digit hexadecimal commit in the commits
+ * field to be an ancestor of the freshly fetched origin integration branch.
+ * Reuse land's parent/spec branch lookup; report unpushed, unlanded and unknown
+ * commits before writing GitHub. --no-commits explicitly permits read-only work
+ * without commit IDs. Rework skips both checks. --dry-run also checks commits
+ * but only prints write arguments and the acceptance comment preview. Comment
+ * files are temporary and removed after each run. Established in #4: option names.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -22,15 +26,78 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   entry,
+  CheckFailure,
+  git,
   github,
   matchesRecord,
   recordName,
+  ticketIntegration,
   usageError,
   type Command,
   type Values,
 } from "./shared.ts";
 
 const fields = ["commits", "verification", "design", "remaining"];
+
+const checkCommits = (commits: string[], endpoint: string): void => {
+  const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
+  const { integration } = ticketIntegration(root, endpoint);
+  git(root, [
+    "fetch",
+    "--prune",
+    "origin",
+    "+refs/heads/*:refs/remotes/origin/*",
+  ]);
+  const remote = `refs/remotes/origin/${integration}`;
+  const remoteExists = git(root, [
+    "for-each-ref",
+    "--format=%(refname)",
+    remote,
+  ])
+    .split("\n")
+    .includes(remote);
+  const contains = (commit: string, branch: string): boolean => {
+    const result = spawnSync(
+      "git",
+      ["merge-base", "--is-ancestor", commit, branch],
+      { cwd: root, encoding: "utf8" },
+    );
+    if (result.error || (result.status !== 0 && result.status !== 1))
+      throw new Error(
+        `git 核对提交失败：${result.stderr?.trim() || "请检查仓库状态"}`,
+      );
+    return result.status === 0;
+  };
+  const failures: string[] = [];
+  for (const commit of commits) {
+    const resolved = spawnSync(
+      "git",
+      ["rev-parse", "--verify", "--quiet", `${commit}^{commit}`],
+      { cwd: root, encoding: "utf8" },
+    );
+    if (resolved.error || (resolved.status !== 0 && resolved.status !== 1))
+      throw new Error(
+        `git 解析提交失败：${resolved.stderr?.trim() || "请检查仓库状态"}`,
+      );
+    if (resolved.status !== 0) {
+      failures.push(
+        `提交 ${commit} 不是本仓库可识别的提交（不存在、不是提交对象或提交号不唯一）。`,
+      );
+      continue;
+    }
+    const hash = resolved.stdout.trim();
+    if (remoteExists && contains(hash, remote)) continue;
+    failures.push(
+      contains(hash, `refs/heads/${integration}`)
+        ? `提交 ${commit} 只在本地集成分支 ${integration} 上，远端 origin/${integration} 没有；请先推送集成分支。`
+        : `提交 ${commit} 尚未合入集成分支 ${integration}；请先运行 land。`,
+    );
+  }
+  if (failures.length) throw new CheckFailure(failures.join("\n"));
+  console.log(
+    `提交核对通过：${commits.join("、")} 均已在远端 origin/${integration} 上。`,
+  );
+};
 
 const acceptanceDispatches = (ticket: number): string[] => {
   const trees = spawnSync("git", ["worktree", "list", "--porcelain"], {
@@ -130,6 +197,25 @@ const accept = (values: Values, numbers: number[]): void => {
     if (!content.trim()) throw new Error(`${field} 不能为空`);
     return content.replace(/\r\n/g, "\n").trimEnd();
   });
+  const commits = [
+    ...new Set(
+      (contents[0].match(/\b[0-9a-f]{7,}\b/gi) ?? []).map((hash) =>
+        hash.toLowerCase(),
+      ),
+    ),
+  ];
+  if (values.result === "通过") {
+    if (!commits.length && !values["no-commits"])
+      throw usageError(
+        "「提交」字段没有提交号；只读工单请显式添加 --no-commits。",
+        acceptCommand.help,
+      );
+    if (commits.length && values["no-commits"])
+      throw usageError(
+        "--no-commits 不能与「提交」字段中的提交号同时使用。",
+        acceptCommand.help,
+      );
+  }
   const number = numbers[0];
   const dispatches = acceptanceDispatches(number);
   if (dispatches.length) contents[1] += `\n${dispatches.join("\n")}`;
@@ -140,8 +226,13 @@ const accept = (values: Values, numbers: number[]): void => {
       return `- ${labels[index]}：${first}${rest.map((line) => `\n  ${line}`).join("")}`;
     })
     .join("\n")}\n`;
-  const { repo, issue, write } = github(Boolean(values["dry-run"]));
+  const { repo, endpoint, issue, write } = github(Boolean(values["dry-run"]));
   issue(number);
+  if (values.result === "通过") {
+    if (commits.length) checkCommits(commits, endpoint(number));
+    else if (values["dry-run"])
+      console.log("提交核对：已用 --no-commits 明确本工单没有提交号。");
+  }
   const directory = mkdtempSync(join(tmpdir(), "studio-accept-"));
   try {
     const path = join(directory, "comment.md");
@@ -169,6 +260,7 @@ const accept = (values: Values, numbers: number[]): void => {
 export const acceptCommand: Command = {
   options: Object.fromEntries([
     ["result", { type: "string" }],
+    ["no-commits", { type: "boolean" }],
     ...fields.flatMap((field) => [
       [field, { type: "string" }],
       [`${field}-file`, { type: "string" }],
@@ -178,13 +270,18 @@ export const acceptCommand: Command = {
   execute: accept,
   help: `${entry} accept <工单> --result <通过|需返工>
   --commits <提交> --verification <验证> --design <TODO(design) 与推断处理>
-  --remaining <遗留> [--dry-run]
+  --remaining <遗留> [--no-commits] [--dry-run]
 四个字段支持包含换行的单个参数；也可用对应的 --commits-file、
 --verification-file、--design-file、--remaining-file 读取 UTF-8 文件。
 同一字段的文本和文件参数不能同时使用，所有字段必填。
 自动在「验证」中附主工作区与本工单 worktree 的派发数据（含返工）。
 复制的同名记录只写一次；缺失用时或 token 数据时标为「不完整」。
-通过：评论成功后关闭；需返工：只评论。
---dry-run 查询工单，打印评论预览和写操作的 gh 参数数组，不写 GitHub。
+通过：先取 origin，核对「提交」字段每个至少 7 位的十六进制提交号
+都已在父 spec 的远端集成分支上，再评论并关闭。分支查找与 land 相同。
+只在本地集成分支上时提示先推送；尚未合入时提示先运行 land；
+不是本仓库的提交时照实报告。核对未通过以 1 退出，不写 GitHub。
+没有提交号的只读工单必须加 --no-commits；缺少它或它与提交号并存时
+以 2 退出。需返工：不核对提交，忽略 --no-commits，只评论。
+--dry-run 也核对并打印结果、评论预览和写操作的 gh 参数数组，不写 GitHub。
 评论通过临时 UTF-8 文件传给 gh --body-file；运行结束后删除。`,
 };
