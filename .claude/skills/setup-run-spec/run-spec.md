@@ -29,6 +29,7 @@ npx skills add JinhaoFang/video-studio#workflow-v3.1 --skill run-spec --skill se
 | `prCheckCommand` | 不写（默认 `["gh", "pr", "checks", "{pr}", "--watch"]`） | 可选。`pr-check` 运行的 PR 检查命令，每个参数里的 `{pr}` 换成 PR 号；CI 不能用时改成本机 CI，例如 `["make", "ci-local", "PR={pr}"]`。 |
 | `verificationEnv` | `<值或不写（默认 {}）>` | 可选。验证要用的环境变量；值里的 `{mainRoot}` 换成主工作区路径，进程里已有的同名变量优先。验证、合并、PR 检查和派发都带上它，实际值写进派发记录，不放密钥。<为什么要这些变量> |
 | `exclusiveVerification` | `<true 或不写（默认 false）>` | 可选。开启后完整验证全仓库排队，一次只跑一个，Codex 也通过主工作区的 `tickets.ts verify <T>` 排队。验证吃满 CPU、内存或独占端口、数据库时开。 |
+| `disposableIgnored` | `<模式数组或不写（默认 []）>` | 可选。`land` 删除 worktree 前直接删掉的被忽略文件，gitignore 写法，例如 `**/__pycache__/`、`.pytest_cache/`、`apps/*/dist/`；其余照旧移到保留目录，派发记录和验收产物永远不按它删。验证会留下字节码、测试缓存、构建输出的仓库写上。 |
 
 ## 执行时要知道的其他值
 

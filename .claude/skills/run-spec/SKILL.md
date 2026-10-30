@@ -63,7 +63,7 @@ node .claude/skills/run-spec/scripts/tickets.ts dispatch <T> [--note <补充说�
 1. 读 worktree 里的汇报 `.codex-runs/<记录名>.md` 和 `git log spec/<S>-<英文短名>..HEAD --stat`；确认 worktree 干净，改动没有越过工单的「边界」。
 2. 用 `tickets.ts verify <T>` 在 worktree 里跑验证（带上 `verificationEnv`，开了 `exclusiveVerification` 时排队），再逐条核对工单的验收标准。验收产物要亲自看：图片用 Read 看，命令自己重跑。
 3. 汇报里的每一条 `TODO(design)` 和推断清单都要给出处理：接受，或者做决定、写进后续工单，或者自己动手改。
-4. 通过就合并：`tickets.ts land <T>`。它 rebase、重装依赖、验证、快进合并、推送，复制派发记录和验收产物，把其余被忽略的文件移到保留目录并列出（要用的拷回主工作区），再删掉 worktree 和工单分支，每步一行结果。停下时按提示处理后重跑同一条命令：rebase 冲突就在 worktree 里解决、`git add`，验证失败就当作需返工。需返工的不合并，直接写评论。
+4. 通过就合并：`tickets.ts land <T>`。它 rebase、重装依赖、验证、快进合并、推送，复制派发记录和验收产物，删掉匹配 `disposableIgnored` 的被忽略文件，把其余被忽略的文件移到保留目录并列出（要用的拷回主工作区），再删掉 worktree 和工单分支，每步一行结果。停下时按提示处理后重跑同一条命令：rebase 冲突就在 worktree 里解决、`git add`，验证失败就当作需返工。需返工的不合并，直接写评论。
 5. 写验收评论：把四个字段分别写进文件，运行 `tickets.ts accept <T> --result 通过|需返工 --commits-file <文件> --verification-file <文件> --design-file <文件> --remaining-file <文件>`。「提交」写 `land` 之后的提交号（rebase 会改提交号）；以通过关闭前，脚本核对每个提交号都在远端集成分支上，没推送、没合并或不是本仓库的提交会以 1 退出、不写 GitHub。没有提交的只读工单加 `--no-commits`。字段内容以 `-` 开头时用文件参数。脚本自动在「验证」里附上这张工单每次派发的用时和 token，清理本地记录后写汇报靠它。通过就评论并关闭；需返工只评论，然后带补充说明回到第 4 步。
 
 完成标准：每条验收标准都有证据，每条 TODO(design) 和推断都有处理，评论已发出，分支已推送。这一轮派出的工单都合并后做第 6 步。
