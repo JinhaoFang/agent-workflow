@@ -11,6 +11,8 @@
  * main worktree (absolute paths also work). Missing/invalid config exits with 2.
  * Optional codexConcurrency and prCheckCommand use defaults and report sources;
  * RUN_SPEC_CODEX_CONCURRENCY overrides the validated configured concurrency.
+ * verificationEnv defaults to {}, substitutes {mainRoot} in configured values
+ * and preserves existing process values; exclusiveVerification defaults false.
  * Commands retain required numeric positionals, may add optionalPositionals,
  * and may opt into passthrough for untouched arguments after the first `--`.
  * Handlers may return a promise; the CLI awaits dispatch queueing and failures.
@@ -205,8 +207,29 @@ export type DispatchConfig = {
   dispatchScript: string;
   codexConcurrency: number;
   prCheckCommand: string[];
-  optionalSources: Record<"codexConcurrency" | "prCheckCommand", string>;
+  verificationEnv: Record<string, string>;
+  exclusiveVerification: boolean;
+  optionalSources: Record<
+    | "codexConcurrency"
+    | "prCheckCommand"
+    | "verificationEnv"
+    | "exclusiveVerification",
+    string
+  >;
 };
+
+export const defaultPrCheckCommand = ["gh", "pr", "checks", "{pr}", "--watch"];
+
+export const verificationEnvironment = (
+  config: DispatchConfig,
+  mainRoot: string,
+): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(config.verificationEnv).map(([key, value]) => [
+      key,
+      process.env[key] ?? value.replaceAll("{mainRoot}", mainRoot),
+    ]),
+  );
 
 const localPath = (value: unknown): value is string =>
   typeof value === "string" &&
@@ -278,6 +301,10 @@ export const dispatchConfig = (root: string): DispatchConfig => {
       ? "配置"
       : "默认",
     prCheckCommand: Object.hasOwn(config, "prCheckCommand") ? "配置" : "默认",
+    verificationEnv: Object.hasOwn(config, "verificationEnv") ? "配置" : "默认",
+    exclusiveVerification: Object.hasOwn(config, "exclusiveVerification")
+      ? "配置"
+      : "默认",
   };
   if (!Object.hasOwn(config, "codexConcurrency")) config.codexConcurrency = 2;
   if (
@@ -300,7 +327,7 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     optionalSources.codexConcurrency = "环境变量 RUN_SPEC_CODEX_CONCURRENCY";
   }
   if (!Object.hasOwn(config, "prCheckCommand"))
-    config.prCheckCommand = ["gh", "pr", "checks", "{pr}", "--watch"];
+    config.prCheckCommand = [...defaultPrCheckCommand];
   if (
     !Array.isArray(config.prCheckCommand) ||
     !config.prCheckCommand.length ||
@@ -311,6 +338,22 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     throw new OptionalConfigError(
       "配置 prCheckCommand 必须是非空的程序和参数数组，每项必须是非空字符串",
     );
+  if (!Object.hasOwn(config, "verificationEnv")) config.verificationEnv = {};
+  if (
+    !config.verificationEnv ||
+    typeof config.verificationEnv !== "object" ||
+    Array.isArray(config.verificationEnv) ||
+    !Object.values(config.verificationEnv).every(
+      (value) => typeof value === "string",
+    )
+  )
+    throw new OptionalConfigError(
+      "配置 verificationEnv 必须是字符串到字符串的对象",
+    );
+  if (!Object.hasOwn(config, "exclusiveVerification"))
+    config.exclusiveVerification = false;
+  if (typeof config.exclusiveVerification !== "boolean")
+    throw new OptionalConfigError("配置 exclusiveVerification 必须是布尔值");
   config.optionalSources = optionalSources;
   return config;
 };

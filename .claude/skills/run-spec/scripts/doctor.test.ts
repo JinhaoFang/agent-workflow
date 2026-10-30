@@ -10,6 +10,8 @@
  * optional configuration covers defaults, configured/env sources and exit 2.
  * Codex probes cover DispatchDock's explicit Node/wrapper path, PATH fallback
  * and missing executables with isolated PATH/config directories.
+ * Verification options report substituted effective values and per-variable
+ * sources; TICKET_97_EVIDENCE captures default/configured doctor output.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -132,6 +134,7 @@ console.log("codex-cli 0.1.0 (fixture)");
       oldNode?: boolean;
       concurrency?: string;
       isolatedPath?: boolean;
+      env?: NodeJS.ProcessEnv;
     } = {},
   ) => {
     rmSync(ghCalls, { force: true });
@@ -160,6 +163,7 @@ console.log("codex-cli 0.1.0 (fixture)");
         RUN_SPEC_CODEX_CONCURRENCY: options.concurrency,
         DOCTOR_CALLS: ghCalls,
         DOCTOR_RESPONSES: join(temporary, "responses.json"),
+        ...options.env,
       },
     });
     assert.ifError(result.error);
@@ -194,6 +198,118 @@ console.log("codex-cli 0.1.0 (fixture)");
     cleanup: () => rmSync(temporary, { recursive: true, force: true }),
   };
 };
+
+test("doctor reports verification defaults and effective configured values/sources, including environment overrides", () => {
+  const f = fixture();
+  try {
+    for (const configured of [false, true]) {
+      f.write(
+        "docs/agents/run-spec.json",
+        JSON.stringify({
+          ...f.config,
+          ...(configured
+            ? {
+                verificationEnv: {
+                  TICKET_97_ROOT: "{mainRoot}/browser/{mainRoot}",
+                  TICKET_97_OVERRIDE: "configured",
+                  TICKET_97_EMPTY: "configured",
+                },
+                exclusiveVerification: true,
+              }
+            : {}),
+        }),
+      );
+      const result = f.run(["doctor"], {
+        env: {
+          TICKET_97_ROOT: undefined,
+          TICKET_97_OVERRIDE: "process {mainRoot}",
+          TICKET_97_EMPTY: "",
+        },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      if (configured) {
+        assert.ok(
+          result.stdout.includes(
+            `可选配置 verificationEnv；实际取值 ${JSON.stringify({ TICKET_97_ROOT: `${f.root}/browser/${f.root}`, TICKET_97_OVERRIDE: "process {mainRoot}", TICKET_97_EMPTY: "" })}；来源：配置`,
+          ),
+        );
+        assert.ok(
+          result.stdout.includes(
+            '"TICKET_97_ROOT":"配置","TICKET_97_OVERRIDE":"进程环境","TICKET_97_EMPTY":"进程环境"',
+          ),
+        );
+        assert.match(
+          result.stdout,
+          /可选配置 exclusiveVerification；实际取值 true；来源：配置/,
+        );
+      } else {
+        assert.match(
+          result.stdout,
+          /可选配置 verificationEnv；实际取值 \{\}；来源：默认/,
+        );
+        assert.match(
+          result.stdout,
+          /可选配置 exclusiveVerification；实际取值 false；来源：默认/,
+        );
+      }
+      if (process.env.TICKET_97_EVIDENCE) {
+        mkdirSync(process.env.TICKET_97_EVIDENCE, { recursive: true });
+        writeFileSync(
+          join(
+            process.env.TICKET_97_EVIDENCE,
+            `doctor-${configured ? "configured" : "default"}.log`,
+          ),
+          result.stdout + result.stderr,
+        );
+      }
+    }
+    const worktree = `${f.root}.worktrees/21`;
+    f.git(["worktree", "add", "-b", "ticket/21", worktree]);
+    f.write(
+      "docs/agents/run-spec.json",
+      JSON.stringify({
+        ...f.config,
+        verificationEnv: { TICKET_97_ROOT: "{mainRoot}/browser" },
+      }),
+    );
+    writeFileSync(
+      join(worktree, "docs/agents/run-spec.json"),
+      readFileSync(join(f.root, "docs/agents/run-spec.json")),
+    );
+    const result = f.run(["doctor"], {
+      cwd: worktree,
+      env: { TICKET_97_ROOT: undefined },
+    });
+    assert.ok(
+      result.stdout.includes(
+        JSON.stringify({ TICKET_97_ROOT: `${f.root}/browser` }),
+      ),
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("doctor names invalid verification options and exits 2", () => {
+  const f = fixture();
+  try {
+    for (const [key, value] of [
+      ["verificationEnv", null],
+      ["verificationEnv", { VALUE: 2 }],
+      ["exclusiveVerification", "true"],
+    ]) {
+      f.write(
+        "docs/agents/run-spec.json",
+        JSON.stringify({ ...f.config, [key as string]: value }),
+      );
+      const result = f.run();
+      assert.equal(result.status, 2, result.stderr);
+      assert.ok(result.stderr.includes(`配置 ${key} 必须是`));
+    }
+  } finally {
+    f.cleanup();
+  }
+});
 
 const fails = (
   result: ReturnType<ReturnType<typeof fixture>["run"]>,

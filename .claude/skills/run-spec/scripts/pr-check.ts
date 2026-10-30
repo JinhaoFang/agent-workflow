@@ -3,17 +3,21 @@
  * prCheckCommand array from that checkout root, replacing every {pr} occurrence
  * in every element, including the executable. Inherit output and preserve exit
  * status; launch/signal failures exit 2. --dry-run prints the command only.
+ * Apply verificationEnv; custom checks share the repository verification mutex.
  */
 import { spawnSync } from "node:child_process";
 import {
   dispatchConfig,
+  defaultPrCheckCommand,
   entry,
   git,
+  verificationEnvironment,
   type Command,
   type Values,
 } from "./shared.ts";
+import { withVerificationLock } from "./verification-lock.ts";
 
-const prCheck = (values: Values, numbers: number[]): void => {
+const prCheck = async (values: Values, numbers: number[]): Promise<void> => {
   const checkout = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
   const config = dispatchConfig(checkout);
   const [program, ...args] = config.prCheckCommand.map((part) =>
@@ -25,7 +29,21 @@ const prCheck = (values: Values, numbers: number[]): void => {
     );
     return;
   }
-  const result = spawnSync(program, args, { cwd: checkout, stdio: "inherit" });
+  const root = git(checkout, ["worktree", "list", "--porcelain"])
+    .split("\n")[0]
+    .slice(9);
+  const result = await withVerificationLock(
+    checkout,
+    config.exclusiveVerification &&
+      JSON.stringify(config.prCheckCommand) !==
+        JSON.stringify(defaultPrCheckCommand),
+    () =>
+      spawnSync(program, args, {
+        cwd: checkout,
+        env: { ...process.env, ...verificationEnvironment(config, root) },
+        stdio: "inherit",
+      }),
+  );
   if (result.error)
     throw new Error("PR 检查命令无法运行，请检查程序路径和运行权限。");
   if (result.signal)
@@ -41,6 +59,9 @@ export const prCheckCommand: Command = {
 在当前工作区根目录运行配置的 prCheckCommand，逐项替换所有 {pr} 为 PR 号。
 默认命令：["gh","pr","checks","{pr}","--watch"]；
 本机 CI 配置示例：["make","ci-local","PR={pr}"]。
+应用 verificationEnv，替换配置值中的 {mainRoot}，保留已有同名进程环境变量。
+exclusiveVerification 开启时，非默认命令先取仓库验证锁，每 5 分钟最多打印一行等待信息；
+默认 gh pr checks 命令不取锁，即使显式配置为默认数组。
 程序和参数通过数组传入，不经 shell；直接显示命令输出，退出码与命令一致。
 参数错误、程序无法启动或被信号中断时以 2 退出。
 --dry-run 只打印替换后的命令和运行目录，不执行命令。`,
