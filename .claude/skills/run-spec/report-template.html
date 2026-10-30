@@ -2,7 +2,7 @@
 <!--
 单文件 spec 汇报模板：浏览器直接打开，可断网使用。复制后替换脚本块开头的 data
 数组；report 是标题、任务与截点，ticket/dispatch/session/independent/subagent 是
-工单和用量，goal 是同口径改前改后及预算，finding/review 是发现和审查。其余 type
+工单和用量，goal 是同口径改前改后与结论，finding/review 是发现和审查。其余 type
 分别驱动同名节的表与文字。未知数填 null，不填 0；输入包含缓存，不重复相加。
 汇总只加已知项并标明缺项数；比值所需项缺失时写未知，对比条只画已知部分。
 示例取自本仓库 spec #77 汇报、子工单验收与 PR #91；精确缺项在页面中列明。
@@ -12,6 +12,11 @@
 版式与配色来自 PathJX a6c42b1 的 spec #27 汇报，移除外部字体及不适用的领域内容；
 本模板按新版写法调整节次与图表。所有脚本保持一个块，只用 const/let 和箭头函数。
 设计工单有起止时间时画横条；只有验收关闭时刻时合在一行画点，颜色与 Claude 用量条一致。
+goal 的 conclusion 填达成／部分达成／未达成；before、after 共用 unit，只有有限数字且
+单位非空时画条，其余列入表格。domain 的 cells 按 report.domainHeadings 的顺序填写。
+session 可有多条，仅一条设 compare: true；replies 随该会话填写，用于计算平均上下文。
+report.costNote、comparisonNote 可选，缺省按已录入用量生成；localVerificationUrl 可选。
+repoUrl、sourceRef 分别指定仓库和 docs/ 相对证据链接的版本。
 -->
 <html lang="zh-CN">
   <head>
@@ -368,7 +373,9 @@
       </section>
       <section>
         <h2>目标核对</h2>
+        <p data-slot="goal-summary"></p>
         <div data-slot="goals" role="group" aria-label="目标改前改后对比"></div>
+        <div class="wrap" data-slot="goal-table"></div>
       </section>
       <section data-section="domain">
         <h2>领域结果</h2>
@@ -403,19 +410,14 @@
       <section>
         <h2>成本与效率</h2>
         <div class="wrap" data-slot="cost-summary"></div>
-        <p class="sub">
-          输入含缓存；其中缓存列仅列缓存读取。主会话和独立审查的缓存创建也计入输入。累计用时包含并行与嵌套，不相加成墙钟时间。
-        </p>
+        <p class="sub" data-slot="cost-note"></p>
         <div
           data-slot="cost-chart"
           role="group"
           aria-label="Claude 主会话与 Codex 用量对比"
         ></div>
         <p data-slot="efficiency"></p>
-        <p class="sub">
-          对比范围为 Claude 主会话与全部 Codex
-          运行（工程、审查及其子代理）；独立 Claude 审查另列，精确总量未知。
-        </p>
+        <p class="sub" data-slot="comparison-note"></p>
         <details>
           <summary>展开每次派发与审查的用时、输入、缓存、输出</summary>
           <div class="wrap" data-slot="cost-detail"></div>
@@ -468,6 +470,8 @@
         const data = [
           {
             type: "report",
+            repoUrl: "https://github.com/JinhaoFang/video-studio",
+            sourceRef: "workflow-v3",
             spec: 77,
             date: "2026-10-29",
             asOf: "2026-10-29T20:47:22+08:00",
@@ -487,9 +491,10 @@
             ciStatus: "GitHub Actions 因账号付款限制未启动，不能记作远端通过",
             localVerification:
               "pnpm verify 与 pnpm check:commits origin/main origin/spec/77-workflow-v3 均通过",
+            localVerificationUrl:
+              "https://github.com/JinhaoFang/video-studio/pull/91#issuecomment-6496437125",
             testsBefore: 312,
             testsAfter: 374,
-            replies: 289,
             limit:
               "规则篇幅是按模板重新生成的草稿，不代表 PathJX 已完成升级。主会话用量沿用原汇报截点，不含之后未记录的开 PR 与 CI 等待。",
             dispatchNote:
@@ -900,6 +905,8 @@
             type: "session",
             id: "design-main",
             label: "设计负责人主会话",
+            compare: true,
+            replies: 289,
             minutes: null,
             input: 99069234,
             cacheRead: 98543924,
@@ -934,8 +941,8 @@
             label: "模板生成的三处规则篇幅",
             before: 10145,
             after: 10117,
-            budget: 10145,
             unit: "字节",
+            conclusion: "达成",
             beforeLabel: "改前 · v2 生成",
             afterLabel: "改后 · v3 草稿",
             method:
@@ -1229,28 +1236,23 @@
           },
           {
             type: "domain",
-            label: "verify",
-            meaning: "屏幕保留尾部摘要，完整输出存日志，退出码照实",
+            cells: ["verify", "屏幕保留尾部摘要，完整输出存日志，退出码照实"],
           },
           {
             type: "domain",
-            label: "pr-check",
-            meaning: "CI 不可用时运行配置的检查命令",
+            cells: ["pr-check", "CI 不可用时运行配置的检查命令"],
           },
           {
             type: "domain",
-            label: "watch",
-            meaning: "小模型只读巡检长作业，正常时不打断",
+            cells: ["watch", "小模型只读巡检长作业，正常时不打断"],
           },
           {
             type: "domain",
-            label: "review-spec",
-            meaning: "派发前独立审查，支持草稿与已有报告发布",
+            cells: ["review-spec", "派发前独立审查，支持草稿与已有报告发布"],
           },
           {
             type: "domain",
-            label: "slots",
-            meaning: "查看正在运行的派发与空余名额",
+            cells: ["slots", "查看正在运行的派发与空余名额"],
           },
           {
             type: "milestone",
@@ -1598,11 +1600,11 @@
             : denominator.value > 0
               ? `${format(numerator.value / denominator.value, 2)} 倍`
               : "未知（分母无有效记录）";
-        const repo = "https://github.com/JinhaoFang/video-studio";
+        const repo = meta.repoUrl;
         const link = (url, label) => {
           const node = element("a", "", label);
           node.href = url.startsWith("docs/")
-            ? `${repo}/blob/workflow-v3/${url}`
+            ? `${repo}/blob/${meta.sourceRef}/${url}`
             : url;
           return node;
         };
@@ -1700,6 +1702,9 @@
           link(`${repo}/pull/${meta.pr}`, `PR #${meta.pr} · ${meta.prState}`),
         );
         const goals = of("goal");
+        const achieved = goals.filter(
+          (goal) => goal.conclusion === "达成",
+        ).length;
         for (const [value, label] of [
           [
             format(tickets.length),
@@ -1711,10 +1716,7 @@
             "派发累计用时，含并行，不含子代理",
           ],
           [format(meta.testsAfter), "项最终提交本地测试通过"],
-          [
-            goals.length ? format(goals[0].after) : "未知",
-            goals.length ? `规则草稿${goals[0].unit}` : "目标指标缺项",
-          ],
+          [`${format(achieved)}/${format(goals.length)}`, "目标"],
           [format(findings.length), "项本页列出的审查发现"],
         ]) {
           const card = element("div", "kpi");
@@ -1742,30 +1744,68 @@
             return [entry.label, links, entry.meaning];
           }),
         );
-        for (const goal of goals) {
+        const goalCounts = [
+          `${format(achieved)} 项达成`,
+          ...["部分达成", "未达成"].flatMap((conclusion) => {
+            const count = goals.filter(
+              (goal) => goal.conclusion === conclusion,
+            ).length;
+            return count ? [`${format(count)} 项${conclusion}`] : [];
+          }),
+        ];
+        const unknownGoals = goals.filter(
+          (goal) => !["达成", "部分达成", "未达成"].includes(goal.conclusion),
+        ).length;
+        if (unknownGoals) goalCounts.push(`${format(unknownGoals)} 项结论未知`);
+        text(
+          "goal-summary",
+          `${format(goals.length)} 项目标：${goalCounts.join("，")}。`,
+        );
+        const numericGoals = goals.filter(
+          (goal) =>
+            Number.isFinite(goal.before) &&
+            Number.isFinite(goal.after) &&
+            typeof goal.unit === "string" &&
+            goal.unit.trim(),
+        );
+        for (const goal of numericGoals) {
           comparison(slot("goals"), goal.label, [
             {
-              label: goal.beforeLabel,
+              label: goal.beforeLabel ?? "改前",
               value: goal.before,
               unit: goal.unit,
               color: "var(--a)",
             },
             {
-              label: goal.afterLabel,
+              label: goal.afterLabel ?? "改后",
               value: goal.after,
               unit: goal.unit,
               color: "var(--d)",
             },
           ]);
-          const conclusion =
-            goal.before == null || goal.after == null || goal.budget == null
-              ? "结论：数据未知，不能判断目标达成。"
-              : `结论：${goal.after <= goal.budget ? "达到" : "未达到"}篇幅预算；预算 ${format(goal.budget)} ${goal.unit}，改后${goal.after <= goal.budget ? "少" : "超出"} ${format(Math.abs(goal.budget - goal.after))} ${goal.unit}。`;
-          slot("goals").append(element("p", "", conclusion));
-          const method = element("p", "sub", goal.method + " ");
-          method.append(evidence("验收证据", goal.source));
+          const method = element("p", "sub");
+          method.append(
+            statement(
+              `结论：${goal.conclusion ?? "未知"}。${goal.method ?? "方法未知"}`,
+              goal.source,
+            ),
+          );
           slot("goals").append(method);
         }
+        const otherGoals = goals.filter((goal) => !numericGoals.includes(goal));
+        if (otherGoals.length)
+          table(
+            "goal-table",
+            ["目标", "改前", "改后", "单位", "方法", "结论与证据"],
+            otherGoals.map((goal) => [
+              goal.label,
+              format(goal.before),
+              format(goal.after),
+              goal.unit || "无",
+              goal.method ?? "未知",
+              statement(goal.conclusion ?? "未知", goal.source),
+            ]),
+          );
         if (!goals.length)
           slot("goals").append(
             element(
@@ -1780,7 +1820,11 @@
           table(
             "domain",
             meta.domainHeadings,
-            domain.map((entry) => [entry.label, entry.meaning]),
+            domain.map((entry) =>
+              meta.domainHeadings.map(
+                (_, index) => entry.cells?.[index] ?? "未知",
+              ),
+            ),
           );
         } else document.querySelector('[data-section="domain"]').remove();
         table(
@@ -1966,12 +2010,30 @@
         table("cost-summary", costHeadings, [
           costRow("Codex 工程派发（含返工）", engineering),
           costRow("Codex 按批与收尾审查（父运行）", reviews),
-          costRow("Claude 设计负责人主会话", sessions),
+          ...sessions.map((entry) => costRow(entry.label, [entry])),
           costRow("Claude 独立审查", independent),
           costRow("Codex 审查子代理", children),
         ]);
-        const mainInput = sum(sessions, "input"),
-          mainOutput = sum(sessions, "output");
+        const comparedSessions = sessions.filter(
+          (entry) => entry.compare === true,
+        );
+        const comparedSession =
+          comparedSessions.length === 1 ? comparedSessions[0] : null;
+        const comparisonSessions = comparedSession ? [comparedSession] : [];
+        const comparisonLabel =
+          comparedSession?.label ?? "未知（未指定唯一的对比主会话）";
+        const allCosts = [...codex, ...sessions, ...independent];
+        text(
+          "cost-note",
+          meta.costNote ??
+            `输入含缓存；其中缓存列仅列缓存读取。${allCosts.some((entry) => entry.cacheWrite != null) ? "已记录的缓存创建也计入输入。" : ""}累计用时包含并行与嵌套，不相加成墙钟时间；${format(allCosts.filter((entry) => entry.minutes == null).length)} 条记录缺用时。`,
+        );
+        text(
+          "comparison-note",
+          `用于对比的主会话：${comparisonLabel}。${meta.comparisonNote ?? `对比范围为该主会话与全部 Codex 运行（工程、审查及其子代理）；${independent.length ? `独立 Claude 审查另列：输入 ${known(independent, "input")} tokens，输出 ${known(independent, "output")} tokens。` : "无独立审查记录。"}`}`,
+        );
+        const mainInput = sum(comparisonSessions, "input"),
+          mainOutput = sum(comparisonSessions, "output");
         const codexInput = sum(codex, "input"),
           codexOutput = sum(codex, "output");
         for (const [label, mainValue, codexValue] of [
@@ -1980,7 +2042,7 @@
         ]) {
           comparison(slot("cost-chart"), label, [
             {
-              label: "Claude 主会话",
+              label: comparisonLabel,
               ...mainValue,
               unit: "tokens",
               color: "var(--d)",
@@ -1995,7 +2057,7 @@
         }
         text(
           "efficiency",
-          `主会话 / Codex 总用量比（输入＋输出）：${ratio(sum(sessions, "input", "output"), sum(codex, "input", "output"))}；输入比 ${ratio(mainInput, codexInput)}，输出比 ${ratio(mainOutput, codexOutput)}。主会话平均上下文：${mainInput.value != null && !mainInput.missing && meta.replies > 0 ? format(mainInput.value / meta.replies) + " tokens / 回复" : "未知"}（含缓存输入 ÷ ${format(meta.replies)} 次回复）。`,
+          `主会话 / Codex 总用量比（输入＋输出）：${ratio(sum(comparisonSessions, "input", "output"), sum(codex, "input", "output"))}；输入比 ${ratio(mainInput, codexInput)}，输出比 ${ratio(mainOutput, codexOutput)}。主会话平均上下文：${mainInput.value != null && !mainInput.missing && comparedSession?.replies > 0 ? format(mainInput.value / comparedSession.replies) + " tokens / 回复" : "未知"}（含缓存输入 ÷ ${format(comparedSession?.replies)} 次回复）。`,
         );
         table(
           "cost-detail",
@@ -2026,12 +2088,12 @@
         );
         const quality = slot("quality");
         quality.append(
-          `测试基线 ${format(meta.testsBefore)} → 最终 ${format(meta.testsAfter)} 项，增加 ${format(meta.testsAfter - meta.testsBefore)} 项；最终提交本地验证通过。CI：`,
+          `测试基线 ${format(meta.testsBefore)} → 最终 ${format(meta.testsAfter)} 项，增加 ${meta.testsBefore != null && meta.testsAfter != null ? format(meta.testsAfter - meta.testsBefore) : "未知"} 项。CI：`,
           link(meta.ciUrl, meta.ciStatus),
-          "；",
-          link(
-            `${repo}/pull/${meta.pr}#issuecomment-6496437125`,
-            "本地复现记录",
+          "；本地：",
+          statement(
+            meta.localVerification ?? "未知",
+            meta.localVerificationUrl,
           ),
           "。",
         );
@@ -2040,7 +2102,7 @@
           ["关键实测", "结论与证据"],
           of("check").map((entry) => [
             entry.label,
-            evidence(entry.text, entry.source),
+            statement(entry.text, entry.source),
           ]),
         );
         text(
