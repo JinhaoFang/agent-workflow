@@ -344,7 +344,7 @@ test("verification ledger records main/ticket checks, default/custom PR checks a
       previous = content;
     }
     assert.ok(!existsSync(f.worktree));
-    const cleaned = f.run("cleanup", ["17"]);
+    const cleaned = f.run("cleanup", ["17", "--no-scorecard"]);
     assert.equal(cleaned.status, 0, cleaned.stdout + cleaned.stderr);
     assert.equal(readFileSync(join(f.root, ".codex-runs/verification.jsonl"), "utf8"), previous);
     ledgerEvidence("verification-sample", f.root);
