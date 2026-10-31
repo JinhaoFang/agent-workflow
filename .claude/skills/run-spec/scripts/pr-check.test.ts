@@ -52,6 +52,10 @@ const fixture = () => {
       `#!${process.execPath}
 const fs = require("node:fs");
 const call = {cwd: process.cwd(), args: process.argv.slice(2)};
+if (call.args[0] === "pr" && call.args[1] === "view") {
+ console.log(JSON.stringify({headRefName:"spec/17-test"}));
+ process.exit(0);
+}
 fs.writeFileSync(process.env.PR_CHECK_FIXTURE_CALL, JSON.stringify(call));
 console.log("检查参数：" + JSON.stringify(call.args));
 console.error("检查诊断：本机模拟输出");

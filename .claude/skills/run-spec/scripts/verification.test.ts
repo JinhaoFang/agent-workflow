@@ -8,8 +8,9 @@
  * verification descendants and nested CLI invocations. Run with node --test
  * or pnpm verify. TICKET_97_EVIDENCE captures output/events before
  * fixture cleanup; all GitHub calls stay inside the fake executable.
- * Ledger cases check complete rows, concurrent append, dry runs and queue
- * durations against observable child events; TICKET_3_EVIDENCE saves samples.
+ * Ledger cases check complete rows, branch attribution and null fallbacks,
+ * nonfatal write failures, concurrent append, dry runs and queue durations
+ * against observable child events; TICKET_3_EVIDENCE saves samples.
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -55,6 +56,7 @@ type Event = {
   marker?: string;
 };
 type LedgerEntry = {
+  branch: string | null;
   startedAt: string;
   finishedAt: string;
   queuedMinutes: number;
@@ -73,9 +75,10 @@ const ledger = (root: string): LedgerEntry[] => {
   return content.trimEnd().split("\n").map((line) => {
     const entry = JSON.parse(line);
     assert.deepEqual(Object.keys(entry).sort(), [
-      "caller", "exitCode", "finishedAt", "layer", "queuedMinutes", "startedAt",
+      "branch", "caller", "exitCode", "finishedAt", "layer", "queuedMinutes", "startedAt",
       "stopReason", "target", "verification",
     ]);
+    assert.ok(entry.branch === null || typeof entry.branch === "string");
     assert.equal(new Date(entry.startedAt).toISOString(), entry.startedAt);
     assert.equal(new Date(entry.finishedAt).toISOString(), entry.finishedAt);
     assert.ok(entry.startedAt <= entry.finishedAt);
@@ -184,6 +187,11 @@ if (args[0] === "repo") console.log(JSON.stringify({nameWithOwner:"fixture/repo"
 else if (args[0] === "api" && args.at(-1).endsWith("/parent")) console.log(JSON.stringify({number:17}));
 else if (args[0] === "api" && args.some(arg => arg.endsWith("/sub_issues"))) console.log(JSON.stringify([[{number:21}]]));
 else if (args[0] === "api") console.log(JSON.stringify({number:21,state:"open",labels:[{name:"role:engineering"}]}));
+else if (args[0] === "pr" && args[1] === "view") {
+ if (JSON.stringify(args) !== JSON.stringify(["pr","view",args[2],"--json","headRefName"])) process.exitCode = 91;
+ else if (process.env.TEST_PR_HEAD_FAIL === "1") process.exitCode = 1;
+ else console.log(process.env.TEST_PR_HEAD_JSON ?? JSON.stringify({headRefName:"spec/17-pr-head"}));
+}
 else if (args[0] === "pr") { process.argv.splice(2, 0, "gh"); require(${JSON.stringify(runner)}); }
 else process.exitCode = 91;
 `,
@@ -322,6 +330,7 @@ test("verification ledger records main/ticket checks, default/custom PR checks a
       assert.equal(entries.length, index + 1);
       const entry = entries.at(-1)!;
       assert.equal(entry.caller, command);
+      assert.equal(entry.branch, kind === "main" ? "spec/17-test" : kind === "ticket" ? "ticket/21" : "spec/17-pr-head");
       assert.deepEqual(
         entry.target,
         kind === "main" ? { kind } : { kind, number: Number(args[0]) },
@@ -344,6 +353,85 @@ test("verification ledger records main/ticket checks, default/custom PR checks a
   }
 });
 
+test("verification ledger uses null for detached main and unavailable PR heads without changing check statuses", () => {
+  const f = fixture();
+  try {
+    f.addWorktree();
+    f.git(["checkout", "--detach"]);
+    f.git(["checkout", "--detach"], f.worktree);
+    assert.equal(f.run("verify", [], f.worktree).status, 0);
+    assert.equal(ledger(f.root).at(-1)!.branch, null);
+    assert.equal(f.run("verify", ["21"]).status, 0);
+    assert.equal(ledger(f.root).at(-1)!.branch, "ticket/21");
+    for (const command of [undefined, [process.execPath, f.runner, "pr"]]) {
+      f.configure(command ? { prCheckCommand: command } : {}, f.worktree);
+      const cases: NodeJS.ProcessEnv[] = [
+        { TEST_PR_HEAD_FAIL: "1" },
+        { TEST_PR_HEAD_JSON: "{}" },
+        { TEST_PR_HEAD_JSON: "{" },
+        { TEST_PR_HEAD_JSON: '{"headRefName":""}' },
+      ];
+      for (const extra of cases) {
+        const result = f.run("pr-check", ["93"], f.worktree, { ...extra, TEST_EXIT: "6" });
+        assert.equal(result.status, 6, result.stdout + result.stderr);
+        const entry = ledger(f.root).at(-1)!;
+        assert.equal(entry.branch, null);
+        assert.equal(entry.verification?.exitCode, 6);
+        assert.equal(result.stderr, "");
+      }
+    }
+    ledgerEvidence("branch-fallback", f.root);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("verification ledger write failures print one stderr line and preserve successful, failed and errored command statuses", () => {
+  const captured: unknown[] = [];
+  for (const command of ["verify", "land", "pr-check"]) {
+    for (const scenario of ["success", "failed", "launch-error"]) {
+      let originalError = "";
+      const blockers = command === "pr-check" ? ["none", "ledger-directory", "records-file"] : ["none", "ledger-directory"];
+      for (const blocker of blockers) {
+        const f = fixture();
+        try {
+          const configuredCommand = scenario === "launch-error"
+            ? [join(f.temporary, "missing-program")]
+            : [process.execPath, f.runner, "verify"];
+          f.configure({ verificationCommand: configuredCommand, prCheckCommand: configuredCommand });
+          f.commitConfig();
+          if (command === "land") {
+            f.addWorktree();
+            f.remote();
+          }
+          if (blocker === "records-file") writeFileSync(join(f.root, ".codex-runs"), "blocked");
+          else if (blocker === "ledger-directory") mkdirSync(join(f.root, ".codex-runs/verification.jsonl"), { recursive: true });
+          const result = f.run(command, command === "verify" ? [] : ["21"], f.root, {
+            TEST_EXIT: scenario === "failed" ? "7" : "0",
+            TEST_EXIT_PHASE: "verify",
+          });
+          const expected = scenario === "success" ? 0 : scenario === "launch-error" ? 2 : command === "land" ? 1 : 7;
+          assert.equal(result.status, expected, result.stdout + result.stderr);
+          const lines = result.stderr.split("\n").filter(Boolean);
+          const warnings = lines.filter((line) => line.startsWith("出错：验证台账写入失败"));
+          assert.equal(warnings.length, blocker === "none" ? 0 : 1, result.stderr);
+          const error = lines.filter((line) => !warnings.includes(line)).join("\n");
+          if (blocker === "none") originalError = error;
+          else assert.equal(error, originalError, result.stderr);
+          captured.push({ command, scenario, blocker, exitCode: result.status, stderr: result.stderr });
+        } finally {
+          f.cleanup();
+        }
+      }
+    }
+  }
+  const directory = process.env.TICKET_3_EVIDENCE;
+  if (directory) {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "ledger-write-failure.json"), JSON.stringify(captured, null, 2) + "\n");
+  }
+});
+
 test("dry runs never create or append the ledger, and all three help texts explain its fields", () => {
   const f = fixture();
   try {
@@ -359,9 +447,11 @@ test("dry runs never create or append the ledger, and all three help texts expla
         assert.equal(existsSync(file) ? readFileSync(file, "utf8") : null, before);
         const help = f.run(command, ["--help"], tmpdir());
         assert.equal(help.status, 0, help.stderr);
-        for (const field of ["startedAt", "finishedAt", "queuedMinutes", "layer", "target", "caller", "exitCode", "stopReason", "verification"])
+        for (const field of ["branch", "startedAt", "finishedAt", "queuedMinutes", "layer", "target", "caller", "exitCode", "stopReason", "verification"])
           assert.ok(help.stdout.includes(field), field);
         assert.match(help.stdout, /主工作区 \.codex-runs\/verification\.jsonl/);
+        assert.match(help.stdout, /评分表.*branch.*spec/);
+        assert.match(help.stdout, /标准错误.*一行.*退出码/);
         assert.match(help.stdout, /--dry-run 不创建或追加台账/);
         const directory = process.env.TICKET_3_EVIDENCE;
         if (directory) {
