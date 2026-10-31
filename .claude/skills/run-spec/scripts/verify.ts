@@ -8,6 +8,8 @@
  * --dry-run prints the plan without running verification or writing a log.
  * Apply verificationEnv and serialize the verification action when configured.
  * Append one main-owned verification ledger entry after each real attempt.
+ * Auto-select a layer for main verification, default ticket checks to full;
+ * --static/--full override selection and static checks never take the mutex.
  */
 import {
   appendFileSync,
@@ -32,6 +34,7 @@ import {
   withVerificationRecord,
   verificationLedgerHelp,
 } from "./verification-ledger.ts";
+import { printVerificationLayer, selectVerification } from "./verification-layer.ts";
 
 const tailLines = 20;
 
@@ -50,6 +53,11 @@ const verify = async (values: Values, numbers: number[]): Promise<void> => {
   )
     throw new CheckFailure(`工单 worktree 不存在：${cwd}`);
   const config = dispatchConfig(checkout);
+  const selected = selectVerification(config, root, {
+    values,
+    ticket: ticket !== undefined,
+  });
+  printVerificationLayer(config, selected);
   const directory = join(root, ".codex-runs");
   const log = join(
     directory,
@@ -57,7 +65,7 @@ const verify = async (values: Values, numbers: number[]): Promise<void> => {
   );
   if (values["dry-run"]) {
     console.log(
-      `验证命令（${cwd}）：${JSON.stringify(config.verificationCommand)}`,
+      `验证命令（${cwd}）：${JSON.stringify(selected.command)}`,
     );
     console.log(`完整日志：${log}（仅预览，不写入）`);
     return;
@@ -68,14 +76,15 @@ const verify = async (values: Values, numbers: number[]): Promise<void> => {
     ticket === undefined ? { kind: "main" } : { kind: "ticket", number: ticket },
     false,
     async (attempt) => {
+      attempt.layer = selected.layer;
       mkdirSync(directory, { recursive: true });
       const descriptor = openSync(log, "wx");
-      const [program, ...args] = config.verificationCommand;
+      const [program, ...args] = selected.command;
       let result: Awaited<ReturnType<typeof attempt.run>>;
       try {
         result = await attempt.run(
           checkout,
-          config.exclusiveVerification,
+          selected.layer === "full" && config.exclusiveVerification,
           program,
           args,
           {
@@ -114,13 +123,21 @@ const verify = async (values: Values, numbers: number[]): Promise<void> => {
 };
 
 export const verifyCommand: Command = {
-  options: {},
+  options: { static: { type: "boolean" }, full: { type: "boolean" } },
   positionals: 0,
   optionalPositionals: 1,
   execute: verify,
-  help: `${entry} verify [<工单号>] [--dry-run]
+  help: `${entry} verify [<工单号>] [--static | --full] [--dry-run]
 读取当前工作区的 verificationCommand 参数数组；不给工单号时在主工作区运行，
 给工单号时在 <主工作区>.worktrees/<工单号>/ 运行，不经 shell。
+配了 staticCheckCommand 时，不给工单号按 staticOnlyPaths（gitignore 模式）自动选层；
+比较主工作区 origin/<当前 spec 分支>...HEAD 的提交路径，并合入暂存、未暂存、未忽略未跟踪路径；
+所有 diff 使用 --no-renames，改名两端及删除都参与；全部匹配才跑静态检查，否则完整验证。
+改动为空、远端集成分支不存在、主工作区当前不在 spec 分支或无法比较时跑完整验证。
+verify <工单号> 默认完整验证；--static 强制静态检查（需要 staticCheckCommand），--full 强制完整验证；
+两项同时给以 2 退出。只配 staticCheckCommand 时自动选择完整验证，--static 仍可用；
+只配 staticOnlyPaths 是配置错误，以 2 退出。不配两项时保持原行为。
+配置分层时输出所选层及原因；静态检查不取验证锁，完整验证按 exclusiveVerification 取锁。
 应用 verificationEnv（默认 {}），替换配置值中的 {mainRoot}，保留已有同名进程环境变量。
 exclusiveVerification 默认 false；开启时验证前取 git 公共目录中的仓库锁，等待信息每 5 分钟最多一行；
 POSIX 平台由独立进程组运行验证，组内全部作业退出后才回收；启动时间用于识别复用的进程号。

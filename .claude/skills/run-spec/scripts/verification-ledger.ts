@@ -118,7 +118,7 @@ export const verificationLedgerHelp = `验证台账：主工作区 .codex-runs/v
 本机并发追加使用 O_APPEND 和单次写入；cleanup 不删除此公共台账。
 startedAt、finishedAt：本次调用的起止 UTC 时间（ISO 8601）；
 queuedMinutes：实际等验证锁的分钟数，不取锁或复用已有锁时为 0；
-layer：验证层 full 或 static，当前总是 full；caller：verify、land 或 pr-check；
+layer：实际选择的验证层 full（完整验证）或 static（静态检查）；pr-check 为 full；caller：verify、land 或 pr-check；
 target：对象，kind 为 main（主工作区）、ticket（工单）或 pr（PR），后两者的 number 是对应号码；
 branch：所属分支，主工作区取 git rev-parse --abbrev-ref HEAD，分离头指针时为 null；
 verify <T> 和 land <T> 为 ticket/<T>；pr-check 取 PR 的 headRefName，取不到时为 null；

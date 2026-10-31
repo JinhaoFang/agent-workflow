@@ -310,6 +310,42 @@ process.stdout.write(JSON.stringify(response.value));
   };
 };
 
+test("layered dispatch prompts restrict development to related tests/static checks and route full checks through main verify", () => {
+  for (const configured of [false, true]) {
+    for (const exclusiveVerification of [false, true]) {
+      const f = fixture();
+      try {
+        const staticCheckCommand = ["pnpm", "verify", "--static"];
+        writeFileSync(join(f.root, "docs/agents/run-spec.json"), JSON.stringify({
+          ...f.config, exclusiveVerification,
+          ...(configured ? { staticCheckCommand } : {}),
+        }));
+        f.git(["add", "docs/agents/run-spec.json"]);
+        f.git(["commit", "-m", "fixture layered dispatch"]);
+        const result = f.run(["--dry-run"]);
+        assert.equal(result.status, 0, result.stdout + result.stderr);
+        if (configured) {
+          assert.ok(result.stdout.includes(JSON.stringify(staticCheckCommand)));
+          assert.match(result.stdout, /只跑和改动相关的测试/);
+          assert.match(result.stdout, /不跑完整验证/);
+          assert.match(result.stdout, /完整验证由 land 跑/);
+          assert.match(result.stdout, /主工作区 tickets\.ts verify 21/);
+          assert.ok(result.stdout.includes(join(f.root, ".claude/skills/run-spec/scripts/tickets.ts")));
+          assert.match(result.stdout, /不要直接运行配置的完整验证命令/);
+          if (exclusiveVerification) assert.match(result.stdout, /通过仓库验证锁排队/);
+        } else {
+          assert.doesNotMatch(result.stdout, /不跑完整验证|静态检查命令参数数组/);
+        }
+        const directory = process.env.TICKET_4_EVIDENCE;
+        if (directory) {
+          mkdirSync(directory, { recursive: true });
+          writeFileSync(join(directory, `dispatch-${configured ? "layered" : "legacy"}-${exclusiveVerification ? "exclusive" : "unlocked"}.log`), result.stdout + result.stderr);
+        }
+      } finally { f.cleanup(); }
+    }
+  }
+});
+
 test("dispatch exposes the actual progress path while the dispatcher is still running", async () => {
   const f = fixture();
   try {
