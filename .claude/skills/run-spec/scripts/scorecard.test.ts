@@ -4,6 +4,7 @@
  * Claude 摘要与来源过滤、AskUserQuestion 问答、更新同一评论和 cleanup 删除前拦截。
  * SCORECARD_EVIDENCE 可指定输出
  * 固定输入、预期/实际 JSON、手算过程和测试命令记录的验收目录。
+ * TICKET_12_EVIDENCE 保存真实 CLI 的启动故障、失败调用和帮助文字证据。
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -31,7 +32,8 @@ const fixture = () => {
     assert.equal(result.status, 0, result.stderr);
     return result.stdout.trim();
   };
-  write(join(root, "docs/agents/run-spec.json"), JSON.stringify({ verificationCommand: ["true"], installCommand: ["true"], symlinkDirectories: [], acceptanceRoot: "out/qa", codexSandbox: "danger-full-access", dispatchScript: "unused.mjs" }));
+  const config = { verificationCommand: ["true"], installCommand: ["true"], symlinkDirectories: [], acceptanceRoot: "out/qa", codexSandbox: "danger-full-access", dispatchScript: "unused.mjs" };
+  write(join(root, "docs/agents/run-spec.json"), JSON.stringify(config));
   write(join(root, ".gitignore"), ".codex-runs\nout\n");
   git(["init", "-b", "spec/2-test"]);
   git(["config", "user.name", "Fixture"]);
@@ -118,8 +120,10 @@ fs.appendFileSync(path.join(home, 'calls.jsonl'), JSON.stringify(args) + '\\n');
 const file = path.join(home, 'comments.json');
 const comments = JSON.parse(fs.readFileSync(file, 'utf8'));
 if (args[0] === 'repo') process.stdout.write(JSON.stringify({nameWithOwner:'fixture/repo'}));
+else if (args[0] === 'pr' && args[1] === 'view') process.stdout.write(JSON.stringify({headRefName:'spec/2-test'}));
 else if (args[0] === 'api' && args[2] === 'GET') {
  if (args[3].endsWith('/sub_issues')) process.stdout.write(JSON.stringify([[{number:5}]]));
+ else if (args[3].endsWith('/parent')) process.stdout.write(JSON.stringify({number:2}));
  else if (args[3].endsWith('/comments')) process.stdout.write(JSON.stringify([comments]));
  else process.exit(91);
 } else if (args[0] === 'api' && ['POST','PATCH'].includes(args[2])) {
@@ -137,8 +141,96 @@ else if (args[0] === 'api' && args[2] === 'GET') {
     assert.ifError(result.error);
     return result;
   };
-  return { temporary, root, records, worktree, codex, dispatch, remote, comments, artifacts, claude, ledger, sessionFile, lines, write, run, git, cleanup: () => rmSync(temporary, { recursive: true, force: true }) };
+  return { temporary, root, records, worktree, codex, dispatch, remote, comments, artifacts, claude, ledger, config, sessionFile, lines, write, run, git, cleanup: () => rmSync(temporary, { recursive: true, force: true }) };
 };
+
+const verificationEvidence = (name: string, f: ReturnType<typeof fixture>, args: string[][], results: ReturnType<typeof f.run>[]) => {
+  const directory = process.env.TICKET_12_EVIDENCE;
+  if (!directory) return;
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, `${name}.json`), JSON.stringify({
+    configured: JSON.parse(readFileSync(join(f.root, "docs/agents/run-spec.json"), "utf8")),
+    commands: results.map((result, index) => ({ command: [process.execPath, cli, ...args[index]], status: result.status, stdout: result.stdout, stderr: result.stderr })),
+  }, null, 2) + "\n");
+  cpSync(join(f.records, "verification.jsonl"), join(directory, `${name}.ledger.jsonl`));
+  writeFileSync(join(directory, `${name}.scorecard.json`), results.at(-1)!.stdout);
+};
+
+for (const exclusiveVerification of [false, true]) {
+  test(`验证程序不存在时台账为空验证，评分表只计启动失败，exclusiveVerification=${exclusiveVerification}`, () => {
+    const f = fixture();
+    try {
+      rmSync(join(f.records, "verification.jsonl"));
+      f.write(join(f.root, "docs/agents/run-spec.json"), JSON.stringify({
+        ...f.config, exclusiveVerification, verificationCommand: [join(f.temporary, "absent-program")],
+      }));
+      const args = [["verify"], ["scorecard", "2"]];
+      const results = args.map((command) => f.run(command));
+      verificationEvidence(`missing-program-${exclusiveVerification ? "locked" : "unlocked"}`, f, args, results);
+      assert.equal(results[0].status, 2, results[0].stdout + results[0].stderr);
+      assert.match(results[0].stdout, /出错：验证命令无法运行/);
+      const rows = readFileSync(join(f.records, "verification.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].exitCode, 2);
+      assert.equal(rows[0].verification, null);
+      assert.equal(results[1].status, 0, results[1].stderr);
+      const card = JSON.parse(results[1].stdout);
+      assert.equal(card.failures.verificationLaunch.value, 1);
+      assert.deepEqual(card.verification.value, { runs: [], fullCount: 0, fullMinutes: 0, staticCount: 0 });
+      assert.equal(existsSync(join(f.root, ".git/run-spec-verification.lock")), false);
+    } finally { f.cleanup(); }
+  });
+}
+
+test("失败 verify 和 pr-check 保留实际验证，成功 land 不累计合并验证失败", () => {
+  const f = fixture();
+  try {
+    rmSync(join(f.records, "verification.jsonl"));
+    const runner = join(f.temporary, "verification.cjs");
+    f.write(runner, 'process.exitCode = process.argv[2] === "pr-check" || process.cwd() === process.env.SCORECARD_MAIN ? 2 : 0;\n');
+    f.write(join(f.root, "docs/agents/run-spec.json"), JSON.stringify({
+      ...f.config, verificationCommand: [process.execPath, runner],
+      prCheckCommand: [process.execPath, runner, "pr-check"], verificationEnv: { SCORECARD_MAIN: "{mainRoot}" },
+    }));
+    f.git(["add", "docs/agents/run-spec.json"]);
+    f.git(["commit", "-m", "fixture verification commands"]);
+    f.write(join(f.worktree, "feature.ts"), "export const feature = true;\n");
+    f.git(["add", "feature.ts"], f.worktree);
+    f.git(["commit", "-m", "fixture feature"], f.worktree);
+    const args = [["verify"], ["pr-check", "93"], ["land", "5"], ["scorecard", "2"]];
+    const results = args.map((command) => f.run(command));
+    verificationEvidence("failed-checks-successful-land", f, args, results);
+    assert.deepEqual(results.map((result) => result.status), [2, 2, 0, 0], results.map((result) => result.stdout + result.stderr).join("\n"));
+    const rows = readFileSync(join(f.records, "verification.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(rows.map((row) => [row.caller, row.verification?.exitCode]), [["verify", 2], ["pr-check", 2], ["land", 0]]);
+    const card = JSON.parse(results[3].stdout);
+    assert.equal(card.merges.value.landCount, 1);
+    assert.equal(card.merges.value.fullVerificationFailures, 0);
+    assert.equal(card.verification.value.fullCount, 3);
+    assert.deepEqual(card.verification.value.runs.map((row: { caller: string; exitCode: number }) => [row.caller, row.exitCode]), [["verify", 2], ["pr-check", 2], ["land", 0]]);
+    assert.equal(card.failures.verificationLaunch.value, 0);
+  } finally { f.cleanup(); }
+});
+
+test("verify 和 scorecard 帮助写明启动失败与合并失败的统计口径", () => {
+  const f = fixture();
+  try {
+    for (const command of ["verify", "scorecard"]) {
+      const result = f.run([command, "--help"], tmpdir());
+      const directory = process.env.TICKET_12_EVIDENCE;
+      if (directory) {
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(join(directory, `${command}-help.txt`), result.stdout);
+      }
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /无法启动.*null/);
+      assert.match(result.stdout, /fullCount\/fullMinutes/);
+      assert.match(result.stdout, /fullVerificationFailures.*只计.*land/);
+      assert.match(result.stdout, /verify、pr-check 不计入/);
+    }
+    assert.equal(existsSync(join(f.temporary, "calls.jsonl")), false);
+  } finally { f.cleanup(); }
+});
 
 const expected = (collectedAt: string) => {
   const spans = (...bounds: [number, number][]) => ({ spans: bounds.map(([a, b]) => ({ start: at(a), end: at(b) })), minutes: bounds.reduce((sum, [a, b]) => sum + b - a, 0) });

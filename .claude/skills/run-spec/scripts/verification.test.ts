@@ -1177,7 +1177,8 @@ test("exclusive verification preserves launch/signal failures and releases the j
         const entry = ledger(f.root).at(-1)!;
         assert.equal(entry.caller, command);
         assert.equal(entry.exitCode, 2);
-        assert.equal(entry.verification?.exitCode, 2);
+        if (scenario === "missing-program") assert.equal(entry.verification, null);
+        else assert.equal(entry.verification?.exitCode, 2);
         assert.equal(entry.stopReason, null);
         assert.match(result.stdout + result.stderr, /出错：/);
         assert.ok(!existsSync(f.lock));

@@ -3,7 +3,7 @@
  * to the main checkout's .codex-runs. Each UTF-8 JSON line uses one synchronous
  * O_APPEND write, so concurrent local processes never overwrite old entries.
  * Invocation timestamps include all stages; verification timestamps/exit status
- * separately identify real checks and retries that skip verification. Land
+ * separately identify real checks; launch failures and skipped checks are null. Land
  * failures carry the active step and diagnostic. Dry runs never create files.
  * Snapshot the main/ticket/PR branch before execution, with null when unknown.
  * Report ledger write failures on stderr without changing the command outcome.
@@ -50,7 +50,7 @@ export class VerificationAttempt {
     const result = await runVerification(...args);
     this.queuedMinutes = result.queuedMinutes;
     this.verification =
-      result.startedAt && result.finishedAt
+      !result.error && result.startedAt && result.finishedAt
         ? {
             startedAt: result.startedAt,
             finishedAt: result.finishedAt,
@@ -126,6 +126,8 @@ verify <T> 和 land <T> 为 ticket/<T>；pr-check 取 PR 的 headRefName，取�
 exitCode：子命令最终退出码；stopReason：land 停下的 {step,message}，成功或其他调用方为 null；
 step 为 preflight、rebase、install、verify、merge、push、copy、retain、remove-worktree 或 remove-branch；
 verification：实际验证的 {startedAt,finishedAt,exitCode}，不含排队、安装、合并和清理时间；
-尚未验证或续做时跳过验证则为 null，统计验证次数时只计非 null 的记录。
+尚未验证、验证程序无法启动或续做时跳过验证则为 null；正常启动后即使验证失败仍记录。
+评分表 verification.fullCount/fullMinutes 只汇总 verification 非 null 的 full，启动失败计入 failures.verificationLaunch。
+评分表 merges.fullVerificationFailures 只计 caller=land 的 full 验证非零退出；verify、pr-check 不计入该项。
 台账写入失败时在标准错误打印一行提示，子命令退出码不变。
 --dry-run 不创建或追加台账。`;

@@ -139,7 +139,7 @@ const collect = (root: string, spec: number, tickets: Set<number>, sessions: str
     reasonCounts[key]++;
   }
   const merges = metric("merges", sources.ledger ? { landCount: sources.ledger.filter((row) => row.caller === "land").length,
-    fullVerificationFailures: (checks ?? []).filter((row) => row.layer === "full" && row.exitCode !== 0).length, stops: reasonCounts } : null, "未记录：缺少验证台账");
+    fullVerificationFailures: (checks ?? []).filter((row) => row.caller === "land" && row.layer === "full" && row.exitCode !== 0).length, stops: reasonCounts } : null, "未记录：缺少验证台账");
   const index = codexSessions();
   const selected = new Map<string, CodexSession>();
   const dispatches = sources.dispatches.map((item) => {
@@ -266,7 +266,8 @@ DispatchDock runs.jsonl（CODEX_DISPATCH_HOME 或默认配置目录），CODEX_H
 同名派发副本合并，每种文件取修改时间最新者；会话按 cwd 和 thread.started ID 对应，ID 缺失时要求开始时间精确相等。
 verification：只计 verification 非 null 的台账行，读取实际 layer；逐行给对象、调用方、排队分钟、运行分钟、退出码；
 fullCount/fullMinutes 只汇总 full，staticCount 只汇总 static；缺台账为 null（未记录）。
-merges：landCount 计全部 land 调用；fullVerificationFailures 计所有 full 验证的非零退出；
+验证程序无法启动时 verification=null，不计验证次数或分钟，计入 failures.verificationLaunch；正常启动后即使验证失败仍记录。
+merges：landCount 计全部 land 调用；fullVerificationFailures 只计 caller=land 的 full 验证非零退出；verify、pr-check 不计入该项。
 stops 按 land 的 step 分 rebaseConflict、installFailure、verificationFailure、pushFailure、other。
 dispatches：每次给工单、类别、起止、分钟、退出码、用量；起止优先生命周期，旧记录退到进度头尾或 raw._at。
 类别：review 名为审查；会话初始指令明确“这是原地续做”为续做、“这是返工派发”为返工；基础 gh-<号> 为首次；其余 null。
