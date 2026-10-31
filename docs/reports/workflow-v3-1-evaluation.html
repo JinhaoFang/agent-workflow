@@ -1,0 +1,1785 @@
+<!doctype html>
+<!--
+workflow-v3.1 与 PathJX 改进效果评估：给用户判断 v3、v3.1 和 PathJX 的改进有没有效果、方法层按什么样子拆出去。
+数据来自两份 Codex 只读盘点（PathJX 16 个 spec 的执行过程；57 项改动的来历和使用）、设计负责人的归类和用户对四份汇报的评价。
+颜色：Codex 蓝、完整验证橙、设计负责人青，版本用灰阶由浅到深；状态色只用于判断，配图标和文字。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>workflow-v3.1 与 PathJX 改进效果评估</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f9f9f7;
+        --surface: #fcfcfb;
+        --ink: #0b0b0b;
+        --ink2: #52514e;
+        --muted: #898781;
+        --grid: #e1e0d9;
+        --base: #c3c2b7;
+        --ring: rgba(11, 11, 11, 0.1);
+        --link: #1c5cab;
+        --v3: #2a78d6;
+        --v31: #eb6834;
+        --own: #1baf7a;
+        --before: #c3c2b7;
+        --after: #2a78d6;
+        --good: #0ca30c;
+        --good-text: #006300;
+        --warn: #fab219;
+        --crit: #d03b3b;
+        --r1: #cde2fb;
+        --r2: #86b6ef;
+        --r3: #3987e5;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --page: #0d0d0d;
+          --surface: #1a1a19;
+          --ink: #f0efec;
+          --ink2: #c3c2b7;
+          --muted: #898781;
+          --grid: #2c2c2a;
+          --base: #383835;
+          --ring: rgba(255, 255, 255, 0.1);
+          --link: #86b6ef;
+          --v3: #3987e5;
+          --v31: #d95926;
+          --own: #199e70;
+          --before: #52514e;
+          --after: #3987e5;
+          --good-text: #0ca30c;
+          --r1: #184f95;
+          --r2: #256abf;
+          --r3: #3987e5;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        font: 15px/1.65 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 28px 16px 56px;
+      }
+      h1 {
+        font-size: 26px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 20px;
+        margin: 44px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--grid);
+      }
+      h3 {
+        font-size: 16px;
+        margin: 26px 0 10px;
+      }
+      p {
+        margin: 10px 0;
+      }
+      a {
+        color: var(--link);
+        text-underline-offset: 2px;
+        overflow-wrap: anywhere;
+      }
+      code {
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .sub {
+        color: var(--ink2);
+        margin: 0 0 18px;
+      }
+      .sub2 {
+        color: var(--ink2);
+        font-size: 13px;
+      }
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 10px;
+      }
+      .kpi {
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+      .kpi b {
+        display: block;
+        font-size: 26px;
+        font-weight: 600;
+      }
+      .kpi span {
+        color: var(--ink2);
+        font-size: 13px;
+      }
+      .toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        margin: 18px 0 0;
+        font-size: 14px;
+        align-items: center;
+      }
+      button {
+        font: inherit;
+        font-size: 13px;
+        color: var(--ink);
+        background: var(--surface);
+        border: 1px solid var(--base);
+        border-radius: 6px;
+        padding: 3px 10px;
+        cursor: pointer;
+      }
+      .cards {
+        display: grid;
+        gap: 12px;
+        margin: 12px 0;
+      }
+      .cards.two {
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      }
+      .cards.three {
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+      .cards.four {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 10px;
+        padding: 12px 14px;
+        min-width: 0;
+      }
+      .card p {
+        margin: 6px 0;
+        font-size: 14px;
+      }
+      .card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 4px;
+      }
+      .card.decide {
+        border-left: 4px solid var(--warn);
+      }
+      .card.todo {
+        border-left: 4px solid var(--v3);
+      }
+      .choice span,
+      .lbl {
+        display: inline-block;
+        font-size: 12px;
+        color: var(--ink2);
+        border: 1px solid var(--base);
+        border-radius: 4px;
+        padding: 0 5px;
+        margin-right: 6px;
+      }
+      .lbl.fix {
+        border-color: var(--good);
+      }
+      .num {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .checklist {
+        list-style: none;
+        padding: 0;
+        margin: 8px 0;
+        display: grid;
+        gap: 6px;
+      }
+      .checklist li {
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 8px;
+        padding: 8px 12px;
+        display: grid;
+        grid-template-columns: minmax(180px, 30%) minmax(0, 1fr);
+        gap: 4px 14px;
+        font-size: 14px;
+      }
+      .checklist label {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        cursor: pointer;
+      }
+      .checklist input {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--good);
+        flex: none;
+        transform: translateY(2px);
+      }
+      .checklist li.done {
+        opacity: 0.6;
+      }
+      .status {
+        list-style: none;
+        padding: 0;
+        margin: 6px 0 0;
+        font-size: 14px;
+      }
+      .status li {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr);
+        gap: 6px;
+        margin: 5px 0;
+      }
+      .ic {
+        display: inline-grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        font-size: 12px;
+        font-weight: 700;
+        color: #fff;
+        background: var(--muted);
+        transform: translateY(2px);
+      }
+      .status .good .ic {
+        background: var(--good);
+      }
+      .status .warn .ic {
+        background: var(--warn);
+        color: #0b0b0b;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 6px 0;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        line-height: 1.4;
+        padding: 2px 8px;
+        border: 1px solid var(--ring);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--ink);
+      }
+      .chip i {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex: none;
+      }
+      .chip small {
+        color: var(--ink2);
+        font-size: 11px;
+      }
+      .chip.v3 i {
+        background: var(--v3);
+      }
+      .chip.v31 i {
+        background: var(--v31);
+      }
+      .chip.own i {
+        background: var(--own);
+      }
+      .legend-line .chip {
+        margin: 0 2px;
+      }
+      .steps {
+        list-style: none;
+        padding: 0;
+        margin: 14px 0;
+        position: relative;
+      }
+      .steps::before {
+        content: "";
+        position: absolute;
+        left: 9px;
+        top: 6px;
+        bottom: 6px;
+        width: 2px;
+        background: var(--grid);
+      }
+      .step {
+        position: relative;
+        padding: 2px 0 14px 34px;
+      }
+      .step::before {
+        content: "";
+        position: absolute;
+        left: 2px;
+        top: 6px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 2px solid var(--base);
+      }
+      .step.added::before {
+        border-color: var(--v3);
+        background: var(--v3);
+      }
+      .step-head {
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        flex-wrap: wrap;
+      }
+      .step-head b {
+        font-size: 16px;
+      }
+      .newstep {
+        font-size: 12px;
+        color: var(--ink2);
+      }
+      .step-what {
+        margin: 2px 0 4px;
+        color: var(--ink2);
+        font-size: 14px;
+      }
+      .step details,
+      section > details,
+      .bucket details {
+        margin: 4px 0 0;
+      }
+      details > summary {
+        cursor: pointer;
+        color: var(--link);
+        font-size: 14px;
+      }
+      details[open] > summary {
+        margin-bottom: 6px;
+      }
+      section > details {
+        margin: 10px 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        background: var(--surface);
+        table-layout: fixed;
+      }
+      th,
+      td {
+        border: 1px solid var(--grid);
+        padding: 6px 8px;
+        text-align: left;
+        vertical-align: top;
+        overflow-wrap: anywhere;
+      }
+      th {
+        font-weight: 600;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid var(--base);
+        color: var(--ink2);
+        white-space: nowrap;
+      }
+      .segfig {
+        margin: 14px 0;
+      }
+      .segbar {
+        display: flex;
+        gap: 2px;
+        height: 28px;
+      }
+      .segbar.tall {
+        height: auto;
+        min-height: 40px;
+      }
+      .seg {
+        display: flex;
+        align-items: center;
+        padding: 0 8px;
+        border-radius: 4px;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        min-width: 0;
+      }
+      .seg.v3 {
+        background: var(--v3);
+      }
+      .seg.v31 {
+        background: var(--v31);
+      }
+      .seg.both {
+        background: linear-gradient(90deg, var(--v3) 50%, var(--v31) 50%);
+      }
+      .seg.own {
+        background: var(--own);
+      }
+      .seg.gray {
+        background: var(--base);
+        color: var(--ink);
+      }
+      .seg.r1 {
+        background: var(--r1);
+        color: #0b0b0b;
+      }
+      .seg.r2 {
+        background: var(--r2);
+        color: #0b0b0b;
+      }
+      .seg.r3 {
+        background: var(--r3);
+      }
+      .segbar.tall .seg {
+        font-weight: 400;
+        font-size: 12px;
+        line-height: 1.3;
+        white-space: normal;
+        padding: 4px 8px;
+      }
+      figcaption {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        font-size: 13px;
+        color: var(--ink2);
+        margin-top: 6px;
+      }
+      .key i {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        margin-right: 5px;
+        vertical-align: -1px;
+      }
+      .key i.v3 {
+        background: var(--v3);
+      }
+      .key i.v31 {
+        background: var(--v31);
+      }
+      .key i.both {
+        background: linear-gradient(90deg, var(--v3) 50%, var(--v31) 50%);
+      }
+      .key i.own {
+        background: var(--own);
+      }
+      .key i.gray {
+        background: var(--base);
+      }
+      .chips.wide {
+        margin: 10px 0;
+      }
+      .tight li {
+        margin: 6px 0;
+        font-size: 14px;
+      }
+      .fig {
+        margin: 14px 0;
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 10px;
+        padding: 12px;
+        overflow-x: auto;
+      }
+      .swipe {
+        display: none;
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        position: sticky;
+        left: 0;
+      }
+      .lockfig {
+        width: 100%;
+        min-width: 640px;
+        height: auto;
+        display: block;
+      }
+      .lockfig text {
+        fill: var(--ink);
+        font-size: 13px;
+      }
+      .lockfig .title {
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .lockfig .lane,
+      .lockfig .muted {
+        fill: var(--ink2);
+        font-size: 12px;
+      }
+      .lockfig .in {
+        fill: #fff;
+        font-size: 12px;
+      }
+      .lockfig .run {
+        fill: var(--v3);
+      }
+      .lockfig .wait {
+        fill: var(--base);
+      }
+      .lockfig .wait + .in,
+      .lockfig rect.wait + text {
+        fill: var(--ink);
+      }
+      .lockfig .danger {
+        fill: var(--crit);
+        opacity: 0.14;
+      }
+      .lockfig .warn {
+        fill: var(--crit);
+        font-weight: 600;
+      }
+      .lockfig .axis {
+        stroke: var(--base);
+        stroke-width: 1;
+      }
+      .note {
+        border-left: 3px solid var(--v3);
+        background: var(--surface);
+        padding: 8px 12px;
+        font-size: 14px;
+      }
+      .tl {
+        list-style: none;
+        padding: 0;
+        margin: 12px 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 10px;
+        position: relative;
+      }
+      .tl li {
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-top: 3px solid var(--v3);
+        border-radius: 8px;
+        padding: 10px 12px;
+        display: grid;
+        gap: 2px;
+        font-size: 14px;
+      }
+      .tl-when {
+        color: var(--ink2);
+        font-size: 12px;
+      }
+      .tl li span:last-child {
+        color: var(--ink2);
+        font-size: 13px;
+      }
+      .metrics {
+        display: grid;
+        gap: 14px;
+        margin: 12px 0;
+      }
+      .metric {
+        display: grid;
+        grid-template-columns: minmax(200px, 32%) minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+      }
+      .m-label b {
+        display: block;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .m-label small {
+        display: block;
+        color: var(--ink2);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .m-bars {
+        display: grid;
+        gap: 4px;
+      }
+      .m-line {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr) 92px;
+        align-items: center;
+        gap: 8px;
+      }
+      .m-tag {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .m-track {
+        position: relative;
+        height: 20px;
+      }
+      .m-bar {
+        position: absolute;
+        left: 0;
+        top: 4px;
+        height: 12px;
+        border-radius: 0 4px 4px 0;
+        min-width: 2px;
+      }
+      .m-bar.before {
+        background: var(--before);
+      }
+      .m-bar.after {
+        background: var(--after);
+      }
+      .m-val {
+        font-size: 12px;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+      .mark {
+        position: absolute;
+        top: -2px;
+        bottom: -2px;
+        width: 0;
+        border-left: 1px solid var(--ink2);
+        z-index: 1;
+      }
+      .mark em {
+        position: absolute;
+        top: -14px;
+        left: 3px;
+        font-size: 10px;
+        font-style: normal;
+        color: var(--ink2);
+        white-space: nowrap;
+      }
+      .mark.end em {
+        left: auto;
+        right: 3px;
+      }
+      .m-line + .m-line .mark em {
+        display: none;
+      }
+      .two-col {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+      .ranked {
+        display: grid;
+        gap: 6px;
+      }
+      .rb-row {
+        display: grid;
+        grid-template-columns: 110px minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .rb-label {
+        color: var(--ink2);
+        font-size: 13px;
+      }
+      .rb-label small {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .rb-track {
+        position: relative;
+        height: 18px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .rb-bar {
+        display: block;
+        height: 14px;
+        background: var(--v3);
+        border-radius: 0 4px 4px 0;
+      }
+      .rb-val {
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .read {
+        display: grid;
+        gap: 10px;
+        margin: 10px 0;
+      }
+      .read-row {
+        display: grid;
+        grid-template-columns: 110px minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+      }
+      .flow {
+        list-style: none;
+        padding: 0;
+        margin: 10px 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        counter-reset: f;
+      }
+      .flow li {
+        counter-increment: f;
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 13px;
+        position: relative;
+      }
+      .flow li::before {
+        content: counter(f);
+        display: inline-grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--v3);
+        color: #fff;
+        font-size: 11px;
+        margin-right: 6px;
+      }
+      .buckets {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+        gap: 12px;
+      }
+      .bucket {
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-top: 4px solid var(--muted);
+        border-radius: 10px;
+        padding: 10px 12px;
+        min-width: 0;
+      }
+      .bucket.crit {
+        border-top-color: var(--crit);
+      }
+      .bucket.warn {
+        border-top-color: var(--warn);
+      }
+      .bucket-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+      }
+      .bucket-head span {
+        font-size: 12px;
+        color: var(--ink2);
+      }
+      .items .item {
+        border-top: 1px solid var(--grid);
+        padding: 5px 0;
+      }
+      .items .item summary {
+        color: var(--ink);
+        font-size: 14px;
+      }
+      .items .item div {
+        font-size: 13px;
+        color: var(--ink2);
+        padding: 2px 0 4px 14px;
+      }
+      .branches {
+        display: grid;
+        gap: 10px;
+      }
+      .br-row {
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 10px;
+        padding: 10px 12px;
+        display: grid;
+        gap: 6px;
+      }
+      .br-row > div {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: baseline;
+      }
+      .br-tag {
+        font-size: 12px;
+        color: var(--ink2);
+        min-width: 52px;
+      }
+      .br {
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+        border: 1px solid var(--ring);
+        border-radius: 5px;
+        padding: 1px 6px;
+      }
+      .br.del {
+        color: var(--muted);
+        text-decoration: line-through;
+      }
+      .br.keep {
+        border-color: var(--warn);
+        display: inline-grid;
+      }
+      .br.keep small {
+        font-family: system-ui, sans-serif;
+        color: var(--ink2);
+        font-size: 11px;
+      }
+      footer {
+        margin-top: 40px;
+        padding-top: 12px;
+        border-top: 1px solid var(--grid);
+        font-size: 12px;
+        color: var(--ink2);
+      }
+      @media (max-width: 640px) {
+        .swipe {
+          display: block;
+        }
+        main {
+          padding: 20px 12px 40px;
+        }
+        h1 {
+          font-size: 22px;
+        }
+        .kpis {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .checklist li,
+        .metric,
+        .two-col {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .rb-row {
+          grid-template-columns: 84px minmax(0, 1fr);
+        }
+        .read-row {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 4px;
+        }
+        .segbar.tall .seg {
+          padding: 4px 6px;
+        }
+        table,
+        thead,
+        tbody,
+        tr,
+        td,
+        th {
+          display: block;
+        }
+        thead,
+        colgroup {
+          display: none;
+        }
+        tr {
+          border: 1px solid var(--grid);
+          margin-bottom: 8px;
+        }
+        td {
+          border: 0;
+          border-bottom: 1px solid var(--grid);
+          display: grid;
+          grid-template-columns: minmax(70px, 28%) minmax(0, 1fr);
+          gap: 8px;
+        }
+        td::before {
+          content: attr(data-label);
+          color: var(--ink2);
+        }
+      }
+      @media print {
+        details > * {
+          display: block;
+        }
+        .toc button {
+          display: none;
+        }
+      }
+      :root {
+        --codex: #2a78d6;
+        --verify: #eb6834;
+        --design: #1baf7a;
+        --idle: #c3c2b7;
+        --g1: #c3c2b7;
+        --g2: #898781;
+        --g3: #52514e;
+        --n1: #e1e0d9;
+        --n2: #a9a89f;
+        --n3: #52514e;
+        --n4: #7a7973;
+        --band-v2: rgba(11, 11, 11, 0.02);
+        --band-v3: rgba(11, 11, 11, 0.06);
+        --band-v31: rgba(11, 11, 11, 0.11);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --codex: #3987e5;
+          --verify: #d95926;
+          --design: #199e70;
+          --idle: #383835;
+          --g1: #52514e;
+          --g2: #898781;
+          --g3: #c3c2b7;
+          --n1: #2c2c2a;
+          --n2: #52514e;
+          --n3: #c3c2b7;
+          --n4: #898781;
+          --band-v2: rgba(255, 255, 255, 0.02);
+          --band-v3: rgba(255, 255, 255, 0.06);
+          --band-v31: rgba(255, 255, 255, 0.11);
+        }
+      }
+      .lead {
+        font-size: 16px;
+        margin: 6px 0 14px;
+      }
+      .ev {
+        font-size: 13px;
+        color: var(--ink2);
+      }
+      .note2 {
+        font-size: 12.5px;
+        color: var(--ink2);
+        margin: 6px 0 0;
+      }
+      .scorecard {
+        display: grid;
+        gap: 6px;
+      }
+      .sc-row {
+        display: grid;
+        grid-template-columns: 110px 108px 120px minmax(0, 1fr);
+        gap: 12px;
+        align-items: start;
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .sc-name {
+        font-weight: 600;
+      }
+      .sc-verdict {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+      }
+      .sc-verdict .ic {
+        display: inline-grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        font-size: 12px;
+        color: #fff;
+        flex: none;
+      }
+      .sc-verdict.good .ic {
+        background: var(--good);
+      }
+      .sc-verdict.good {
+        color: var(--good-text);
+      }
+      .sc-verdict.warn .ic {
+        background: var(--warn);
+        color: #0b0b0b;
+      }
+      .sc-verdict.na .ic {
+        background: var(--g2);
+      }
+      .sc-key {
+        font-size: 13px;
+        color: var(--ink2);
+      }
+      .sc-text {
+        font-size: 14px;
+      }
+      .ms {
+        list-style: none;
+        padding: 0;
+        margin: 8px 0;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 6px;
+      }
+      .ms li {
+        border-top: 4px solid var(--g1);
+        background: var(--surface);
+        border-radius: 0 0 8px 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .ms li.v3 {
+        border-top-color: var(--g2);
+      }
+      .ms li.v31 {
+        border-top-color: var(--g3);
+      }
+      .ms-when {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .goaltiles {
+        display: grid;
+        grid-template-columns: minmax(0, 13fr) minmax(0, 2.4fr) minmax(0, 1.3fr);
+        gap: 10px;
+        margin: 10px 0;
+      }
+      .gt-ver {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .gt-tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+        gap: 4px;
+      }
+      .gt {
+        border: 1px solid var(--ring);
+        border-radius: 8px;
+        padding: 6px;
+        background: var(--surface);
+        font-size: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-height: 78px;
+      }
+      .gt.none {
+        border-style: dashed;
+        background: transparent;
+      }
+      .gt small {
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.3;
+        white-space: nowrap;
+      }
+      .gt-meter {
+        height: 6px;
+        border-radius: 3px;
+        background: var(--grid);
+        overflow: hidden;
+        margin-top: auto;
+      }
+      .gt-meter i {
+        display: block;
+        height: 100%;
+        border-radius: 3px;
+        background: var(--good);
+      }
+      .gt.part .gt-meter i {
+        background: var(--warn);
+      }
+      .gt-val {
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .gt-val.muted {
+        color: var(--muted);
+        font-weight: 400;
+        margin-top: auto;
+      }
+      .vb,
+      .dp {
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .vb-title {
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 6px;
+      }
+      .vb-row,
+      .dp-row {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr) 96px;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+        margin: 4px 0;
+      }
+      .dp-row {
+        grid-template-columns: 128px minmax(0, 1fr) 52px;
+      }
+      .vb-track {
+        height: 12px;
+        position: relative;
+      }
+      .vb-track i {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        border-radius: 0 4px 4px 0;
+        min-width: 2px;
+      }
+      .vb-val,
+      .dp-val {
+        font-variant-numeric: tabular-nums;
+        font-size: 12.5px;
+      }
+      i.g1,
+      .k.g1,
+      .sm-bar.g1,
+      .fb.g1,
+      .dp-dot.g1 {
+        background: var(--g1);
+      }
+      i.g2,
+      .k.g2,
+      .sm-bar.g2,
+      .fb.g2,
+      .dp-dot.g2 {
+        background: var(--g2);
+      }
+      i.g3,
+      .k.g3,
+      .sm-bar.g3,
+      .fb.g3,
+      .dp-dot.g3 {
+        background: var(--g3);
+      }
+      .dp-name {
+        font-size: 12px;
+        color: var(--ink2);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .dp-track {
+        position: relative;
+        height: 16px;
+        border-bottom: 1px solid var(--grid);
+      }
+      .dp-dot {
+        position: absolute;
+        top: 3px;
+        width: 10px;
+        height: 10px;
+        margin-left: -5px;
+        border-radius: 50%;
+        box-shadow: 0 0 0 2px var(--surface);
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        font-size: 12.5px;
+        color: var(--ink2);
+        margin: 6px 0;
+      }
+      .legend .k {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        margin-right: 5px;
+        vertical-align: -1px;
+      }
+      .k.s-design,
+      .k.c-design {
+        background: var(--design);
+      }
+      .k.s-eng,
+      .k.c-codex {
+        background: var(--codex);
+      }
+      .k.c-verify {
+        background: var(--verify);
+      }
+      .k.c-idle {
+        background: var(--idle);
+      }
+      .rmatrix th small {
+        display: block;
+        font-weight: 400;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .rmatrix tbody th {
+        text-align: left;
+        font-weight: 600;
+        font-size: 13.5px;
+      }
+      .rm .ic {
+        display: inline-grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        font-size: 11px;
+        margin-right: 6px;
+        color: #fff;
+        vertical-align: -3px;
+      }
+      .rm.ok .ic {
+        background: var(--good);
+      }
+      .rm.part .ic {
+        background: var(--warn);
+        color: #0b0b0b;
+      }
+      .rm.no .ic {
+        background: var(--crit);
+      }
+      .chart {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .chart .grid {
+        stroke: var(--grid);
+        stroke-width: 1;
+      }
+      .chart .ax {
+        fill: var(--muted);
+        font-size: 11px;
+      }
+      .chart .dl {
+        fill: var(--ink);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .chart .band.b-v2 {
+        fill: var(--band-v2);
+      }
+      .chart .band.b-v3 {
+        fill: var(--band-v3);
+      }
+      .chart .band.b-v31 {
+        fill: var(--band-v31);
+      }
+      .chart .band-l {
+        fill: var(--ink2);
+        font-size: 11px;
+      }
+      .chart .line {
+        fill: none;
+        stroke-width: 2;
+      }
+      .chart .line.s-design {
+        stroke: var(--design);
+      }
+      .chart .line.s-eng {
+        stroke: var(--codex);
+      }
+      .chart .dot {
+        stroke: var(--surface);
+        stroke-width: 2;
+      }
+      .chart .dot.s-design {
+        fill: var(--design);
+      }
+      .chart .dot.s-eng {
+        fill: var(--codex);
+      }
+      .chart .lane-bg {
+        fill: var(--surface);
+        stroke: var(--grid);
+      }
+      .chart .sw.design {
+        fill: var(--design);
+      }
+      .chart .sw.codex {
+        fill: var(--codex);
+      }
+      .chart .sw.verify {
+        fill: var(--verify);
+        fill-opacity: 0.85;
+      }
+      .chart .sw.review {
+        fill: var(--g2);
+      }
+      .chart .in {
+        fill: #fff;
+        font-size: 10px;
+      }
+      .scroll {
+        overflow-x: auto;
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 10px;
+        padding: 10px;
+        margin: 8px 0;
+      }
+      .scroll .chart {
+        min-width: 640px;
+      }
+      .smalls {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .sm {
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 10px;
+        padding: 10px;
+      }
+      .sm-title {
+        font-weight: 600;
+        font-size: 13.5px;
+      }
+      .sm-title small {
+        font-weight: 400;
+        color: var(--muted);
+        margin-left: 4px;
+      }
+      .sm-plot {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        height: 120px;
+        align-items: end;
+        border-bottom: 1px solid var(--base);
+        margin-top: 6px;
+      }
+      .sm-col {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        height: 100%;
+        position: relative;
+      }
+      .sm-v {
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+      }
+      .sm-bar {
+        width: 60%;
+        border-radius: 4px 4px 0 0;
+        max-height: calc(100% - 18px);
+      }
+      .sm-x {
+        position: absolute;
+        bottom: -18px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .sm .note2 {
+        margin-top: 22px;
+      }
+      .waffle {
+        display: grid;
+        grid-template-columns: 30fr 14fr 13fr;
+        gap: 14px;
+      }
+      .wf-head {
+        font-size: 13px;
+        color: var(--ink2);
+        margin-bottom: 4px;
+      }
+      .wf-head b {
+        color: var(--ink);
+      }
+      .wf-cells {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+      }
+      .wf {
+        width: 26px;
+        height: 26px;
+        border-radius: 4px;
+        display: inline-grid;
+        place-items: center;
+        font-size: 10.5px;
+        font-variant-numeric: tabular-nums;
+        cursor: default;
+      }
+      .wf.used {
+        background: var(--g3);
+        color: var(--surface);
+      }
+      .wf.idle {
+        border: 1.5px solid var(--g2);
+        color: var(--ink2);
+      }
+      .wf.unknown {
+        background: var(--n1);
+        border: 1.5px dashed var(--g2);
+        color: var(--ink2);
+      }
+      .legend .k.wf {
+        width: 12px;
+        height: 12px;
+      }
+      .st {
+        margin: 12px 0;
+      }
+      .st-title {
+        font-size: 13.5px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .st-bar {
+        display: flex;
+        gap: 2px;
+        height: 26px;
+      }
+      .st-seg {
+        display: flex;
+        align-items: center;
+        padding: 0 8px;
+        border-radius: 4px;
+        font-size: 12.5px;
+        min-width: 22px;
+      }
+      .st-seg.n1,
+      .k.n1 {
+        background: var(--n1);
+        color: var(--ink);
+      }
+      .st-seg.n1b,
+      .k.n1b {
+        background: transparent;
+        border: 1.5px solid var(--n2);
+        color: var(--ink);
+      }
+      .st-seg.n2,
+      .k.n2 {
+        background: var(--n2);
+        color: #0b0b0b;
+      }
+      .st-seg.n3,
+      .k.n3 {
+        background: var(--n3);
+        color: var(--surface);
+      }
+      .st-seg.n4,
+      .k.n4 {
+        background: repeating-linear-gradient(45deg, var(--n2) 0 3px, transparent 3px 6px);
+        border: 1.5px solid var(--n3);
+        color: var(--ink);
+      }
+      .tsplit {
+        display: grid;
+        gap: 8px;
+        margin: 8px 0;
+      }
+      .ts-row {
+        display: grid;
+        grid-template-columns: 170px minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+      }
+      .ts-name {
+        font-size: 13px;
+      }
+      .ts-name small {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .ts-bar {
+        display: flex;
+        gap: 2px;
+        height: 26px;
+      }
+      .ts-seg {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        font-size: 11.5px;
+        color: #fff;
+        min-width: 2px;
+      }
+      .ts-seg.c-verify {
+        background: var(--verify);
+      }
+      .ts-seg.c-codex {
+        background: var(--codex);
+      }
+      .ts-seg.c-design {
+        background: var(--design);
+      }
+      .ts-seg.c-idle {
+        background: var(--idle);
+        color: var(--ink);
+      }
+      .fails {
+        display: grid;
+        gap: 8px;
+        margin: 8px 0;
+      }
+      .fr {
+        display: grid;
+        grid-template-columns: 100px repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .fr-head span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .fr-cell {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .fr-cell b {
+        font-weight: 400;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        color: var(--ink2);
+      }
+      .fb {
+        height: 10px;
+        border-radius: 0 4px 4px 0;
+        min-width: 2px;
+        flex: none;
+        max-width: calc(100% - 24px);
+      }
+      .cards.five {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 10px;
+      }
+      .wchips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+        margin-top: 6px;
+      }
+      .wchip {
+        font-size: 11.5px;
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid var(--base);
+        color: var(--ink2);
+        font-variant-numeric: tabular-nums;
+        cursor: default;
+      }
+      .plan {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .plan-col {
+        background: var(--surface);
+        border: 1px solid var(--ring);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 13.5px;
+      }
+      .plan-col p {
+        margin: 4px 0;
+        color: var(--ink2);
+      }
+      .plan-h {
+        font-weight: 600;
+        padding-left: 8px;
+        border-left: 4px solid var(--g3);
+      }
+      .plan-h.quiet {
+        border-left-color: var(--g2);
+      }
+      .plan-h.drop {
+        border-left-color: var(--g1);
+      }
+      .cost {
+        display: grid;
+        gap: 6px;
+        margin: 8px 0;
+      }
+      .cost-row {
+        display: grid;
+        grid-template-columns: 210px minmax(0, 1fr) 170px;
+        gap: 10px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .cost-name small {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .cost-track {
+        height: 12px;
+        position: relative;
+      }
+      .cost-track i {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        border-radius: 0 4px 4px 0;
+      }
+      .cost-track i.c-codex {
+        background: var(--codex);
+      }
+      .cost-track i.c-design {
+        background: var(--design);
+      }
+      .cost-val {
+        font-variant-numeric: tabular-nums;
+        font-size: 12.5px;
+      }
+      @media (max-width: 640px) {
+        .sc-row {
+          grid-template-columns: minmax(0, 1fr) auto;
+        }
+        .sc-key {
+          display: none;
+        }
+        .sc-text {
+          grid-column: 1 / -1;
+        }
+        .ms {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .goaltiles,
+        .smalls,
+        .waffle,
+        .plan {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .ts-row,
+        .cost-row {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 2px;
+        }
+        .dp-row {
+          grid-template-columns: 96px minmax(0, 1fr) 44px;
+        }
+        .rmatrix tbody th {
+          display: block;
+          padding: 8px 8px 0;
+        }
+      }
+
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>workflow-v3.1 与 PathJX 改进效果评估</h1>
+      <p class="sub">2026-10-31 · 设计负责人 · 样本：PathJX 16 个 spec（v2 13、v3 2、v3.1 1），184 张工单</p>
+      <div class="kpis"><div class="kpi"><b>16</b><span>个 PathJX spec：v2 13 · v3 2 · v3.1 1</span></div><div class="kpi"><b>11/11</b><span>#233 目标达成；第一阶段没有目标核对</span></div><div class="kpi"><b>39→15</b><span>KB：PathJX 设计负责人开工必读</span></div><div class="kpi"><b>+31%</b><span>方法层 agent 要读的说明</span></div><div class="kpi"><b>15/57</b><span>项改动在 4 个 spec 里没用上</span></div><div class="kpi"><b>65%</b><span>#233 的时间花在完整验证上</span></div></div>
+      <nav class="toc" aria-label="目录"><a href="#verdict">结论</a> <a href="#todo">要你确认的</a> <a href="#done">这次做了什么</a> <a href="#quality">任务完成：目标能核对了</a> <a href="#report">汇报：部分变好</a> <a href="#rules">规则：目标仓库变简单，方法层变复杂</a> <a href="#time">时间与成本：总量没法比，浪费看得见</a> <a href="#reliability">可靠性：几类故障不再出现</a> <a href="#split">拆分时怎么做</a> <a href="#risk">风险与缺口</a><button type="button" data-expand>展开全部明细</button></nav>
+      <section id="verdict"><h2>结论</h2>
+<p class="lead"><b>完成了，效果一半一半。</b>目标仓库那一侧有效果：目标能核对了，开工必读减半，几类流程故障不再出现。方法层自己那一侧变复杂了：说明多了三成，大部分改动来自一次事件、没比较过做法，有 15 项一次没用上。拆分时按"思路 + 机制"收拢，正好能把这部分减下来。</p>
+<div class="scorecard"><div class="sc-row"><div class="sc-name">任务完成</div><div class="sc-verdict good"><span class="ic">✓</span>变好</div><div class="sc-key">目标能核对了</div><div class="sc-text">第一阶段 13 个 spec 都没有核对目标。v3 起收尾按原问题复测：#208 7 项里 4 项达成，没达成的才有了 #233；#209 8 项里 7 项；#233 11 项全部达成（<a href="https://github.com/JinhaoFang/PathJX-01/issues/233#issuecomment-6538333115">#233 目标核对</a>）。一次验收通过率、返工比例看不出变化：v3.1 只有 6 张工程工单。</div></div><div class="sc-row"><div class="sc-name">汇报</div><div class="sc-verdict warn"><span class="ic">!</span>部分变好</div><div class="sc-key">你的评价</div><div class="sc-text">v3.1 的交付和目标核对让你看清做了什么、效果如何；但证据不在报告里、可视化不够，读一份从 10 分钟变成 15 分钟。</div></div><div class="sc-row"><div class="sc-name">目标仓库的规则</div><div class="sc-verdict good"><span class="ic">✓</span>变简单</div><div class="sc-key">开工必读减半</div><div class="sc-text">PathJX 设计负责人开工必读从第一阶段最多的 39.3 KB（#172）降到 15.3 KB（#233），工程负责人 10.3 → 8.1 KB；增长在自动检查上（12 → 17 项）。</div></div><div class="sc-row"><div class="sc-name">方法层自身</div><div class="sc-verdict warn"><span class="ic">!</span>变复杂</div><div class="sc-key">说明 +31%</div><div class="sc-text">agent 要读的说明 38.5 → 50.5 KB；57 项改动里 43 项来自一次事件、一轮复盘或没有实际发生的事件，只有 9 项比较过其他做法；15 项在 4 个 spec 里一次没用上。</div></div><div class="sc-row"><div class="sc-name">时间与成本</div><div class="sc-verdict na"><span class="ic">?</span>没法比</div><div class="sc-key">但找到了浪费</div><div class="sc-text">spec 类型不同，总时长和用量不能比。#233 的 183 分钟里，119 分钟在跑或排队完整验证；每张工单平均跑约 2 次全套测试，第一阶段就是这样。</div></div><div class="sc-row"><div class="sc-name">可靠性</div><div class="sc-verdict good"><span class="ic">✓</span>变好</div><div class="sc-key">具体故障消失</div><div class="sc-text">工具链下载失败的记录 2 → 1 → 0，派发出错 11 → 1 → 0；新 worktree 复用工具链实测 0.19 秒。只有 #233 一个 v3.1 样本。</div></div></div></section>
+<section id="todo"><h2>要你确认的</h2>
+<div class="cards two">
+  <div class="card decide"><div class="card-head"><b>1. 拆分清单</b></div><p>5 条思路 + 用上的机制带走，没用上的补丁移到按需说明，再加测试分层、评分表采集、汇报模板重做（见「拆分时怎么做」）。</p><p class="choice"><span>可选：</span>照这个拆（推荐）· 调整后再拆</p></div>
+  <div class="card decide"><div class="card-head"><b>2. 没用上或无法判断的 17 项怎么处理</b></div><p>7 项安全兜底和 3 项 watch 巡检是脚本，7 项是只有文字的补丁。它们都只经过 4 个 spec，没用上不等于没用。</p><p class="choice"><span>可选：</span>脚本留着、文字移出必读（推荐）· 全删 · 原样保留</p></div>
+</div></section>
+<section id="done"><h2>这次做了什么</h2>
+<h3>评估的对象</h3>
+<ol class="ms"><li class="v2"><span class="ms-when">10-21～10-29</span><b>PathJX 第一阶段</b><span>13 个 spec，用 v2</span></li><li class="v3"><span class="ms-when">10-29</span><b>v3 发布</b><span><a href="https://github.com/JinhaoFang/video-studio/issues/77">spec #77</a>：按第一阶段复盘改，38 项</span></li><li class="v3"><span class="ms-when">10-30</span><b>PathJX #208、#209</b><span>规则文档分层、推理代码去重，用 v3</span></li><li class="v31"><span class="ms-when">10-30</span><b>v3.1 发布</b><span><a href="https://github.com/JinhaoFang/video-studio/issues/94">spec #94</a>：按 #208、#209 实测改，14 项；另 5 项两版都改</span></li><li class="v31"><span class="ms-when">10-31</span><b>PathJX #233</b><span>收掉 #208、#209 的遗留，用 v3.1</span></li></ol>
+<h3>评估怎么做的</h3>
+<ul class="tight">
+<li>Codex 只读盘点 PathJX 16 个 spec、184 张工单的执行记录：GitHub 的工单和评论、Codex 和 Claude 的会话记录。</li>
+<li>Codex 逐项查 57 项改动：从哪来、改前分析到哪一步、写在哪、实际用上没有；设计负责人按"思路、机制、补丁"归类。</li>
+<li>设计负责人轻量过一遍 PathJX 22 项规则文档改动；你给四份汇报打分。</li>
+</ul></section>
+<section id="quality"><h2>任务完成：目标能核对了</h2>
+<p>第一阶段的 spec 做完就收，没人回头看原问题解决了没有。v3 起收尾按原问题复测，#208 因此暴露只达成 4/7，才有了 #233。</p>
+<div class="goaltiles"><div class="gt-group"><div class="gt-ver">v2</div><div class="gt-tiles"><div class="gt none" title="#3 流程与工具"><b>#3</b><small>流程与工具</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#9 数据与模型"><b>#9</b><small>数据与模型</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#14 数据与模型"><b>#14</b><small>数据与模型</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#19 数据与模型"><b>#19</b><small>数据与模型</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#27 数据与模型"><b>#27</b><small>数据与模型</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#43 产品功能"><b>#43</b><small>产品功能</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#73 数据与模型"><b>#73</b><small>数据与模型</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#99 产品功能"><b>#99</b><small>产品功能</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#100 产品功能"><b>#100</b><small>产品功能</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#170 产品功能"><b>#170</b><small>产品功能</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#171 产品功能"><b>#171</b><small>产品功能</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#172 规则与文档"><b>#172</b><small>规则与文档</small><span class="gt-val muted">没有核对</span></div><div class="gt none" title="#194 收尾整理"><b>#194</b><small>收尾整理</small><span class="gt-val muted">没有核对</span></div></div></div><div class="gt-group"><div class="gt-ver">v3</div><div class="gt-tiles"><div class="gt part" title="#208 规则与文档"><b>#208</b><small>规则与文档</small><span class="gt-meter"><i style="width:57%"></i></span><span class="gt-val">4/7</span></div><div class="gt part" title="#209 数据与模型"><b>#209</b><small>数据与模型</small><span class="gt-meter"><i style="width:88%"></i></span><span class="gt-val">7/8</span></div></div></div><div class="gt-group"><div class="gt-ver">v3.1</div><div class="gt-tiles"><div class="gt full" title="#233 流程与工具"><b>#233</b><small>流程与工具</small><span class="gt-meter"><i style="width:100%"></i></span><span class="gt-val">11/11</span></div></div></div></div>
+<p class="ev">证据：<a href="https://github.com/JinhaoFang/PathJX-01/issues/209#issuecomment-6536683807">#209 目标核对</a> · <a href="https://github.com/JinhaoFang/PathJX-01/issues/233#issuecomment-6538333115">#233 目标核对</a> · #208 的复测结论写在 <a href="https://github.com/JinhaoFang/PathJX-01/issues/233">#233 的问题陈述</a></p>
+<h3>一次通过和返工：看不出变化</h3>
+<div class="two-col"><div class="vb"><div class="vb-title">工程工单第一次派发就通过验收</div><div class="vb-row"><span class="vb-ver">v2</span><span class="vb-track"><i class="g1" style="width:92.2%"></i></span><span class="vb-val">83/90（92%）</span></div><div class="vb-row"><span class="vb-ver">v3</span><span class="vb-track"><i class="g2" style="width:83.3%"></i></span><span class="vb-val">10/12（83%）</span></div><div class="vb-row"><span class="vb-ver">v3.1</span><span class="vb-track"><i class="g3" style="width:100.0%"></i></span><span class="vb-val">6/6（100%）</span></div></div><div class="vb"><div class="vb-title">执行中新增的工单（返工为主）</div><div class="vb-row"><span class="vb-ver">v2</span><span class="vb-track"><i class="g1" style="width:77.9%"></i></span><span class="vb-val">40/154（26%）</span></div><div class="vb-row"><span class="vb-ver">v3</span><span class="vb-track"><i class="g2" style="width:100.0%"></i></span><span class="vb-val">7/21（33%）</span></div><div class="vb-row"><span class="vb-ver">v3.1</span><span class="vb-track"><i class="g3" style="width:100.0%"></i></span><span class="vb-val">3/9（33%）</span></div></div></div>
+<p class="note2">v3.1 只有 6 张工程工单；第一阶段的返工集中在模型 spec（#27 12 张、#73 16 张），和流程版本关系不大。</p></section>
+<section id="report"><h2>汇报：部分变好</h2>
+<p>你的评价：v3.1 把"做了什么、效果如何"讲清楚了，但证据不在报告里、可视化不够，读的时间从 10 分钟变成 15 分钟。模板本身从 43 KB 涨到 93 KB。</p>
+<table class="rmatrix"><thead><tr><th></th><th><b>spec #27</b><small>v2 模板 · 约 25 分钟</small></th><th><b>#208/#209 原版</b><small>v3 模板 · 约 10 分钟</small></th><th><b>#208/#209 重写版、#233</b><small>v3.1 模板 · 约 15 分钟</small></th></tr></thead><tbody><tr><th scope="row">做了什么、效果如何</th><td class="rm ok" data-label="spec #27"><div><span class="ic">✓</span>清楚</div></td><td class="rm no" data-label="#208/#209 原版"><div><span class="ic">✕</span>不是一眼明白</div></td><td class="rm ok" data-label="#208/#209 重写版、#233"><div><span class="ic">✓</span>交付和目标核对一看就清楚</div></td></tr><tr><th scope="row">目标达成与证明</th><td class="rm ok" data-label="spec #27"><div><span class="ic">✓</span>有选型图表</div></td><td class="rm ok" data-label="#208/#209 原版"><div><span class="ic">✓</span>代码和文档</div></td><td class="rm ok" data-label="#208/#209 重写版、#233"><div><span class="ic">✓</span>目标核对</div></td></tr><tr><th scope="row">要你决定或做的</th><td class="rm part" data-label="spec #27"><div><span class="ic">◐</span>没有待办，记录了你的决定</div></td><td class="rm ok" data-label="#208/#209 原版"><div><span class="ic">✓</span>清楚</div></td><td class="rm ok" data-label="#208/#209 重写版、#233"><div><span class="ic">✓</span>清楚</div></td></tr><tr><th scope="row">证据能抽查</th><td class="rm ok" data-label="spec #27"><div><span class="ic">✓</span>实测数值在页面上</div></td><td class="rm no" data-label="#208/#209 原版"><div><span class="ic">✕</span>不能</div></td><td class="rm no" data-label="#208/#209 重写版、#233"><div><span class="ic">✕</span>只有链接</div></td></tr><tr><th scope="row">代价和时间</th><td class="rm part" data-label="spec #27"><div><span class="ic">◐</span>有，但时间线太长要滚动</div></td><td class="rm ok" data-label="#208/#209 原版"><div><span class="ic">✓</span>有时间线</div></td><td class="rm ok" data-label="#208/#209 重写版、#233"><div><span class="ic">✓</span>有时间线</div></td></tr><tr><th scope="row">风险和遗留</th><td class="rm ok" data-label="spec #27"><div><span class="ic">✓</span>问题、遗留、口径都有</div></td><td class="rm part" data-label="#208/#209 原版"><div><span class="ic">◐</span>没有风险</div></td><td class="rm part" data-label="#208/#209 重写版、#233"><div><span class="ic">◐</span>只有问题和下一步</div></td></tr></tbody></table></section>
+<section id="rules"><h2>规则：目标仓库变简单，方法层变复杂</h2>
+<h3>PathJX 开工必读：第一阶段一路涨，#208 之后减半</h3>
+<div class="legend"><span><i class="k s-design"></i>设计负责人</span><span><i class="k s-eng"></i>工程负责人</span></div><div class="scroll"><svg viewBox="0 0 900 260" class="chart" role="img" aria-label="PathJX 每个 spec 开工时设计负责人和工程负责人的必读字节数"><rect x="36.0" y="12" width="663.3" height="202" class="band b-v2"/><text x="367.7" y="24" class="band-l" text-anchor="middle">v2</text><rect x="699.3" y="12" width="104.5" height="202" class="band b-v3"/><text x="751.6" y="24" class="band-l" text-anchor="middle">v3</text><rect x="803.9" y="12" width="36.1" height="202" class="band b-v31"/><text x="821.9" y="24" class="band-l" text-anchor="middle">v3.1</text><line x1="46" x2="830" y1="214.0" y2="214.0" class="grid"/><text x="40" y="218.0" class="ax" text-anchor="end">0 KB</text><line x1="46" x2="830" y1="165.0" y2="165.0" class="grid"/><text x="40" y="169.0" class="ax" text-anchor="end">10 KB</text><line x1="46" x2="830" y1="116.0" y2="116.0" class="grid"/><text x="40" y="120.0" class="ax" text-anchor="end">20 KB</text><line x1="46" x2="830" y1="67.0" y2="67.0" class="grid"/><text x="40" y="71.0" class="ax" text-anchor="end">30 KB</text><line x1="46" x2="830" y1="18.0" y2="18.0" class="grid"/><text x="40" y="22.0" class="ax" text-anchor="end">40 KB</text><text x="46.0" y="230" class="ax" text-anchor="middle">#3</text><text x="98.3" y="230" class="ax" text-anchor="middle">#9</text><text x="150.5" y="230" class="ax" text-anchor="middle">#14</text><text x="202.8" y="230" class="ax" text-anchor="middle">#19</text><text x="255.1" y="230" class="ax" text-anchor="middle">#27</text><text x="307.3" y="230" class="ax" text-anchor="middle">#43</text><text x="359.6" y="230" class="ax" text-anchor="middle">#73</text><text x="411.9" y="230" class="ax" text-anchor="middle">#99</text><text x="464.1" y="230" class="ax" text-anchor="middle">#100</text><text x="516.4" y="230" class="ax" text-anchor="middle">#170</text><text x="568.7" y="230" class="ax" text-anchor="middle">#171</text><text x="620.9" y="230" class="ax" text-anchor="middle">#172</text><text x="673.2" y="230" class="ax" text-anchor="middle">#194</text><text x="725.5" y="230" class="ax" text-anchor="middle">#208</text><text x="777.7" y="230" class="ax" text-anchor="middle">#209</text><text x="830.0" y="230" class="ax" text-anchor="middle">#233</text><polyline points="46.0,155.9 98.3,147.6 150.5,143.3 202.8,141.2 255.1,132.3 307.3,114.1 359.6,106.1 411.9,84.9 464.1,83.4 516.4,50.6 568.7,53.7 620.9,21.3 673.2,57.9 725.5,55.0 777.7,57.4 830.0,139.1" class="line s-design"/><circle cx="46.0" cy="155.9" r="4" class="dot s-design"><title>#3 设计负责人开工必读 11,861 字节</title></circle><circle cx="98.3" cy="147.6" r="4" class="dot s-design"><title>#9 设计负责人开工必读 13,549 字节</title></circle><circle cx="150.5" cy="143.3" r="4" class="dot s-design"><title>#14 设计负责人开工必读 14,428 字节</title></circle><circle cx="202.8" cy="141.2" r="4" class="dot s-design"><title>#19 设计负责人开工必读 14,852 字节</title></circle><circle cx="255.1" cy="132.3" r="4" class="dot s-design"><title>#27 设计负责人开工必读 16,674 字节</title></circle><circle cx="307.3" cy="114.1" r="4" class="dot s-design"><title>#43 设计负责人开工必读 20,381 字节</title></circle><circle cx="359.6" cy="106.1" r="4" class="dot s-design"><title>#73 设计负责人开工必读 22,027 字节</title></circle><circle cx="411.9" cy="84.9" r="4" class="dot s-design"><title>#99 设计负责人开工必读 26,337 字节</title></circle><circle cx="464.1" cy="83.4" r="4" class="dot s-design"><title>#100 设计负责人开工必读 26,654 字节</title></circle><circle cx="516.4" cy="50.6" r="4" class="dot s-design"><title>#170 设计负责人开工必读 33,345 字节</title></circle><circle cx="568.7" cy="53.7" r="4" class="dot s-design"><title>#171 设计负责人开工必读 32,723 字节</title></circle><circle cx="620.9" cy="21.3" r="4" class="dot s-design"><title>#172 设计负责人开工必读 39,323 字节</title></circle><circle cx="673.2" cy="57.9" r="4" class="dot s-design"><title>#194 设计负责人开工必读 31,865 字节</title></circle><circle cx="725.5" cy="55.0" r="4" class="dot s-design"><title>#208 设计负责人开工必读 32,440 字节</title></circle><circle cx="777.7" cy="57.4" r="4" class="dot s-design"><title>#209 设计负责人开工必读 31,953 字节</title></circle><circle cx="830.0" cy="139.1" r="4" class="dot s-design"><title>#233 设计负责人开工必读 15,287 字节</title></circle><text x="838.0" y="143.1" class="dl">设计负责人 15.3 KB</text><polyline points="46.0,174.4 98.3,174.4 150.5,174.5 202.8,173.2 255.1,172.4 307.3,170.6 359.6,168.3 411.9,166.0 464.1,163.6 516.4,163.6 568.7,163.6 620.9,163.6 673.2,163.6 725.5,159.1 777.7,163.6 830.0,174.5" class="line s-eng"/><circle cx="46.0" cy="174.4" r="4" class="dot s-eng"><title>#3 工程负责人开工必读 8,078 字节</title></circle><circle cx="98.3" cy="174.4" r="4" class="dot s-eng"><title>#9 工程负责人开工必读 8,078 字节</title></circle><circle cx="150.5" cy="174.5" r="4" class="dot s-eng"><title>#14 工程负责人开工必读 8,068 字节</title></circle><circle cx="202.8" cy="173.2" r="4" class="dot s-eng"><title>#19 工程负责人开工必读 8,321 字节</title></circle><circle cx="255.1" cy="172.4" r="4" class="dot s-eng"><title>#27 工程负责人开工必读 8,492 字节</title></circle><circle cx="307.3" cy="170.6" r="4" class="dot s-eng"><title>#43 工程负责人开工必读 8,860 字节</title></circle><circle cx="359.6" cy="168.3" r="4" class="dot s-eng"><title>#73 工程负责人开工必读 9,323 字节</title></circle><circle cx="411.9" cy="166.0" r="4" class="dot s-eng"><title>#99 工程负责人开工必读 9,788 字节</title></circle><circle cx="464.1" cy="163.6" r="4" class="dot s-eng"><title>#100 工程负责人开工必读 10,282 字节</title></circle><circle cx="516.4" cy="163.6" r="4" class="dot s-eng"><title>#170 工程负责人开工必读 10,282 字节</title></circle><circle cx="568.7" cy="163.6" r="4" class="dot s-eng"><title>#171 工程负责人开工必读 10,282 字节</title></circle><circle cx="620.9" cy="163.6" r="4" class="dot s-eng"><title>#172 工程负责人开工必读 10,282 字节</title></circle><circle cx="673.2" cy="163.6" r="4" class="dot s-eng"><title>#194 工程负责人开工必读 10,282 字节</title></circle><circle cx="725.5" cy="159.1" r="4" class="dot s-eng"><title>#208 工程负责人开工必读 11,214 字节</title></circle><circle cx="777.7" cy="163.6" r="4" class="dot s-eng"><title>#209 工程负责人开工必读 10,282 字节</title></circle><circle cx="830.0" cy="174.5" r="4" class="dot s-eng"><title>#233 工程负责人开工必读 8,070 字节</title></circle><text x="838.0" y="178.5" class="dl">工程负责人 8.1 KB</text><text x="620.9" y="11.3" class="dl" text-anchor="middle">39.3 KB</text><text x="46" y="252" class="ax">按 spec 开工的先后排列</text></svg><p class="swipe">左右滑动看全图</p></div>
+<p class="note2">按每个 spec 开工那个提交上的规定，统计设计负责人和工程负责人开工必读文件的字节数（AGENTS.md、角色文档、路线图等）。v3 的规则归类标准用在 #208 上，#233 开工时已经生效。</p>
+<h3>方法层：每一版都在变大</h3>
+<div class="smalls"><div class="sm"><div class="sm-title">agent 要读的说明<small>KB</small></div><div class="sm-plot"><div class="sm-col"><span class="sm-v">38.5</span><span class="sm-bar g1" style="height:76.2%"></span><span class="sm-x">v2</span></div><div class="sm-col"><span class="sm-v">46.7</span><span class="sm-bar g2" style="height:92.5%"></span><span class="sm-x">v3</span></div><div class="sm-col"><span class="sm-v">50.5</span><span class="sm-bar g3" style="height:100.0%"></span><span class="sm-x">v3.1</span></div></div><p class="note2">run-spec 的 SKILL.md、report.md，加 setup 生成规则时读的四份材料</p></div><div class="sm"><div class="sm-title">脚本<small>行</small></div><div class="sm-plot"><div class="sm-col"><span class="sm-v">2,338</span><span class="sm-bar g1" style="height:48.9%"></span><span class="sm-x">v2</span></div><div class="sm-col"><span class="sm-v">4,058</span><span class="sm-bar g2" style="height:84.9%"></span><span class="sm-x">v3</span></div><div class="sm-col"><span class="sm-v">4,782</span><span class="sm-bar g3" style="height:100.0%"></span><span class="sm-x">v3.1</span></div></div><p class="note2">不含测试</p></div><div class="sm"><div class="sm-title">测试<small>行</small></div><div class="sm-plot"><div class="sm-col"><span class="sm-v">4,268</span><span class="sm-bar g1" style="height:45.6%"></span><span class="sm-x">v2</span></div><div class="sm-col"><span class="sm-v">7,531</span><span class="sm-bar g2" style="height:80.5%"></span><span class="sm-x">v3</span></div><div class="sm-col"><span class="sm-v">9,352</span><span class="sm-bar g3" style="height:100.0%"></span><span class="sm-x">v3.1</span></div></div><p class="note2"></p></div><div class="sm"><div class="sm-title">汇报模板<small>KB</small></div><div class="sm-plot"><div class="sm-col"><span class="sm-v">0</span><span class="sm-bar g1" style="height:1.5%"></span><span class="sm-x">v2</span></div><div class="sm-col"><span class="sm-v">39.6</span><span class="sm-bar g2" style="height:49.0%"></span><span class="sm-x">v3</span></div><div class="sm-col"><span class="sm-v">80.8</span><span class="sm-bar g3" style="height:100.0%"></span><span class="sm-x">v3.1</span></div></div><p class="note2">含样例数据、样式和渲染代码</p></div></div>
+<h3>57 项改动：是什么、用上没有</h3>
+<div class="legend"><span><i class="k wf used"></i>用上了</span><span><i class="k wf idle"></i>4 个 spec 里没触发</span><span><i class="k wf unknown"></i>无法判断</span></div><div class="waffle"><div class="wf-group"><div class="wf-head"><b>机制</b> 30 项 · 用上 20</div><div class="wf-cells"><span class="wf used" title="W2 限制 Codex 并发并在满额时排队（v3，用上了）">2</span><span class="wf used" title="W3 slots 只读列出派发与空余名额（v3，用上了）">3</span><span class="wf used" title="W4 启动名额互斥及账号限流后重新排队（v3，用上了）">4</span><span class="wf idle" title="W5 dispatch --resume 续做原脏 worktree（v3，没触发）">5</span><span class="wf idle" title="W6 拒绝撞上活跃运行或进行中的 rebase（v3，没触发）">6</span><span class="wf idle" title="W7 父 spec 缺失时报 link 操作提示（v3，没触发）">7</span><span class="wf unknown" title="W9 记录安装产物快照并保护重试期间产物（v3，无法判断）">9</span><span class="wf used" title="W10 合并删除前保留额外忽略文件（v3，用上了）">10</span><span class="wf idle" title="W11 合并重跑时复核已复制文件内容（v3，没触发）">11</span><span class="wf used" title="W12 按 spec 归属清理新增产物和日志（v3，用上了）">12</span><span class="wf used" title="W13 标准化独立只读 spec 审查（v3，用上了）">13</span><span class="wf used" title="W14 独立审查支持本地草稿和追加重点（v3，用上了）">14</span><span class="wf used" title="W15 校验并单独发布独立审查原文（v3，用上了）">15</span><span class="wf idle" title="W17 watch 让小模型定时巡检长作业（v3，没触发）">17</span><span class="wf idle" title="W18 巡检模型失败或格式错误时重试（v3，没触发）">18</span><span class="wf idle" title="W19 截取巡检状态并保存统一日志（v3，没触发）">19</span><span class="wf used" title="W20 verify 统一选择主区或工单验证目标（v3，用上了）">20</span><span class="wf used" title="W21 验证保留完整日志、摘要及真实退出码（v3，用上了）">21</span><span class="wf used" title="W22 配置 PR 检查命令并透传退出码（v3，用上了）">22</span><span class="wf used" title="W23 doctor 检查 CLI 及可选配置取值（两版都改，用上了）">23</span><span class="wf used" title="W24 verificationEnv 集中传递验证环境（v3.1，用上了）">24</span><span class="wf used" title="W25 exclusiveVerification 让完整验证互斥（v3.1，用上了）">25</span><span class="wf idle" title="W26 验证锁按属主及作业进程组回收（v3.1，没触发）">26</span><span class="wf idle" title="W27 嵌套验证继承有效锁以免死锁（v3.1，没触发）">27</span><span class="wf used" title="W28 disposableIgnored 删除可再生产物（v3.1，用上了）">28</span><span class="wf used" title="W29 通过验收前核对提交已在远端集成分支（v3.1，用上了）">29</span><span class="wf used" title="W34 提供单文件、数据驱动的离线汇报模板（v3，用上了）">34</span><span class="wf used" title="W35 汇报交付前检查浏览器错误、全局名及截图（v3，用上了）">35</span><span class="wf used" title="W37 汇报数据支持多目标、多会话及明确时间口径（v3.1，用上了）">37</span><span class="wf used" title="W38 汇报缺值传播未知，不将缺项当零（v3.1，用上了）">38</span></div></div><div class="wf-group"><div class="wf-head"><b>思路</b> 14 项 · 用上 13</div><div class="wf-cells"><span class="wf used" title="W1 派工前验证集成分支基线（v3，用上了）">1</span><span class="wf used" title="W8 父 spec 只读正文，修订并入正文（v3，用上了）">8</span><span class="wf unknown" title="W16 审查可复测现状及方案是否违背目标（v3.1，无法判断）">16</span><span class="wf used" title="W33 收尾按原问题口径重测目标（v3.1，用上了）">33</span><span class="wf used" title="W36 汇报以前置交付和目标为主并调整图表（v3.1，用上了）">36</span><span class="wf used" title="W40 提问和汇报解释内容、背景及选项（v3，用上了）">40</span><span class="wf used" title="W42 量大调查交 Codex，小查找才用子代理（v3，用上了）">42</span><span class="wf used" title="W43 执行节点重判资源和方式，遵守预登记边界（v3，用上了）">43</span><span class="wf used" title="W45 规则从三类修订为五类加可删除（两版都改，用上了）">45</span><span class="wf used" title="W46 沿先读链接归类并约束生成规则篇幅（两版都改，用上了）">46</span><span class="wf used" title="W47 明确文档职责、数字单源和过程产物去向（v3.1，用上了）">47</span><span class="wf used" title="W48 路线图保留方向和决定，执行状态查 GitHub（两版都改，用上了）">48</span><span class="wf used" title="W51 目录 README 作地图并同步行为说明（v3，用上了）">51</span><span class="wf used" title="W57 区分书面产物语言与个人对话习惯（v3，用上了）">57</span></div></div><div class="wf-group"><div class="wf-head"><b>补丁</b> 13 项 · 用上 5</div><div class="wf-cells"><span class="wf idle" title="W30 无提交的只读验收显式加 --no-commits（v3.1，没触发）">30</span><span class="wf used" title="W31 设计工单先推送，工程验收用 rebase 后提交（v3.1，用上了）">31</span><span class="wf used" title="W32 合批审查前查名额，审查时暂停合并（v3，用上了）">32</span><span class="wf used" title="W39 汇报引用持久证据并读取独立作业用量（两版都改，用上了）">39</span><span class="wf unknown" title="W41 角色模板记录项目要求和预登记画像（v3，无法判断）">41</span><span class="wf used" title="W44 允许里程碑交接并分离多设计会话工作区（v3，用上了）">44</span><span class="wf unknown" title="W49 setup 识别共享登记处并说明并行约束（v3，无法判断）">49</span><span class="wf idle" title="W50 追加索引可选采用 merge=union（v3，没触发）">50</span><span class="wf idle" title="W52 setup 随附可选 Mermaid 约定（v3，没触发）">52</span><span class="wf idle" title="W53 setup 新 worktree 基线先接软链接（v3，没触发）">53</span><span class="wf idle" title="W54 只读冒烟允许验证临时文件和缓存（v3，没触发）">54</span><span class="wf idle" title="W55 交接说明模型不可见技能的读取办法（v3，没触发）">55</span><span class="wf used" title="W56 交接提供可选后台会话及管理命令（v3，用上了）">56</span></div></div></div>
+<details><summary>57 项逐项清单（来源、改前分析、用上没有、去向）</summary><table><thead><tr><th>编号</th><th>内容</th><th>版本</th><th>来源事件</th><th>改前分析</th><th>用上没有</th><th>归类</th><th>去向</th></tr></thead><tbody><tr><td data-label="编号"><div>W1</div></td><td data-label="内容"><div>派工前验证集成分支基线</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1组，涉及3张并行工单</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 5</div></td></tr><tr><td data-label="编号"><div>W2</div></td><td data-label="内容"><div>限制 Codex 并发并在满额时排队</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>至少1次</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W3</div></td><td data-label="内容"><div>slots 只读列出派发与空余名额</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>同W2的至少1次；无独立名额查询故障计数</div></td><td data-label="改前分析"><div>比较过做法</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W4</div></td><td data-label="内容"><div>启动名额互斥及账号限流后重新排队</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>原账号拒绝至少1次；启动竞态未记实发</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W5</div></td><td data-label="内容"><div>dispatch --resume 续做原脏 worktree</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>至少2组，涉及至少4张工单</div></td><td data-label="改前分析"><div>比较过做法</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>脚本保留，说明移出必读</div></td></tr><tr><td data-label="编号"><div>W6</div></td><td data-label="内容"><div>拒绝撞上活跃运行或进行中的 rebase</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>未记实发；1轮审查指出风险</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>脚本保留，说明移出必读</div></td></tr><tr><td data-label="编号"><div>W7</div></td><td data-label="内容"><div>父 spec 缺失时报 link 操作提示</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>至少1次</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>脚本保留，说明移出必读</div></td></tr><tr><td data-label="编号"><div>W8</div></td><td data-label="内容"><div>父 spec 只读正文，修订并入正文</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>多spec汇总，精确事件数未给</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 3</div></td></tr><tr><td data-label="编号"><div>W9</div></td><td data-label="内容"><div>记录安装产物快照并保护重试期间产物</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>2次实发；另1处临时仓库审查复现</div></td><td data-label="改前分析"><div>比较过做法</div></td><td data-label="用上没有"><div>无法判断</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W10</div></td><td data-label="内容"><div>合并删除前保留额外忽略文件</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>2次，两个仓库各1次</div></td><td data-label="改前分析"><div>比较过做法</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W11</div></td><td data-label="内容"><div>合并重跑时复核已复制文件内容</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>未记实发；1处临时仓库复现</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>脚本保留，说明移出必读</div></td></tr><tr><td data-label="编号"><div>W12</div></td><td data-label="内容"><div>按 spec 归属清理新增产物和日志</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>未给独立实发数；多项验收/审查缺口</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W13</div></td><td data-label="内容"><div>标准化独立只读 spec 审查</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>6次审查，5次有必须改发现</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W14</div></td><td data-label="内容"><div>独立审查支持本地草稿和追加重点</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>至少1次草稿审查需求；未记故障</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W15</div></td><td data-label="内容"><div>校验并单独发布独立审查原文</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>未记重复发布实发；设计约束</div></td><td data-label="改前分析"><div>比较过做法</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W16</div></td><td data-label="内容"><div>审查可复测现状及方案是否违背目标</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>1个spec</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>无法判断</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 1</div></td></tr><tr><td data-label="编号"><div>W17</div></td><td data-label="内容"><div>watch 让小模型定时巡检长作业</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>至少1个长GPU作业，确切次数未给</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>脚本保留，说明移出必读</div></td></tr><tr><td data-label="编号"><div>W18</div></td><td data-label="内容"><div>巡检模型失败或格式错误时重试</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>未记模型巡检失败实发</div></td><td data-label="改前分析"><div>没有记录</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>脚本保留，说明移出必读</div></td></tr><tr><td data-label="编号"><div>W19</div></td><td data-label="内容"><div>截取巡检状态并保存统一日志</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>未记独立长输出/日志事故</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>脚本保留，说明移出必读</div></td></tr><tr><td data-label="编号"><div>W20</div></td><td data-label="内容"><div>verify 统一选择主区或工单验证目标</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1次</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W21</div></td><td data-label="内容"><div>验证保留完整日志、摘要及真实退出码</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1次，与W20同一次</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W22</div></td><td data-label="内容"><div>配置 PR 检查命令并透传退出码</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1段持续暂停，受影响PR数未给</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W23</div></td><td data-label="内容"><div>doctor 检查 CLI 及可选配置取值</div></td><td data-label="版本"><div>两版都改</div></td><td data-label="来源事件"><div>至少1个CLI路径失败实况；其他为新增配置配套</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W24</div></td><td data-label="内容"><div>verificationEnv 集中传递验证环境</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>至少1次压缩后找回，手带次数未给</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W25</div></td><td data-label="内容"><div>exclusiveVerification 让完整验证互斥</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>至少4个受影响对象，独立轮次数未核实</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W26</div></td><td data-label="内容"><div>验证锁按属主及作业进程组回收</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>未记生产实发；1处审查复现场景</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>脚本保留，说明移出必读</div></td></tr><tr><td data-label="编号"><div>W27</div></td><td data-label="内容"><div>嵌套验证继承有效锁以免死锁</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>未记生产实发；1处嵌套调用缺口</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>脚本保留，说明移出必读</div></td></tr><tr><td data-label="编号"><div>W28</div></td><td data-label="内容"><div>disposableIgnored 删除可再生产物</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>1次盘点，14个目录；另1处配置适配缺口</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W29</div></td><td data-label="内容"><div>通过验收前核对提交已在远端集成分支</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>1次</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W30</div></td><td data-label="内容"><div>无提交的只读验收显式加 --no-commits</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>同W29的1次；只读例外未记误关实发</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>脚本保留，说明移出必读</div></td></tr><tr><td data-label="编号"><div>W31</div></td><td data-label="内容"><div>设计工单先推送，工程验收用 rebase 后提交</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>未记实发；1轮静态审查</div></td><td data-label="改前分析"><div>比较过做法</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>并入思路 2</div></td></tr><tr><td data-label="编号"><div>W32</div></td><td data-label="内容"><div>合批审查前查名额，审查时暂停合并</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>至少1次原账号拒绝；本spec1次合审安排</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>并入思路 2</div></td></tr><tr><td data-label="编号"><div>W33</div></td><td data-label="内容"><div>收尾按原问题口径重测目标</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>1个spec，与W16同一来源</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 1</div></td></tr><tr><td data-label="编号"><div>W34</div></td><td data-label="内容"><div>提供单文件、数据驱动的离线汇报模板</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1次空白页；1份表格密集汇报样本</div></td><td data-label="改前分析"><div>比较过做法</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W35</div></td><td data-label="内容"><div>汇报交付前检查浏览器错误、全局名及截图</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1次空白页</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W36</div></td><td data-label="内容"><div>汇报以前置交付和目标为主并调整图表</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>1轮用户反馈</div></td><td data-label="改前分析"><div>比较过做法</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 4</div></td></tr><tr><td data-label="编号"><div>W37</div></td><td data-label="内容"><div>汇报数据支持多目标、多会话及明确时间口径</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>1次实际套写暴露一组问题</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W38</div></td><td data-label="内容"><div>汇报缺值传播未知，不将缺项当零</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>未记真实缺值误报实发；1处构造缺值复现，另1次验收显示缺口</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>机制</div></td><td data-label="去向"><div>保留为机制</div></td></tr><tr><td data-label="编号"><div>W39</div></td><td data-label="内容"><div>汇报引用持久证据并读取独立作业用量</div></td><td data-label="版本"><div>两版都改</div></td><td data-label="来源事件"><div>未记链接丢失实发；可复查的cleanup风险</div></td><td data-label="改前分析"><div>没有记录</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>并入思路 4</div></td></tr><tr><td data-label="编号"><div>W40</div></td><td data-label="内容"><div>提问和汇报解释内容、背景及选项</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>至少4次用户纠正</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 4</div></td></tr><tr><td data-label="编号"><div>W41</div></td><td data-label="内容"><div>角色模板记录项目要求和预登记画像</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>17个会话左右的重复开场</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>无法判断</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>移到按需说明或删掉</div></td></tr><tr><td data-label="编号"><div>W42</div></td><td data-label="内容"><div>量大调查交 Codex，小查找才用子代理</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1轮用量复盘；后续1次6子代理调查</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 2</div></td></tr><tr><td data-label="编号"><div>W43</div></td><td data-label="内容"><div>执行节点重判资源和方式，遵守预登记边界</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1次拟合场景</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 2</div></td></tr><tr><td data-label="编号"><div>W44</div></td><td data-label="内容"><div>允许里程碑交接并分离多设计会话工作区</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>长会话至少1例；工作区隔离事故未记</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>并入思路 2</div></td></tr><tr><td data-label="编号"><div>W45</div></td><td data-label="内容"><div>规则从三类修订为五类加可删除</div></td><td data-label="版本"><div>两版都改</div></td><td data-label="来源事件"><div>1轮规则膨胀复盘；1轮404条复核（38条错分）</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 3</div></td></tr><tr><td data-label="编号"><div>W46</div></td><td data-label="内容"><div>沿先读链接归类并约束生成规则篇幅</div></td><td data-label="版本"><div>两版都改</div></td><td data-label="来源事件"><div>1轮膨胀复盘；1轮范围复核</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 3</div></td></tr><tr><td data-label="编号"><div>W47</div></td><td data-label="内容"><div>明确文档职责、数字单源和过程产物去向</div></td><td data-label="版本"><div>v3.1</div></td><td data-label="来源事件"><div>1轮6结果抽查；1次#208返工</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 1</div></td></tr><tr><td data-label="编号"><div>W48</div></td><td data-label="内容"><div>路线图保留方向和决定，执行状态查 GitHub</div></td><td data-label="版本"><div>两版都改</div></td><td data-label="来源事件"><div>21条路线图冲突提示，独立回合未去重</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 3</div></td></tr><tr><td data-label="编号"><div>W49</div></td><td data-label="内容"><div>setup 识别共享登记处并说明并行约束</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>至少两个仓库，独立冲突次数未给</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>无法判断</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>移到按需说明或删掉</div></td></tr><tr><td data-label="编号"><div>W50</div></td><td data-label="内容"><div>追加索引可选采用 merge=union</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>日志7条、研究索引各3条冲突提示，独立回合未去重</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>移到按需说明或删掉</div></td></tr><tr><td data-label="编号"><div>W51</div></td><td data-label="内容"><div>目录 README 作地图并同步行为说明</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1轮用户复盘及#194审查缺口，事故次数未给</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 3</div></td></tr><tr><td data-label="编号"><div>W52</div></td><td data-label="内容"><div>setup 随附可选 Mermaid 约定</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1次手工补规则场景</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>移到按需说明或删掉</div></td></tr><tr><td data-label="编号"><div>W53</div></td><td data-label="内容"><div>setup 新 worktree 基线先接软链接</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1次基线设置缺口</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>移到按需说明或删掉</div></td></tr><tr><td data-label="编号"><div>W54</div></td><td data-label="内容"><div>只读冒烟允许验证临时文件和缓存</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1次冒烟任务失败</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>移到按需说明或删掉</div></td></tr><tr><td data-label="编号"><div>W55</div></td><td data-label="内容"><div>交接说明模型不可见技能的读取办法</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1次误判并询问</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>没触发</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>移到按需说明或删掉</div></td></tr><tr><td data-label="编号"><div>W56</div></td><td data-label="内容"><div>交接提供可选后台会话及管理命令</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1次用户要求；未记关终端实际中断</div></td><td data-label="改前分析"><div>只写了根因</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>补丁</div></td><td data-label="去向"><div>并入思路 2</div></td></tr><tr><td data-label="编号"><div>W57</div></td><td data-label="内容"><div>区分书面产物语言与个人对话习惯</div></td><td data-label="版本"><div>v3</div></td><td data-label="来源事件"><div>1个会话至少8条英文最终回复；1轮规则混杂复盘</div></td><td data-label="改前分析"><div>比较过做法</div></td><td data-label="用上没有"><div>用上了</div></td><td data-label="归类"><div>思路</div></td><td data-label="去向"><div>并入思路 3</div></td></tr></tbody></table></details>
+<p class="note2">悬停方块看是哪一项。"没触发"只说明在 #94、#208、#209、#233 这 4 个 spec 里没用上。</p>
+<h3>改动是怎么加进来的</h3>
+<div class="st"><div class="st-title">加进来之前分析到哪一步（57 项）</div><div class="st-bar"><span class="st-seg n3" style="width:15.79%" title="比较过其他做法 9 项"><b>9</b></span><span class="st-seg n2" style="width:80.70%" title="只写了根因 46 项"><b>46</b></span><span class="st-seg n1" style="width:3.51%" title="都没有记录 2 项"><b>2</b></span></div><div class="legend"><span><i class="k n3"></i>比较过其他做法 9</span><span><i class="k n2"></i>只写了根因 46</span><span><i class="k n1"></i>都没有记录 2</span></div></div><div class="st"><div class="st-title">来自几次实际发生的事件（57 项）</div><div class="st-bar"><span class="st-seg n3" style="width:24.56%" title="多次或多个 spec 14 项"><b>14</b></span><span class="st-seg n2" style="width:57.89%" title="一次事件或一轮复盘 33 项"><b>33</b></span><span class="st-seg n1" style="width:17.54%" title="没有实际发生，只来自审查或构造 10 项"><b>10</b></span></div><div class="legend"><span><i class="k n3"></i>多次或多个 spec 14</span><span><i class="k n2"></i>一次事件或一轮复盘 33</span><span><i class="k n1"></i>没有实际发生，只来自审查或构造 10</span></div></div><div class="st"><div class="st-title">PathJX 规则文档的 22 项改动</div><div class="st-bar"><span class="st-seg n1" style="width:50.00%" title="内容整理，不是规则 11 项"><b>11</b></span><span class="st-seg n3" style="width:18.18%" title="思路落地，规则变少 4 项"><b>4</b></span><span class="st-seg n2" style="width:18.18%" title="统一冲突的写法 4 项"><b>4</b></span><span class="st-seg n4" style="width:9.09%" title="补丁 2 项"><b>2</b></span><span class="st-seg n1b" style="width:4.55%" title="决定记录 1 项"><b>1</b></span></div><div class="legend"><span><i class="k n1"></i>内容整理，不是规则 11</span><span><i class="k n3"></i>思路落地，规则变少 4</span><span><i class="k n2"></i>统一冲突的写法 4</span><span><i class="k n4"></i>补丁 2</span><span><i class="k n1b"></i>决定记录 1</span></div></div>
+<p class="note2">这正是你说的"没有思考分析和评估就纳入 workflow"：大部分改动看到一次问题就加一条，很少比较别的做法。PathJX 自己的规则改动方向相反，多数是整理和收拢，补丁只有 2 项（长进程脱离会话、<code>claude -p</code> 不可用时的替代审查）。</p></section>
+<section id="time"><h2>时间与成本：总量没法比，浪费看得见</h2>
+<h3>时间去向</h3>
+<div class="legend"><span><i class="k c-verify"></i>完整验证在跑或排队</span><span><i class="k c-codex"></i>Codex 在做工单</span><span><i class="k c-design"></i>设计负责人在做（含审查）</span><span><i class="k c-idle"></i>都没在动</span></div><div class="tsplit"><div class="ts-row"><div class="ts-name">#194 第一阶段收尾（v2）<small>201 分钟</small></div><div class="ts-bar"><span class="ts-seg c-verify" style="width:3.12%" title="完整验证在跑或排队 23 分钟（11%）"></span><span class="ts-seg c-codex" style="width:16.26%" title="Codex 在做工单 120 分钟（60%）">60%</span><span class="ts-seg c-design" style="width:4.34%" title="设计负责人在做（含审查） 32 分钟（16%）"></span><span class="ts-seg c-idle" style="width:3.52%" title="都没在动 26 分钟（13%）"></span></div></div><div class="ts-row"><div class="ts-name">#208、#209 并行（v3）<small>738 分钟</small></div><div class="ts-bar"><span class="ts-seg c-verify" style="width:14.23%" title="完整验证在跑或排队 105 分钟（14%）">14%</span><span class="ts-seg c-codex" style="width:38.62%" title="Codex 在做工单 285 分钟（39%）">39%</span><span class="ts-seg c-design" style="width:22.76%" title="设计负责人在做（含审查） 168 分钟（23%）">23%</span><span class="ts-seg c-idle" style="width:24.53%" title="都没在动 181 分钟（25%）">25%</span></div></div><div class="ts-row"><div class="ts-name">#233 遗留收尾（v3.1）<small>183 分钟</small></div><div class="ts-bar"><span class="ts-seg c-verify" style="width:16.12%" title="完整验证在跑或排队 119 分钟（65%）">65%</span><span class="ts-seg c-codex" style="width:3.39%" title="Codex 在做工单 25 分钟（14%）"></span><span class="ts-seg c-design" style="width:3.79%" title="设计负责人在做（含审查） 28 分钟（15%）"></span><span class="ts-seg c-idle" style="width:1.49%" title="都没在动 11 分钟（6%）"></span></div></div></div>
+<p class="note2">同一刻有多件事时按"完整验证 → Codex → 设计负责人"取一件。#233 的工单多半在改测试本身，验证本来就多；但第一阶段和 #208 也有一到两成时间在跑完整验证。</p>
+<h3>#233 的时间线</h3>
+<div class="scroll"><svg viewBox="0 0 900 190" class="chart" role="img" aria-label="#233 按资源分泳道的时间线"><line x1="143.7" x2="143.7" y1="4" y2="168" class="grid"/><text x="143.7" y="182" class="ax" text-anchor="middle">08:30</text><line x1="273.9" x2="273.9" y1="4" y2="168" class="grid"/><text x="273.9" y="182" class="ax" text-anchor="middle">09:00</text><line x1="404.1" x2="404.1" y1="4" y2="168" class="grid"/><text x="404.1" y="182" class="ax" text-anchor="middle">09:30</text><line x1="534.2" x2="534.2" y1="4" y2="168" class="grid"/><text x="534.2" y="182" class="ax" text-anchor="middle">10:00</text><line x1="664.4" x2="664.4" y1="4" y2="168" class="grid"/><text x="664.4" y="182" class="ax" text-anchor="middle">10:30</text><line x1="794.5" x2="794.5" y1="4" y2="168" class="grid"/><text x="794.5" y="182" class="ax" text-anchor="middle">11:00</text><rect x="96" y="8" width="794" height="20" class="lane-bg"/><text x="88" y="22.5" class="ax" text-anchor="end">设计负责人</text><rect x="96.0" y="11" width="164.4" height="14" rx="3" class="sw design"><title>设计会话活跃区间（≤10分钟间隔） 08:19–08:57</title></rect><rect x="304.3" y="11" width="50.8" height="14" rx="3" class="sw design"><title>设计会话活跃区间（≤10分钟间隔） 09:07–09:19</title></rect><rect x="472.6" y="11" width="97.6" height="14" rx="3" class="sw design"><title>设计会话活跃区间（≤10分钟间隔） 09:46–10:08</title></rect><rect x="639.7" y="11" width="250.3" height="14" rx="3" class="sw design"><title>设计会话活跃区间（≤10分钟间隔） 10:24–11:22</title></rect><rect x="96" y="31" width="794" height="54" class="lane-bg"/><text x="88" y="62.5" class="ax" text-anchor="end">Codex 工单</text><rect x="161.9" y="34" width="52.1" height="14" rx="3" class="sw codex"><title>Codex #236 08:34–08:46</title></rect><text x="165.9" y="45" class="in">#236</text><rect x="332.9" y="34" width="171.4" height="14" rx="3" class="sw codex"><title>Codex #237 09:13–09:53</title></rect><text x="336.9" y="45" class="in">#237</text><rect x="551.1" y="34" width="197.8" height="14" rx="3" class="sw codex"><title>Codex #238 10:04–10:49</title></rect><text x="555.1" y="45" class="in">#238</text><rect x="162.8" y="51" width="73.3" height="14" rx="3" class="sw codex"><title>Codex #235 08:34–08:51</title></rect><text x="166.8" y="62" class="in">#235</text><rect x="355.5" y="51" width="116.7" height="14" rx="3" class="sw codex"><title>Codex #240 09:19–09:46</title></rect><text x="359.5" y="62" class="in">#240</text><rect x="572.0" y="51" width="104.1" height="14" rx="3" class="sw codex"><title>Codex #241 10:09–10:33</title></rect><text x="576.0" y="62" class="in">#241</text><rect x="163.3" y="68" width="33.4" height="14" rx="3" class="sw codex"><title>Codex #239 08:34–08:42</title></rect><rect x="96" y="88" width="794" height="54" class="lane-bg"/><text x="88" y="119.5" class="ax" text-anchor="end">完整验证</text><rect x="104.2" y="91" width="24.7" height="14" rx="3" class="sw verify"><title>设计负责人 verify 通过 08:21–08:27（结束时刻是读到结果的时间）</title></rect><rect x="133.3" y="91" width="24.7" height="14" rx="3" class="sw verify"><title>设计负责人 verify 通过 08:28–08:33（结束时刻是读到结果的时间）</title></rect><rect x="182.3" y="91" width="26.5" height="14" rx="3" class="sw verify"><title>Codex verify 通过 08:39–08:45（结束时刻是读到结果的时间）</title></rect><rect x="209.7" y="91" width="46.9" height="14" rx="3" class="sw verify"><title>设计负责人 verify 通过 08:45–08:56（结束时刻是读到结果的时间）</title></rect><rect x="259.1" y="91" width="3.0" height="14" rx="3" class="sw verify"><title>设计负责人 land 结果未核实 08:57–08:57（结束时刻是读到结果的时间）</title></rect><rect x="336.8" y="91" width="25.2" height="14" rx="3" class="sw verify"><title>Codex verify 通过 09:14–09:20（结束时刻是读到结果的时间）</title></rect><rect x="371.9" y="91" width="40.8" height="14" rx="3" class="sw verify"><title>Codex verify 失败 09:23–09:32（结束时刻是读到结果的时间）</title></rect><rect x="415.3" y="91" width="48.6" height="14" rx="3" class="sw verify"><title>Codex verify 通过 09:33–09:44（结束时刻是读到结果的时间）</title></rect><rect x="473.0" y="91" width="44.7" height="14" rx="3" class="sw verify"><title>设计负责人 land 通过 09:46–09:56（结束时刻是读到结果的时间）</title></rect><rect x="519.5" y="91" width="29.5" height="14" rx="3" class="sw verify"><title>设计负责人 land 通过 09:57–10:03（结束时刻是读到结果的时间）</title></rect><rect x="550.3" y="91" width="89.4" height="14" rx="3" class="sw verify"><title>设计负责人 verify 通过 10:04–10:24（结束时刻是读到结果的时间）</title></rect><rect x="676.5" y="91" width="29.9" height="14" rx="3" class="sw verify"><title>设计负责人 land 通过 10:33–10:40（结束时刻是读到结果的时间）</title></rect><rect x="815.8" y="91" width="29.9" height="14" rx="3" class="sw verify"><title>设计负责人 verify 通过 11:05–11:12（结束时刻是读到结果的时间）</title></rect><rect x="847.5" y="91" width="30.4" height="14" rx="3" class="sw verify"><title>设计负责人 pr-check 通过 11:12–11:19</title></rect><rect x="207.1" y="108" width="25.2" height="14" rx="3" class="sw verify"><title>Codex verify 通过 08:45–08:50</title></rect><rect x="459.2" y="108" width="37.7" height="14" rx="3" class="sw verify"><title>Codex verify 通过 09:43–09:51（结束时刻是读到结果的时间）</title></rect><rect x="580.2" y="108" width="59.4" height="14" rx="3" class="sw verify"><title>设计负责人 verify 通过 10:11–10:24（结束时刻是读到结果的时间）</title></rect><rect x="609.3" y="125" width="30.4" height="14" rx="3" class="sw verify"><title>设计负责人 verify 通过 10:17–10:24（结束时刻是读到结果的时间）</title></rect><rect x="96" y="145" width="794" height="20" class="lane-bg"/><text x="88" y="159.5" class="ax" text-anchor="end">审查</text><rect x="332.0" y="148" width="16.1" height="14" rx="3" class="sw review"><title>review 09:13–09:17</title></rect><rect x="551.1" y="148" width="16.9" height="14" rx="3" class="sw review"><title>review 10:04–10:08</title></rect><rect x="791.1" y="148" width="21.7" height="14" rx="3" class="sw review"><title>review 10:59–11:04</title></rect></svg><p class="swipe">左右滑动看全图</p></div>
+<p class="note2">悬停看每段的起止。完整验证一栏有重叠，是排队等锁的验证；结束时刻多数是读到结果的时间，偏晚。</p>
+<div class="two-col"><div class="dp"><div class="vb-title">每张工单跑了几次完整验证</div><div class="legend"><span><i class="k g1"></i>v2</span><span><i class="k g2"></i>v3</span><span><i class="k g3"></i>v3.1</span></div><div class="dp-row"><span class="dp-name">#3 流程与工具</span><span class="dp-track"><i class="dp-dot g1" style="left:50.0%" title="12 次 / 4 张工单（下界）"></i></span><span class="dp-val">3 次</span></div><div class="dp-row"><span class="dp-name">#9 数据与模型</span><span class="dp-track"><i class="dp-dot g1" style="left:38.3%" title="7 次 / 3 张工单（下界）"></i></span><span class="dp-val">2.3 次</span></div><div class="dp-row"><span class="dp-name">#14 数据与模型</span><span class="dp-track"><i class="dp-dot g1" style="left:91.7%" title="11 次 / 2 张工单（下界）"></i></span><span class="dp-val">5.5 次</span></div><div class="dp-row"><span class="dp-name">#19 数据与模型</span><span class="dp-track"><i class="dp-dot g1" style="left:40.0%" title="12 次 / 5 张工单（下界）"></i></span><span class="dp-val">2.4 次</span></div><div class="dp-row"><span class="dp-name">#27 数据与模型</span><span class="dp-track"><i class="dp-dot g1" style="left:40.0%" title="56 次 / 23 张工单（下界）"></i></span><span class="dp-val">2.4 次</span></div><div class="dp-row"><span class="dp-name">#73 数据与模型</span><span class="dp-track"><i class="dp-dot g1" style="left:33.3%" title="58 次 / 29 张工单（下界）"></i></span><span class="dp-val">2 次</span></div><div class="dp-row"><span class="dp-name">#170 产品功能</span><span class="dp-track"><i class="dp-dot g1" style="left:10.0%" title="3 次 / 5 张工单（下界）"></i></span><span class="dp-val">0.6 次</span></div><div class="dp-row"><span class="dp-name">#194 收尾整理</span><span class="dp-track"><i class="dp-dot g1" style="left:13.3%" title="8 次 / 10 张工单（下界）"></i></span><span class="dp-val">0.8 次</span></div><div class="dp-row"><span class="dp-name">#208 规则与文档</span><span class="dp-track"><i class="dp-dot g2" style="left:10.0%" title="9 次 / 15 张工单（下界）"></i></span><span class="dp-val">0.6 次</span></div><div class="dp-row"><span class="dp-name">#209 数据与模型</span><span class="dp-track"><i class="dp-dot g2" style="left:16.7%" title="6 次 / 6 张工单（下界）"></i></span><span class="dp-val">1 次</span></div><div class="dp-row"><span class="dp-name">#233 流程与工具</span><span class="dp-track"><i class="dp-dot g3" style="left:33.3%" title="18 次 / 9 张工单（下界）"></i></span><span class="dp-val">2 次</span></div><p class="note2">看得到记录的下界。差不多每张工单两次：Codex 交付前一次，合并时一次。</p></div><div class="dp"><div class="vb-title">Codex 开工到第一次改文件用了几分钟（中位）</div><div class="legend"><span><i class="k g1"></i>v2</span><span><i class="k g2"></i>v3</span><span><i class="k g3"></i>v3.1</span></div><div class="dp-row"><span class="dp-name">#3 流程与工具</span><span class="dp-track"><i class="dp-dot g1" style="left:33.2%" title="中位 111,728 tokens，3 次派发"></i></span><span class="dp-val">1.66 分</span></div><div class="dp-row"><span class="dp-name">#9 数据与模型</span><span class="dp-track"><i class="dp-dot g1" style="left:88.6%" title="中位 203,205 tokens，5 次派发"></i></span><span class="dp-val">4.43 分</span></div><div class="dp-row"><span class="dp-name">#14 数据与模型</span><span class="dp-track"><i class="dp-dot g1" style="left:41.6%" title="中位 186,956 tokens，2 次派发"></i></span><span class="dp-val">2.08 分</span></div><div class="dp-row"><span class="dp-name">#19 数据与模型</span><span class="dp-track"><i class="dp-dot g1" style="left:61.6%" title="中位 258,742 tokens，3 次派发"></i></span><span class="dp-val">3.08 分</span></div><div class="dp-row"><span class="dp-name">#27 数据与模型</span><span class="dp-track"><i class="dp-dot g1" style="left:46.6%" title="中位 502,283 tokens，25 次派发"></i></span><span class="dp-val">2.33 分</span></div><div class="dp-row"><span class="dp-name">#73 数据与模型</span><span class="dp-track"><i class="dp-dot g1" style="left:47.6%" title="中位 623,836 tokens，31 次派发"></i></span><span class="dp-val">2.38 分</span></div><div class="dp-row"><span class="dp-name">#170 产品功能</span><span class="dp-track"><i class="dp-dot g1" style="left:27.0%" title="中位 351,507 tokens，4 次派发"></i></span><span class="dp-val">1.35 分</span></div><div class="dp-row"><span class="dp-name">#172 规则与文档</span><span class="dp-track"><i class="dp-dot g1" style="left:95.0%" title="中位 729,958 tokens，1 次派发"></i></span><span class="dp-val">4.75 分</span></div><div class="dp-row"><span class="dp-name">#194 收尾整理</span><span class="dp-track"><i class="dp-dot g1" style="left:15.6%" title="中位 139,461 tokens，9 次派发"></i></span><span class="dp-val">0.78 分</span></div><div class="dp-row"><span class="dp-name">#208 规则与文档</span><span class="dp-track"><i class="dp-dot g2" style="left:26.0%" title="中位 243,142 tokens，10 次派发"></i></span><span class="dp-val">1.3 分</span></div><div class="dp-row"><span class="dp-name">#209 数据与模型</span><span class="dp-track"><i class="dp-dot g2" style="left:40.0%" title="中位 465,530 tokens，6 次派发"></i></span><span class="dp-val">2 分</span></div><div class="dp-row"><span class="dp-name">#233 流程与工具</span><span class="dp-track"><i class="dp-dot g3" style="left:22.0%" title="中位 206,866 tokens，7 次派发"></i></span><span class="dp-val">1.1 分</span></div><p class="note2">同类对比：流程与工具 #3 1.66 → #233 1.10；规则与文档 #172 4.75 → #208 1.30。数据与模型类读得多，不和别的类比。</p></div></div></section>
+<section id="reliability"><h2>可靠性：几类故障不再出现</h2>
+<div class="fails"><div class="fr fr-head"><span></span><span>v2 · 13 个 spec</span><span>v3 · 2 个</span><span>v3.1 · 1 个</span></div><div class="fr"><span class="fr-name">工具链下载</span><span class="fr-cell"><i class="fb g1" style="width:7.1%" title="v2 2 条"></i><b>2</b></span><span class="fr-cell"><i class="fb g2" style="width:3.6%" title="v3 1 条"></i><b>1</b></span><span class="fr-cell"><i class="fb g3" style="width:0.0%" title="v3.1 0 条"></i><b>0</b></span></div><div class="fr"><span class="fr-name">测试数据库</span><span class="fr-cell"><i class="fb g1" style="width:3.6%" title="v2 1 条"></i><b>1</b></span><span class="fr-cell"><i class="fb g2" style="width:0.0%" title="v3 0 条"></i><b>0</b></span><span class="fr-cell"><i class="fb g3" style="width:0.0%" title="v3.1 0 条"></i><b>0</b></span></div><div class="fr"><span class="fr-name">CI 未启动</span><span class="fr-cell"><i class="fb g1" style="width:3.6%" title="v2 1 条"></i><b>1</b></span><span class="fr-cell"><i class="fb g2" style="width:0.0%" title="v3 0 条"></i><b>0</b></span><span class="fr-cell"><i class="fb g3" style="width:0.0%" title="v3.1 0 条"></i><b>0</b></span></div><div class="fr"><span class="fr-name">派发出错</span><span class="fr-cell"><i class="fb g1" style="width:39.3%" title="v2 11 条"></i><b>11</b></span><span class="fr-cell"><i class="fb g2" style="width:3.6%" title="v3 1 条"></i><b>1</b></span><span class="fr-cell"><i class="fb g3" style="width:0.0%" title="v3.1 0 条"></i><b>0</b></span></div><div class="fr"><span class="fr-name">worktree</span><span class="fr-cell"><i class="fb g1" style="width:3.6%" title="v2 1 条"></i><b>1</b></span><span class="fr-cell"><i class="fb g2" style="width:0.0%" title="v3 0 条"></i><b>0</b></span><span class="fr-cell"><i class="fb g3" style="width:0.0%" title="v3.1 0 条"></i><b>0</b></span></div><div class="fr"><span class="fr-name">其他</span><span class="fr-cell"><i class="fb g1" style="width:100.0%" title="v2 28 条"></i><b>28</b></span><span class="fr-cell"><i class="fb g2" style="width:25.0%" title="v3 7 条"></i><b>7</b></span><span class="fr-cell"><i class="fb g3" style="width:7.1%" title="v3.1 2 条"></i><b>2</b></span></div></div>
+<p class="note2">数的是证据记录，不是故障次数（例如 PostgreSQL 下载"至少断了 4 次"只有一条记录）。v3.1 只有一个 spec。</p></section>
+<section id="split"><h2>拆分时怎么做</h2>
+<p>把 57 项收成 5 条思路和一组机制。以后再遇到问题，先记成观察，分析根因、看现有思路能不能覆盖、比较做法，再选最轻的形式（一句思路、一个脚本、或者不加），用过之后再评估。</p>
+<div class="cards five"><div class="card pr"><div class="card-head"><b>1. 验收回到原问题</b></div><p>做完不等于解决：收尾按 spec 写的原问题重新测一遍，没达到的写明，不以“实现了要求”代替。</p><div class="wchips"><span class="wchip " title="审查可复测现状及方案是否违背目标">W16</span><span class="wchip " title="收尾按原问题口径重测目标">W33</span><span class="wchip " title="明确文档职责、数字单源和过程产物去向">W47</span></div></div><div class="card pr"><div class="card-head"><b>2. 每个节点重新判断资源和做法</b></div><p>派发、合并、审查前看名额、远端状态和机器负载，再决定并行还是串行；长作业交给巡检工具。</p><div class="wchips"><span class="wchip " title="量大调查交 Codex，小查找才用子代理">W42</span><span class="wchip " title="执行节点重判资源和方式，遵守预登记边界">W43</span><span class="wchip " title="允许里程碑交接并分离多设计会话工作区">W44</span><span class="wchip " title="设计工单先推送，工程验收用 rebase 后提交">W31</span><span class="wchip " title="合批审查前查名额，审查时暂停合并">W32</span><span class="wchip " title="交接提供可选后台会话及管理命令">W56</span></div></div><div class="card pr"><div class="card-head"><b>3. 规则按“换一个人或一台机器还成立吗”归类</b></div><p>事实只存一处，别处引用；个人习惯不进仓库；路线图只放方向和决定。</p><div class="wchips"><span class="wchip " title="父 spec 只读正文，修订并入正文">W8</span><span class="wchip " title="规则从三类修订为五类加可删除">W45</span><span class="wchip " title="沿先读链接归类并约束生成规则篇幅">W46</span><span class="wchip " title="明确文档职责、数字单源和过程产物去向">W47</span><span class="wchip " title="路线图保留方向和决定，执行状态查 GitHub">W48</span><span class="wchip " title="目录 README 作地图并同步行为说明">W51</span><span class="wchip " title="区分书面产物语言与个人对话习惯">W57</span></div></div><div class="card pr"><div class="card-head"><b>4. 给人的产出按人的读法设计</b></div><p>先放要你做的和结论；要你记数字再比较的地方用图；证据放在结论旁边；明细折叠。</p><div class="wchips"><span class="wchip " title="汇报以前置交付和目标为主并调整图表">W36</span><span class="wchip " title="提问和汇报解释内容、背景及选项">W40</span><span class="wchip " title="提供单文件、数据驱动的离线汇报模板">W34</span><span class="wchip " title="汇报引用持久证据并读取独立作业用量">W39</span></div></div><div class="card pr"><div class="card-head"><b>5. 验证范围跟着改动的影响走</b></div><p>开发时只跑相关测试和静态检查；完整验证在合并点跑一次；只改文档的只跑静态检查；spec 收尾再跑一次全套。</p><div class="wchips"><span class="wchip " title="派工前验证集成分支基线">W1</span><span class="wchip " title="verify 统一选择主区或工单验证目标">W20</span><span class="wchip " title="验证保留完整日志、摘要及真实退出码">W21</span></div></div></div><h3>57 项改动的去向</h3>
+<div class="plan">
+  <div class="plan-col"><div class="plan-h keep">保留为机制 · 21</div><p>用上了的脚本和配置，原样带走，说明只留一句"它替你做了什么"。</p><div class="wchips"><span class="wchip " title="限制 Codex 并发并在满额时排队">W2</span><span class="wchip " title="slots 只读列出派发与空余名额">W3</span><span class="wchip " title="启动名额互斥及账号限流后重新排队">W4</span><span class="wchip " title="记录安装产物快照并保护重试期间产物">W9</span><span class="wchip " title="合并删除前保留额外忽略文件">W10</span><span class="wchip " title="按 spec 归属清理新增产物和日志">W12</span><span class="wchip " title="标准化独立只读 spec 审查">W13</span><span class="wchip " title="独立审查支持本地草稿和追加重点">W14</span><span class="wchip " title="校验并单独发布独立审查原文">W15</span><span class="wchip " title="verify 统一选择主区或工单验证目标">W20</span><span class="wchip " title="验证保留完整日志、摘要及真实退出码">W21</span><span class="wchip " title="配置 PR 检查命令并透传退出码">W22</span><span class="wchip " title="doctor 检查 CLI 及可选配置取值">W23</span><span class="wchip " title="verificationEnv 集中传递验证环境">W24</span><span class="wchip " title="exclusiveVerification 让完整验证互斥">W25</span><span class="wchip " title="disposableIgnored 删除可再生产物">W28</span><span class="wchip " title="通过验收前核对提交已在远端集成分支">W29</span><span class="wchip " title="提供单文件、数据驱动的离线汇报模板">W34</span><span class="wchip " title="汇报交付前检查浏览器错误、全局名及截图">W35</span><span class="wchip " title="汇报数据支持多目标、多会话及明确时间口径">W37</span><span class="wchip " title="汇报缺值传播未知，不将缺项当零">W38</span></div></div>
+  <div class="plan-col"><div class="plan-h quiet">脚本保留，说明移出必读 · 10</div><p>没触发过的安全兜底，脚本留着防出错；watch 巡检改成按需工具。</p><div class="wchips"><span class="wchip " title="dispatch --resume 续做原脏 worktree">W5</span><span class="wchip " title="拒绝撞上活跃运行或进行中的 rebase">W6</span><span class="wchip " title="父 spec 缺失时报 link 操作提示">W7</span><span class="wchip " title="合并重跑时复核已复制文件内容">W11</span><span class="wchip " title="验证锁按属主及作业进程组回收">W26</span><span class="wchip " title="嵌套验证继承有效锁以免死锁">W27</span><span class="wchip " title="无提交的只读验收显式加 --no-commits">W30</span><span class="wchip " title="watch 让小模型定时巡检长作业">W17</span><span class="wchip " title="巡检模型失败或格式错误时重试">W18</span><span class="wchip " title="截取巡检状态并保存统一日志">W19</span></div></div>
+  <div class="plan-col"><div class="plan-h drop">移到按需说明或删掉 · 7</div><p>一件事一条的补丁，没用上或无法判断，合计约 5.1 KB 默认文字。</p><div class="wchips"><span class="wchip " title="角色模板记录项目要求和预登记画像">W41</span><span class="wchip " title="setup 识别共享登记处并说明并行约束">W49</span><span class="wchip " title="追加索引可选采用 merge=union">W50</span><span class="wchip " title="setup 随附可选 Mermaid 约定">W52</span><span class="wchip " title="setup 新 worktree 基线先接软链接">W53</span><span class="wchip " title="只读冒烟允许验证临时文件和缓存">W54</span><span class="wchip " title="交接说明模型不可见技能的读取办法">W55</span></div></div>
+</div>
+<div class="cards two">
+  <div class="card"><div class="card-head"><b>新增：评分表由脚本采集</b></div><p>这次评估用到的指标（目标核对、开工开销、完整验证次数和时长、时间去向、流程故障、你介入的次数），每个 spec 收尾时由脚本采集，汇报直接画图。下一个普通的功能 spec 才是真正的检验。</p></div>
+  <div class="card"><div class="card-head"><b>新增：汇报模板按你的评价重做</b></div><p>时间线按资源分泳道、一屏看完；成本与效率、时间去向画成图；证据和数值放在结论旁边；风险单列。</p></div>
+</div>
+<p class="ev">逐项清单和理由：<a href="https://github.com/JinhaoFang/video-studio/blob/main/docs/research/run-spec-migration.md#v31-效果评估">迁移记录「v3.1 效果评估」</a></p></section>
+<section id="risk"><h2>风险与缺口</h2>
+<ul class="tight">
+<li><b>样本太少</b>：v3.1 只有 #233 一个 spec，而且是改流程的 spec，不是普通功能开发。</li>
+<li><b>类型不同</b>：第一阶段多是模型和产品 spec，#208、#209、#233 是规则和工具；总时长、用量都不比。</li>
+<li><b>数据缺口</b>：#43、#99、#100、#171 缺第一次实施的会话，没有时长；完整验证的总分钟数拿不全；用户消息按时间窗统计，会混进同期别的事。</li>
+<li><b>归类是我的判断</b>：思路、机制、补丁的划分和去向，需要你确认。</li>
+</ul>
+<h3>这次评估的代价</h3>
+
+<div class="cost">
+  <div class="cost-row"><span class="cost-name">Codex：执行过程数据<small>52 分钟 · 3 个子代理</small></span><span class="cost-track"><i class="c-codex" style="width:61.7%"></i></span><span class="cost-val">输入 40.2M · 输出 195k</span></div>
+  <div class="cost-row"><span class="cost-name">Codex：57 项改动<small>24 分钟 · 3 个子代理</small></span><span class="cost-track"><i class="c-codex" style="width:38.3%"></i></span><span class="cost-val">输入 25.0M · 输出 146k</span></div>
+  <div class="cost-row"><span class="cost-name">设计负责人<small>本会话 14:06–15:20</small></span><span class="cost-track"><i class="c-design" style="width:28.7%"></i></span><span class="cost-val">输入 18.7M · 输出 108k</span></div>
+</div>
+<p class="note2">输入含缓存读取（Codex 约 98%）。同一刻度。</p></section>
+      <footer><p>数据：video-studio <code>.codex-runs/eval/</code>（process-data.json、method-data.json，本机，不进 git；重跑见 process-reproduce.py）。迁移记录：<a href="https://github.com/JinhaoFang/video-studio/blob/main/docs/research/run-spec-migration.md">docs/research/run-spec-migration.md</a>。时间为台北时间。</p></footer>
+    </main>
+    <script>
+      {
+        const toggle = document.querySelector("[data-expand]");
+        toggle.addEventListener("click", () => {
+          const all = [...document.querySelectorAll("details")];
+          const open = all.some((item) => !item.open);
+          all.forEach((item) => {
+            item.open = open;
+          });
+          toggle.textContent = open ? "收起全部明细" : "展开全部明细";
+        });
+      }
+
+    </script>
+  </body>
+</html>
