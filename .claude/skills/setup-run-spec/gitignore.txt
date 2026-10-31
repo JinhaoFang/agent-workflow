@@ -16,6 +16,6 @@ references
 .env.*
 !.env.example
 
-# 第三方技能不进 git，包括从 video-studio 安装的 run-spec、setup-run-spec 和 DispatchDock 的技能。
+# 第三方技能不进 git，包括从 agent-workflow 安装的 run-spec、setup-run-spec 和 DispatchDock 的技能。
 # 仓库有自己要进 git 的技能时，改成先忽略 .claude/skills/*，再用 ! 为它开例外。
 .claude/skills/
