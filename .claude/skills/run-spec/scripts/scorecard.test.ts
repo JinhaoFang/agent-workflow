@@ -1,7 +1,8 @@
 /**
  * 评分表 CLI 测试：真实临时 git 仓库和 bare origin、持久化假的 gh，固定台账、
  * 派发/进度/Codex/Claude 记录；完整比较预期 JSON，检查缺数、时段并集、归属、
- * 更新同一评论和 cleanup 在任何删除之前拦截。SCORECARD_EVIDENCE 可指定输出
+ * Claude 摘要与来源过滤、AskUserQuestion 问答、更新同一评论和 cleanup 删除前拦截。
+ * SCORECARD_EVIDENCE 可指定输出
  * 固定输入、预期/实际 JSON、手算过程和测试命令记录的验收目录。
  */
 import assert from "node:assert/strict";
@@ -81,7 +82,20 @@ const fixture = () => {
   const claude = join(temporary, "claude.jsonl");
   const user = (minute: number, content: unknown, extra = {}) => ({ type: "user", uuid: `u${minute}`, sessionId: "main", timestamp: at(minute), message: { role: "user", content }, ...extra });
   const assistant = (minute: number, n: number, extra = {}) => ({ type: "assistant", uuid: `a${minute}`, sessionId: "main", timestamp: at(minute), message: { id: `a${minute}`, content: [{ type: "text", text: "回复" }], usage: { input_tokens: n * 10, cache_read_input_tokens: n * 2, cache_creation_input_tokens: n * 3, output_tokens: n } }, ...extra });
-  const claudeRows = [user(0, "开始"), assistant(3, 1, { message: { ...assistant(3, 1).message, content: [{ type: "tool_use", id: "tool" }] } }), user(4, [{ type: "tool_result", tool_use_id: "tool" }]), assistant(8, 2), { ...assistant(8, 2), uuid: "duplicate-message" }, user(10, "继续"), assistant(20, 3), user(45, "好了"), assistant(50, 4), user(51, "<task-notification><task-id>notification-child</task-id>subagent_tokens: 99</task-notification>", { isMeta: true }), assistant(2, 0, { isSidechain: true, message: { id: "child", content: [], usage: { input_tokens: 1, cache_read_input_tokens: 2, cache_creation_input_tokens: 3, output_tokens: 4 } } })];
+  const claudeRows = [
+    user(0, "开始", { origin: { kind: "human" } }),
+    assistant(3, 1, { message: { ...assistant(3, 1).message, content: [{ type: "tool_use", id: "tool", name: "Read" }] } }),
+    user(4, [{ type: "tool_result", tool_use_id: "tool" }]),
+    assistant(8, 2), { ...assistant(8, 2), uuid: "duplicate-message" }, user(10, "继续"),
+    user(11, "压缩摘要", { isCompactSummary: true, isVisibleInTranscriptOnly: true }),
+    assistant(20, 3),
+    assistant(21, 0, { message: { ...assistant(21, 0).message, content: [{ type: "tool_use", id: "question", name: "AskUserQuestion" }] } }),
+    user(45, [{ type: "tool_result", tool_use_id: "question", content: "批准" }]), user(46, "好了"),
+    user(47, "后台通知", { origin: { kind: "task-notification" } }),
+    assistant(50, 4),
+    user(51, "<task-notification><task-id>notification-child</task-id>subagent_tokens: 99</task-notification>", { isMeta: true }),
+    assistant(2, 0, { isSidechain: true, message: { id: "child", content: [], usage: { input_tokens: 1, cache_read_input_tokens: 2, cache_creation_input_tokens: 3, output_tokens: 4 } } }),
+  ];
   lines(claude, claudeRows);
   const artifacts = join(root, "out/qa/spec-2/5/result.txt");
   write(artifacts, "验收产物");
@@ -135,9 +149,9 @@ const expected = (collectedAt: string) => {
     { layer: "static", target: { kind: "main" }, caller: "verify", branch: "spec/2-test", start: at(9), end: at(10), queuedMinutes: 0, minutes: 1, exitCode: 0 },
   ], fullCount: 1, fullMinutes: 5, staticCount: 1 }), merges: value({ landCount: 2, fullVerificationFailures: 1, stops: { rebaseConflict: 0, installFailure: 0, verificationFailure: 1, pushFailure: 0, other: 0 } }),
     dispatches: value([dispatch("gh-5", 5, "首次", 0, 20, tokens(1000, 800, 50)), dispatch("review-2-batch", null, "审查", 5, 15, tokens(200, 100, 20))]),
-    time: { codexSlots: value(spans([0, 20])), verification: value(spans([3, 8], [9, 10])), queue: value(spans([1, 3])), designLead: value(spans([0, 20], [45, 50])), waitingUser: value(spans([20, 45])) },
+    time: { codexSlots: value(spans([0, 20])), verification: value(spans([3, 8], [9, 10])), queue: value(spans([1, 3])), designLead: value(spans([0, 21], [45, 50])), waitingUser: value(spans([21, 45])) },
     overhead: value([{ record: "gh-5", firstEditAt: value(at(4)), minutes: value(4), inputTokens: value(100) }, { record: "review-2-batch", firstEditAt: value(null, reasons[0]), minutes: value(null, reasons[1]), inputTokens: value(null, reasons[2]) }]),
-    userInterventions: value(3), failures: { dispatchWithoutReport: value(0), landStops: value(1), verificationLaunch: value(0) },
+    userInterventions: value(4), failures: { dispatchWithoutReport: value(0), landStops: value(1), verificationLaunch: value(0) },
     usage: { codexDispatch: value(tokens(1000, 800, 50)), codexReview: value(tokens(200, 100, 20)), mainSession: value(tokens(150, 20, 10)), independentReview: value(tokens(10, 2, 4)), subagents: value(tokens(26, 12, 6)), subagentNotifications: value(99) },
     missing: ["firstEditAt", "minutes", "inputTokens"].map((field, index) => ({ field: `overhead.review-2-batch.${field}`, reason: reasons[index] })),
   };
@@ -161,7 +175,20 @@ test("固定输入完整 JSON 与手写预期一致；静态层、调用次数�
       cpSync(f.codex, join(directory, "fixed-input/codex"), { recursive: true });
       cpSync(f.dispatch, join(directory, "fixed-input/dispatch"), { recursive: true });
       cpSync(f.claude, join(directory, "fixed-input/claude.jsonl"));
-      writeFileSync(join(directory, "manual-calculation.md"), "# 固定输入手算\n\n时间均为 2026-10-31 UTC。\n\n设计负责人：00:00 用户→00:03 助手工具调用=3 分；→00:04 工具结果=1 分；→00:08 助手=4 分；重复的同一回复=0 分；→00:10 用户=2 分；→00:20 助手=10 分（边界计入）。00:20→00:45=25 分，大于 10 分，不计；00:45→00:50=5 分。合计 3+1+4+0+2+10+5=25 分；并集 [00:00,00:20]、[00:45,00:50]。\n\n等用户：00:08 回复→00:10 用户仅 2 分，不计；00:20 文字回复→00:45 用户=25 分，计整段 [00:20,00:45]；00:50 以后没有下一条用户输入，不补算。工具结果、isMeta 通知和 sidechain 不计用户输入，故介入 3 次。\n\nCodex：工程 00:00–00:20 与审查 00:05–00:15 重叠，同类取并集 20 分；跨类保留并行。验证 00:03–00:08=5 分 + static 00:09–00:10=1 分，共6分；排队为 full 验证开始前两分钟，即00:01–00:03。land 两次，第二次 verification=null，不增验证次数；其他 spec 行全部排除。\n\n开工开销：00:03 patch 失败不计；00:04 patch 成功，距派发 4 分钟，之前最新累计输入100。最终累计1000不是启动输入；不累加100和1000两个快照。\n");
+      writeFileSync(join(directory, "manual-calculation.md"), `# 固定输入手算
+
+时间均为 2026-10-31 UTC。
+
+设计负责人逐相邻主会话事件计算：00:00 用户→00:03 普通工具调用=3 分；→00:04 普通工具结果=1 分；→00:08 文字回复=4 分；重复回复=0 分；→00:10 用户=2 分；→00:11 压缩摘要=1 分；→00:20 文字回复=9 分；→00:21 AskUserQuestion 提问=1 分。00:21→00:45 回答=24 分，超过10分钟，不计；00:45→00:46 用户=1 分；→00:47 非 human 来源通知=1 分；→00:50 回复=3 分。合计3+1+4+0+2+1+9+1+1+1+3=26分；并集[00:00,00:21]、[00:45,00:50]。摘要和非 human 来源不算用户输入，但仍属于相邻事件时间的采集范围；isMeta 和 sidechain 不进主会话时间线。十分钟边界由独立 CLI 用例验证。
+
+等用户：00:08 文字回复→00:10 用户仅2分，不计；00:11 摘要不是用户输入，不结束等待；00:20 文字回复后00:21又提问，从最新提问时间开始；00:21 AskUserQuestion tool_use→00:45 对应 tool_result回答=24分，计整段[00:21,00:45]。00:46 用户前已有00:45回答，不重复等待；00:47非 human来源不是用户输入；00:50以后没有下一条用户输入，不补算。
+
+用户介入：00:00 origin.kind=human、00:10文本、00:45 AskUserQuestion回答、00:46文本，共4次。00:04普通工具结果、00:11压缩摘要、00:47 origin.kind=task-notification、00:51 isMeta通知和sidechain均不计。
+
+Codex：工程00:00–00:20与审查00:05–00:15重叠，同类取并集20分；跨类保留并行。验证00:03–00:08=5分 + static 00:09–00:10=1分，共6分；排队为full验证开始前两分钟，即00:01–00:03。land两次，第二次verification=null，不增验证次数；其他spec行全部排除。
+
+开工开销：00:03 patch失败不计；00:04 patch成功，距派发4分钟，之前最新累计输入100。最终累计1000不是启动输入；不累加100和1000两个快照。
+`);
     }
   } finally { f.cleanup(); }
 });
@@ -188,6 +215,82 @@ test("缺台账、Codex、Claude 时写 null 和原因；输出文件与 dry-run
     assert.equal(empty.time.designLead.value, null);
     assert.equal(empty.userInterventions.value, null);
     assert.match(empty.time.designLead.reason, /缺少可解析/);
+  } finally { f.cleanup(); }
+});
+
+test("用户输入排除压缩摘要与非 human 来源，保留 human 来源", () => {
+  const f = fixture();
+  try {
+    const user = (minute: number, extra: Record<string, unknown>) => ({ type: "user", uuid: `u${minute}`, sessionId: "main", timestamp: at(minute), message: { role: "user", content: "消息" }, ...extra });
+    f.lines(f.claude, [
+      user(0, { origin: { kind: "human" } }),
+      user(1, { isCompactSummary: true }),
+      user(2, { isVisibleInTranscriptOnly: true }),
+      user(3, { origin: { kind: "task-notification" } }),
+      user(4, { origin: { kind: "human" }, isCompactSummary: true }),
+      user(5, { origin: { kind: "human" }, message: { role: "user", content: "<system-reminder>用户亲自输入的引用</system-reminder>" } }),
+      user(6, { origin: { kind: "human" }, isMeta: true }),
+      user(7, { origin: { kind: "human" }, isSynthetic: true }),
+    ]);
+    const result = f.run(["scorecard", "2", "--session", f.claude]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).userInterventions.value, 4);
+  } finally { f.cleanup(); }
+});
+
+test("文字回复等待仍按超过十分钟计算，设计负责人计入恰好十分钟", () => {
+  const f = fixture();
+  try {
+    for (const end of [10, 11]) {
+      f.lines(f.claude, [
+        { type: "assistant", uuid: "reply", sessionId: "main", timestamp: at(0), message: { id: "reply", content: [{ type: "text", text: "请确认" }] } },
+        { type: "user", uuid: "answer", sessionId: "main", timestamp: at(end), message: { role: "user", content: "确认" } },
+      ]);
+      const result = f.run(["scorecard", "2", "--session", f.claude]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      const active = { spans: [{ start: at(0), end: at(end) }], minutes: end };
+      const empty = { spans: [], minutes: 0 };
+      assert.deepEqual(card.time.designLead.value, end <= 10 ? active : empty);
+      assert.deepEqual(card.time.waitingUser.value, end > 10 ? active : empty);
+    }
+  } finally { f.cleanup(); }
+});
+
+test("AskUserQuestion 回答计一次介入，提问后超过十分钟的等待计整段", () => {
+  const f = fixture();
+  try {
+    for (const end of [10, 20]) {
+      f.lines(f.claude, [
+        { type: "assistant", uuid: "question", sessionId: "main", timestamp: at(0), message: { id: "question", content: [{ type: "tool_use", id: "ask", name: "AskUserQuestion" }] } },
+        { type: "user", uuid: "summary", sessionId: "main", timestamp: at(2), isCompactSummary: true, message: { role: "user", content: "压缩摘要" } },
+        { type: "user", uuid: "notification", sessionId: "main", timestamp: at(3), origin: { kind: "task-notification" }, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "ask", content: "自动通知" }] } },
+        { type: "user", uuid: "tool", sessionId: "main", timestamp: at(5), message: { role: "user", content: [{ type: "tool_result", tool_use_id: "other", content: "普通工具结果" }] } },
+        { type: "user", uuid: "answer", sessionId: "main", timestamp: at(end), message: { role: "user", content: [{ type: "tool_result", tool_use_id: "ask", content: "回答一" }, { type: "tool_result", tool_use_id: "ask", content: "回答二" }] } },
+      ]);
+      const result = f.run(["scorecard", "2", "--session", f.claude]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.equal(card.userInterventions.value, 1);
+      assert.deepEqual(card.time.waitingUser.value, end > 10 ? { spans: [{ start: at(0), end: at(end) }], minutes: end } : { spans: [], minutes: 0 });
+    }
+  } finally { f.cleanup(); }
+});
+
+test("AskUserQuestion 工具结果只关联同一主会话，其他会话和子代理的同名 ID 不计", () => {
+  const f = fixture();
+  try {
+    f.lines(f.claude, [
+      { type: "assistant", uuid: "read", sessionId: "main", timestamp: at(0), message: { id: "read", content: [{ type: "tool_use", id: "shared", name: "Read" }] } },
+      { type: "assistant", uuid: "other-question", sessionId: "other", timestamp: at(0), message: { id: "other-question", content: [{ type: "tool_use", id: "shared", name: "AskUserQuestion" }] } },
+      { type: "assistant", uuid: "child-question", sessionId: "main", timestamp: at(0), isSidechain: true, message: { id: "child-question", content: [{ type: "tool_use", id: "child", name: "AskUserQuestion" }] } },
+      { type: "user", uuid: "results", sessionId: "main", timestamp: at(20), message: { role: "user", content: [{ type: "tool_result", tool_use_id: "shared" }, { type: "tool_result", tool_use_id: "child" }] } },
+    ]);
+    const result = f.run(["scorecard", "2", "--session", f.claude]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.equal(card.userInterventions.value, 0);
+    assert.deepEqual(card.time.waitingUser.value, { spans: [], minutes: 0 });
   } finally { f.cleanup(); }
 });
 
@@ -260,7 +363,13 @@ test("类别只用现有指令判断，损坏输入和无效参数退出2，帮�
       rows.pop(); f.lines(path, rows);
     }
     const beforeHelp = readFileSync(join(f.temporary, "calls.jsonl"), "utf8");
-    for (const args of [["scorecard", "--help"], ["cleanup", "--help"]]) assert.equal(f.run(args).status, 0);
+    for (const args of [["scorecard", "--help"], ["cleanup", "--help"]]) {
+      const help = f.run(args);
+      assert.equal(help.status, 0);
+      if (args[0] === "scorecard") {
+        for (const pattern of [/AskUserQuestion tool_use/, /tool_result 回答/, /isCompactSummary/, /isVisibleInTranscriptOnly/, /origin.kind/, /恰好10分钟不计/]) assert.match(help.stdout, pattern);
+      }
+    }
     assert.equal(readFileSync(join(f.temporary, "calls.jsonl"), "utf8"), beforeHelp);
     for (const args of [["scorecard"], ["scorecard", "0"], ["scorecard", "2", "--unknown"], ["scorecard", "2", "--session", "/nonexistent.jsonl"]]) {
       const result = f.run(args); assert.equal(result.status, 2); assert.match(result.stderr, /^出错：/);

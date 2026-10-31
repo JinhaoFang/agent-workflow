@@ -3,7 +3,7 @@
  * JSONL，--out 写文件，--post 用稳定标记创建或更新折叠评论。cleanup 共用归属
  * 和截点检查；只有显式 --no-scorecard 才绕过。所有缺数以 value:null 和中文
  * reason 表示，missing 汇总字段路径。数据口径和兼容约定完整写在 --help。
- * TODO(design)：确认 JSON 字段名、十分钟时间口径和首次改文件事件的保守识别。
+ * Claude 用户输入排除压缩摘要，优先认 origin.kind，并关联 AskUserQuestion 问答。
  */
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -64,14 +64,23 @@ const claudeData = (paths: string[]) => {
   }
   const events = [...byEvent.values()];
   const content = (event: Json): Json[] => typeof event.message?.content === "string" ? [{ type: "text", text: event.message.content }] : event.message?.content ?? [];
-  const human = (event: Json) => event.type === "user" && !event.isMeta && !event.isSynthetic &&
-    content(event).some((item) => item.type === "text" && item.text?.trim() &&
-      !/^\s*<(?:task-notification|system-reminder|local-command|command-name)/.test(item.text));
-  const main = events.filter((event) => !event.isSidechain && !event.isMeta && ["user", "assistant"].includes(event.type) && timestamp(event.timestamp));
+  const conversationKey = (event: Json) => event.sessionId ?? event.sourcePath;
+  const main = events.filter((event) => !event.isSidechain && (!event.isMeta || event.origin?.kind === "human") && ["user", "assistant"].includes(event.type) && timestamp(event.timestamp));
+  const questions = new Set(main.flatMap((event) => event.type === "assistant" ? content(event)
+    .filter((item) => item.type === "tool_use" && item.name === "AskUserQuestion" && typeof item.id === "string")
+    .map((item) => `${conversationKey(event)}:${item.id}`) : []));
+  const human = (event: Json) => {
+    if (event.type !== "user" || event.isCompactSummary || event.isVisibleInTranscriptOnly) return false;
+    if (event.origin?.kind !== undefined) return event.origin.kind === "human";
+    if (event.isMeta || event.isSynthetic) return false;
+    return content(event).some((item) =>
+      (item.type === "text" && item.text?.trim() && !/^\s*<(?:task-notification|system-reminder|local-command|command-name)/.test(item.text)) ||
+      (item.type === "tool_result" && questions.has(`${conversationKey(event)}:${item.tool_use_id}`)));
+  };
   const director: Span[] = [];
   const waiting: Span[] = [];
-  for (const path of new Set(main.map((event) => event.sessionId ?? event.sourcePath))) {
-    const conversation = main.filter((event) => (event.sessionId ?? event.sourcePath) === path).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  for (const path of new Set(main.map(conversationKey))) {
+    const conversation = main.filter((event) => conversationKey(event) === path).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     for (let index = 1; index < conversation.length; index++) {
       const previous = conversation[index - 1];
       const current = conversation[index];
@@ -79,7 +88,8 @@ const claudeData = (paths: string[]) => {
       if (minutes(interval) <= 10) director.push(interval);
       if (human(current)) {
         const reply = conversation.slice(0, index).reverse().find((event) => event.type === "assistant" &&
-          content(event).some((item) => item.type === "text" && item.text?.trim()) && !content(event).some((item) => item.type === "tool_use"));
+          (content(event).some((item) => item.type === "tool_use" && item.name === "AskUserQuestion") ||
+            (content(event).some((item) => item.type === "text" && item.text?.trim()) && !content(event).some((item) => item.type === "tool_use"))));
         const wait = reply ? span(reply.timestamp, current.timestamp) : null;
         if (wait && minutes(wait) > 10 && !conversation.slice(conversation.indexOf(reply!) + 1, index).some((event) => event.type === "assistant" || human(event))) waiting.push(wait);
       }
@@ -262,12 +272,14 @@ dispatches：每次给工单、类别、起止、分钟、退出码、用量；�
 类别：review 名为审查；会话初始指令明确“这是原地续做”为续做、“这是返工派发”为返工；基础 gh-<号> 为首次；其余 null。
 time：codexSlots=派发运行；verification=实际验证；queue=验证开始前 queuedMinutes 那一段。
 designLead=每个给定 Claude 主会话中相邻 user/assistant 事件间隔 <=10 分钟的整段；
-waitingUser=负责人文字回复到下一条用户亲自输入 >10 分钟的整段；工具结果和通知不算亲自输入。
+waitingUser=负责人文字回复或 AskUserQuestion tool_use 提问的时间，到下一条用户输入 >10 分钟的整段（恰好10分钟不计）。
 每类 {spans:[{start,end}],minutes}；同类重叠/相接取并集，合计等于时段之和；类别之间可重叠，不跨会话连线。
 缺 Claude 会话时后两类和 userInterventions 为 null；指定会话按 uuid/消息 ID 去重，不含 isSidechain。
 overhead：派发开始到 Codex response_item 中首次成功 apply_patch 调用（含 tools.apply_patch）的分钟数；
 输入 token 取该调用之前最后一个累计 token_count；失败 patch 和只读命令不计，shell 改文件无法可靠识别时写 null。
-userInterventions：给定主会话的用户文本消息数，不含工具结果、isMeta、isSynthetic、系统通知和子代理。
+userInterventions：给定主会话的用户亲自输入消息数；一条消息计一次，包括同会话内 tool_use 名为 AskUserQuestion 的 tool_result 回答。
+isCompactSummary 或 isVisibleInTranscriptOnly 为真的压缩摘要不算用户输入；带 origin.kind 时以它为准，只有 human 才算。
+无 origin.kind 时识别用户文本和 AskUserQuestion 回答，排除其他工具结果、isMeta、isSynthetic、系统通知和子代理。
 failures：派发非零退出且无非空汇报、land 非零退出、验证阶段 exit=2 且 verification=null 的启动失败；需返工本身不计。
 usage：Codex 工程派发/审查取关联会话最后累计 token_count（不累加快照）；主会话按 message.id 去重后累加 usage；
 独立审查取 review-spec-<号>-<序号>.json；子代理取关联 Codex 后代会话及给定 Claude sidechain 的完整 usage。
