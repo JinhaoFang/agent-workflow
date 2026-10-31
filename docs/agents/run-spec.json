@@ -1,0 +1,9 @@
+{
+  "verificationCommand": ["pnpm", "verify"],
+  "installCommand": ["pnpm", "install", "--frozen-lockfile"],
+  "symlinkDirectories": [".agents"],
+  "acceptanceRoot": "out/qa",
+  "codexSandbox": "danger-full-access",
+  "dispatchScript": ".claude/skills/codex-dispatch/codex-task.mjs",
+  "prCheckCommand": ["pnpm", "ci:local", "{pr}"]
+}
