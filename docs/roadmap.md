@@ -23,7 +23,7 @@
 
 ## 下一步
 
-**切换安装来源**：`workflow-v4` 发布后，三个仓库按「切换顺序」改为从本仓库安装；切换后测 spec #2 目标核对的第 5、6 项（安装来源、测试分层的真实效果）。
+**切换的收尾**：三个仓库已改为从本仓库安装 `workflow-v4`（JinhaoFang/video-studio#113、JinhaoFang/design-system#88、JinhaoFang/PathJX-01#244），第 5 项的结果评论在 spec #2。还剩两件：产品线那台机器重装并跑 `doctor`；第 6 项（测试分层的真实效果）等 PathJX 下一个 spec 的评分表，按 `docs/research/run-spec-migration.md`「用过以后再评估」补上评估。
 
 ## 待定
 
