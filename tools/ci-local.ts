@@ -2,7 +2,8 @@
  * Run `node tools/ci-local.ts <PR-number>` from the repository root, or use
  * ["pnpm", "ci:local", "{pr}"] as run-spec's prCheckCommand. Read PR metadata
  * with gh, require its exact head commit and a clean Git worktree, then run
- * pnpm verify and check-commit-range.ts origin/<baseRefName> HEAD in order.
+ * pnpm verify and check-commit-range.ts origin/<baseRefName> <headRefName> in
+ * order, so branch-specific rules such as required Refs on spec/* apply.
  * Preconditions fail with 1; failed checks preserve their exit status.
  * All external commands use argument arrays without a shell.
  */
@@ -61,7 +62,7 @@ const main = (): number => {
   const verification = run("pnpm", ["verify"]);
   if (verification !== 0) return verification;
   return run(process.execPath, [
-    "tools/check-commit-range.ts", `origin/${baseRefName}`, "HEAD",
+    "tools/check-commit-range.ts", `origin/${baseRefName}`, headRefName,
   ]);
 };
 

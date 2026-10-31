@@ -95,7 +95,7 @@ test("clean exact-head CI runs both checks in order with literal arguments", (co
   assert.deepEqual(f.calls(), [
     { program: "gh", args: ["pr", "view", "12", "--json", "headRefOid,headRefName,baseRefName"], cwd: f.root },
     { program: "pnpm", args: ["verify"], cwd: f.root },
-    { program: "range", args: [`origin/${baseRefName}`, "HEAD"], cwd: f.root },
+    { program: "range", args: [`origin/${baseRefName}`, f.pr.headRefName], cwd: f.root },
   ]);
 });
 
