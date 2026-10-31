@@ -6,16 +6,19 @@
  * may be unmerged and are deleted with -D; worktree removal is never forced.
  * Query origin directly for exact child refs, without fetching. Remote deletion
  * failures name the branch, allow other cleanup to proceed and exit with 1.
- * --dry-run only lists the plan. Integration branches are never deleted here.
+ * --dry-run lists the plan and gate result. Integration branches survive.
  * Include exact child ticket .kept directories, listing bounded top-level file
  * counts before any deletion. Unrelated ticket retention directories survive.
  * Remove verify-<child> logs with exact ticket ownership, retaining main logs.
  * Remove spec/child watch logs and this spec's review-spec reports, JSON sidecars
  * and interrupted input snapshot directories, retaining other/default names.
+ * Before deleting anything require a posted scorecard covering owned records;
+ * dry-run still prints the plan and check result; --no-scorecard bypasses it.
  */
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { printKeptDirectory } from "./ignored-artifacts.ts";
+import { checkScorecard } from "./scorecard.ts";
 import {
   entry,
   CheckFailure,
@@ -160,6 +163,8 @@ const cleanup = (values: Values, numbers: number[]): void => {
     !remoteBranches.length
   )
     console.log("没有可删除的内容。");
+  if (values["no-scorecard"]) console.log("已跳过评分表检查（--no-scorecard）。");
+  else checkScorecard(root, spec, tickets, endpoint(spec));
   const remoteFailures: string[] = [];
   if (!values["dry-run"]) {
     for (const tree of removable) {
@@ -195,10 +200,10 @@ const cleanup = (values: Values, numbers: number[]): void => {
 };
 
 export const cleanupCommand: Command = {
-  options: {},
+  options: { "no-scorecard": { type: "boolean" } },
   positionals: 1,
   execute: cleanup,
-  help: `${entry} cleanup <spec> [--dry-run]
+  help: `${entry} cleanup <spec> [--dry-run] [--no-scorecard]
 读取 spec 的全部子工单，先列清单再删除主工作区的本 spec 派发记录、
 审查记录、子工单 verify-<工单号> 验证日志、配置验收根目录下的 spec-<号>/、残留 worktree 和工单分支，
 以及 git 公共目录 run-spec-land/ 下这些子工单的续做状态文件。
@@ -212,5 +217,9 @@ export const cleanupCommand: Command = {
 巡检日志只清理 watch-<spec号>.log、watch-<spec号>-*.log 和子工单号的同类日志；其他 spec 和默认名字保留。
 同时清理 review-spec-<spec号>-<序号>.md、配对的 .json，以及 review-spec-<spec号>-<随机后缀>/ 输入快照目录。
 不干净的 worktree 跳过并保留对应分支，以 1 退出；不强行删除 worktree。
---dry-run 只读取 GitHub、git 和文件，列出清单，不删除任何内容。`,
+删除任何内容之前检查 spec 上的评分表评论；没有有效评论或本 spec 的台账、派发记录
+在评分表截点之后有更新时，以 1 退出且不删除任何内容，并提示 scorecard <spec> --post。
+按 branch=spec/<号>-… 和直接子工单 ticket/<号> 归属台账；其他 spec 的新记录不拦截。
+--no-scorecard 显式跳过评分表检查，适用于 gh 出错或用户不要评分表。
+--dry-run 只读取 GitHub、git 和文件，列出清单及评分表拦截结论，不删除任何内容。`,
 };

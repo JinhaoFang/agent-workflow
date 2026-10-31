@@ -10,6 +10,7 @@
  * copying this skill needs no repository helpers or dependencies.
  */
 import { cleanupCommand } from "./cleanup.ts";
+import { scorecardCommand } from "./scorecard.ts";
 import { landCommand } from "./land.ts";
 import { verifyCommand } from "./verify.ts";
 import { prCheckCommand } from "./pr-check.ts";
@@ -26,6 +27,7 @@ import { reportError, runCommands, type Command } from "./shared.ts";
 
 const commands: Record<string, Command> = {
   doctor: doctorCommand,
+  scorecard: scorecardCommand,
   cleanup: cleanupCommand,
   land: landCommand,
   verify: verifyCommand,
