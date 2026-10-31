@@ -1,0 +1,15 @@
+# 不进 git 的内容：依赖、本机参考资料、派发记录（.codex-runs）、
+# 第三方技能（按 skills-lock.json 和 DispatchDock 安装器重装；只有本仓库自有的 run-spec、setup-run-spec 进 git）、
+# 验收产物（out）。
+node_modules
+.DS_Store
+.env
+references
+.codex-runs/
+.agents
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/run-spec/
+!.claude/skills/setup-run-spec/
+out
