@@ -15,6 +15,7 @@
  * Disposable cases exercise Git patterns, record/current-spec protection and
  * deletion or retention elsewhere under acceptanceRoot, including cleanup retries;
  * fake verification writes cache files and a Git wrapper exposes pre-removal state.
+ * Ledger assertions cover every stop/retry stage; TICKET_3_EVIDENCE saves rows.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -233,6 +234,42 @@ const readSteps = (
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
+
+const assertLedger = (
+  root: string,
+  name: string,
+  steps: (string | null)[],
+  verificationCodes: (number | null)[],
+  exitCodes: number[],
+) => {
+  const content = readFileSync(join(root, ".codex-runs/verification.jsonl"), "utf8");
+  assert.ok(content.endsWith("\n"));
+  const entries = content.trimEnd().split("\n").map((line) => JSON.parse(line));
+  assert.equal(entries.length, steps.length);
+  assert.deepEqual(entries.map((entry) => entry.stopReason?.step ?? null), steps);
+  assert.deepEqual(entries.map((entry) => entry.verification?.exitCode ?? null), verificationCodes);
+  assert.deepEqual(entries.map((entry) => entry.exitCode), exitCodes);
+  for (const entry of entries) {
+    assert.equal(entry.caller, "land");
+    assert.deepEqual(entry.target, { kind: "ticket", number: 21 });
+    assert.equal(entry.layer, "full");
+    assert.equal(entry.queuedMinutes, 0);
+    assert.equal(new Date(entry.startedAt).toISOString(), entry.startedAt);
+    assert.equal(new Date(entry.finishedAt).toISOString(), entry.finishedAt);
+    assert.ok(entry.startedAt <= entry.finishedAt);
+    if (entry.stopReason) assert.ok(entry.stopReason.message.length > 0);
+    if (entry.verification) {
+      assert.ok(entry.startedAt <= entry.verification.startedAt);
+      assert.ok(entry.verification.startedAt <= entry.verification.finishedAt);
+      assert.ok(entry.verification.finishedAt <= entry.finishedAt);
+    }
+  }
+  const directory = process.env.TICKET_3_EVIDENCE;
+  if (directory) {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, `land-${name}.jsonl`), content);
+  }
+};
 
 const dispatchInstallation = (
   f: ReturnType<typeof fixture>,
@@ -1154,6 +1191,7 @@ test("land rebases, installs quietly, verifies, fast-forwards, pushes local orig
     const result = f.run(["21"]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(f.git(["branch", "--show-current"]), f.integration);
+    assertLedger(f.root, "success", [null], [0], [0]);
     assert.equal(f.git(["status", "--porcelain"]), "");
     assert.equal(
       readFileSync(join(f.root, "ticket.txt"), "utf8"),
@@ -1251,7 +1289,7 @@ test("land copies exactly the ticket files from the shared ownership corpus", ()
         .map((record) => record.file);
       assert.deepEqual(
         readdirSync(join(f.root, ".codex-runs")).sort(),
-        [...expected, "smoke.json"].sort(),
+        [...expected, "smoke.json", "verification.jsonl"].sort(),
         `ticket ${ticket}`,
       );
       for (const file of expected)
@@ -1290,6 +1328,7 @@ test("land preserves rebase conflicts and resumes both staged resolutions and ma
       const dryRun = f.run(["21", "--dry-run"]);
       assert.equal(dryRun.status, 0, dryRun.stderr);
       assert.match(dryRun.stdout, /继续已有 rebase/);
+      assertLedger(f.root, "rebase-failed", ["rebase", "rebase", "rebase"], [null, null, null], [1, 1, 1]);
       assert.equal(f.git(["branch", "--show-current"], f.worktree), "");
       if (manual) {
         const result = spawnSync("git", ["rebase", "--continue"], {
@@ -1304,6 +1343,13 @@ test("land preserves rebase conflicts and resumes both staged resolutions and ma
       assert.equal(
         readFileSync(join(f.root, "shared.txt"), "utf8"),
         "resolved\n",
+      );
+      assertLedger(
+        f.root,
+        "rebase-resumed",
+        ["rebase", "rebase", "rebase", null],
+        [null, null, null, 0],
+        [1, 1, 1, 0],
       );
       assert.ok(!existsSync(f.worktree));
       assert.deepEqual(readSteps(join(f.root, f.artifacts, "steps.jsonl")), [
@@ -1327,6 +1373,7 @@ test("land replays failed installation output, preserves the rebased tree and re
     try {
       const rejected = f.run(["21"], 0, f.root, exit);
       assert.equal(rejected.status, 1, rejected.stderr);
+      assertLedger(f.root, `install-${exit}`, ["install"], [null], [1]);
       assert.match(rejected.stderr, /出错：安装未通过/);
       assert.match(
         rejected.stdout,
@@ -1364,6 +1411,7 @@ test("land reports an unavailable installation program with exit 2 and leaves ve
     const result = f.run(["21"], 0, f.worktree);
     assert.equal(result.status, 2, result.stderr);
     assert.match(result.stderr, /^出错：安装命令运行出错/);
+    assertLedger(f.root, "install-launch", ["install"], [null], [2]);
     assert.ok(!existsSync(join(f.worktree, "out/verification.json")));
     f.assertUnlanded();
   } finally {
@@ -1378,6 +1426,7 @@ test("land rejects failing verification without merging, pushing, copying or del
       const result = f.run(["21"], exit);
       assert.equal(result.status, 1, result.stderr);
       assert.match(result.stderr, /^出错：验证未通过/);
+      assertLedger(f.root, `verify-${exit}`, ["verify"], [exit], [1]);
       assert.ok(existsSync(join(f.worktree, "out/verification.json")));
       f.assertUnlanded();
       assert.equal(f.run(["21"]).status, 0);
@@ -1529,6 +1578,8 @@ process.exit(result.status ?? 2);
         );
       const rejected = f.run(["21"]);
       assert.equal(rejected.status, 2, `${stage}: ${rejected.stderr}`);
+      const stop = stage === "worktree" ? "remove-worktree" : stage === "branch" ? "remove-branch" : stage;
+      assertLedger(f.root, `${stage}-failed`, [stop], [0], [2]);
       assert.match(rejected.stderr, /^出错：/);
       assert.match(rejected.stdout, /已快进合并/);
       assert.equal(f.git(["rev-parse", f.integration]), ticketHead);
@@ -1585,6 +1636,7 @@ process.exit(result.status ?? 2);
       assert.equal(existsSync(f.worktree), stage !== "branch");
       const resumed = f.run(["21"], 7);
       assert.equal(resumed.status, 0, `${stage}: ${resumed.stderr}`);
+      assertLedger(f.root, `${stage}-resumed`, [stop, null], [0, null], [2, 0]);
       if (stage === "worktree") {
         assert.equal(
           readFileSync(join(f.root, ".codex-runs/gh-21-late.json"), "utf8"),

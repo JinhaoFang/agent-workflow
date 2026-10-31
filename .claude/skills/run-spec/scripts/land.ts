@@ -22,6 +22,8 @@
  * disposableIgnored discards matched ignored leaves outside .codex-runs and
  * the current spec's QA directory at retention; matching and counts are also
  * available in dry runs, with [] preserving v3.
+ * Append one main-owned ledger entry per attempt, including the step and
+ * diagnostic when stopped; record actual verification separately from retries.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -54,15 +56,35 @@ import {
   type Command,
   type Values,
 } from "./shared.ts";
-import { runVerification } from "./verification-lock.ts";
+import {
+  withVerificationRecord,
+  verificationLedgerHelp,
+  type VerificationAttempt,
+} from "./verification-ledger.ts";
 
 const land = async (values: Values, numbers: number[]): Promise<void> => {
   const checkout = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
-  const config = dispatchConfig(checkout);
   const root = git(checkout, ["worktree", "list", "--porcelain"])
     .split("\n")[0]
     .slice(9);
   const ticket = numbers[0];
+  await withVerificationRecord(
+    root,
+    "land",
+    { kind: "ticket", number: ticket },
+    Boolean(values["dry-run"]),
+    (attempt) => landAttempt(values, checkout, root, ticket, attempt),
+  );
+};
+
+const landAttempt = async (
+  values: Values,
+  checkout: string,
+  root: string,
+  ticket: number,
+  attempt: VerificationAttempt,
+): Promise<void> => {
+  const config = dispatchConfig(checkout);
   const { endpoint } = github(true);
   const { spec, integration } = ticketIntegration(root, endpoint(ticket));
   const branch = `ticket/${ticket}`;
@@ -118,6 +140,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
       )
       .find(existsSync);
     if (rebase) {
+      attempt.step = "rebase";
       if (
         merged ||
         readFileSync(join(rebase, "head-name"), "utf8").trim() !==
@@ -154,6 +177,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
       `派发记录和验收产物尚未复制，但工单 worktree 不存在：${worktree}`,
     );
   const specArtifacts = join(config.acceptanceRoot, `spec-${spec}`);
+  attempt.step = "preflight";
   const artifacts = join(specArtifacts, String(ticket));
   const records = join(worktree, ".codex-runs");
   const names = existsSync(records)
@@ -290,9 +314,11 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
     }
   };
   if (!merged) {
+    attempt.step = "rebase";
     if (rebase) runRebase(["--continue"]);
     runRebase([integration]);
     console.log(`已 rebase 到 ${integration}`);
+    attempt.step = "install";
     const saveSnapshot = prepareInstallationSnapshot(
       worktree,
       config.symlinkDirectories,
@@ -323,7 +349,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
     }
     console.log("安装命令已完成");
     const [program, ...args] = config.verificationCommand;
-    const verification = await runVerification(
+    const verification = await attempt.run(
       checkout,
       config.exclusiveVerification,
       program,
@@ -341,6 +367,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
     if (git(worktree, ["status", "--porcelain"]))
       throw new CheckFailure(`验证后 worktree 不干净；未合并：${worktree}`);
     console.log("验证已通过");
+    attempt.step = "merge";
     journal = { integration, commit: git(root, ["rev-parse", branch]) };
     saveJournal();
     git(root, ["merge", "--ff-only", branch]);
@@ -349,6 +376,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
   const head = git(root, ["rev-parse", integration]);
   if (journal!.pushedHead === head) console.log("推送已完成，跳过");
   else {
+    attempt.step = "push";
     git(root, ["push", "-u", "origin", integration]);
     journal!.pushedHead = head;
     saveJournal();
@@ -356,6 +384,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
   }
   if (journal!.copied) console.log("复制派发记录和验收产物已完成，跳过");
   else {
+    attempt.step = "copy";
     const copiedPaths = copyPaths();
     if (names.length) mkdirSync(join(root, ".codex-runs"), { recursive: true });
     for (const name of names)
@@ -377,6 +406,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
   if (!registered && !existsSync(worktree))
     console.log("删除 worktree 已完成，跳过");
   else {
+    attempt.step = "retain";
     keepIgnoredArtifacts(
       worktree,
       config.symlinkDirectories,
@@ -386,11 +416,13 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
       config.disposableIgnored,
       [".codex-runs", specArtifacts],
     );
+    attempt.step = "remove-worktree";
     git(root, ["worktree", "remove", worktree]);
     console.log(`已删除 worktree：${worktree}`);
   }
   if (!branchExists) console.log("删除分支已完成，跳过");
   else {
+    attempt.step = "remove-branch";
     git(root, ["branch", "-d", branch]);
     console.log(`已删除分支：${branch}`);
   }
@@ -424,5 +456,6 @@ disposableIgnored 默认为 []；配置非空时按 Git 的 gitignore 规则直�
 保留目录已有同名条目时，旧副本自动归档到其中的 .previous-<随机后缀>/，不覆盖。
 冲突以 1 退出并保留现场；解决并暂存后重跑可继续。
 合并后失败可重跑续做，跳过已完成的推送和删除；复制完成后仍核对当前内容。
+${verificationLedgerHelp}
 --dry-run 按计划复制成功列出当前将移走的条目；不执行安装、验证或移动，不改分支、文件或远端。`,
 };

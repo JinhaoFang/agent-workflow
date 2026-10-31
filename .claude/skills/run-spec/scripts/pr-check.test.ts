@@ -154,7 +154,9 @@ test("pr-check replaces repeated placeholders in every argument including the ex
       cwd: f.root,
       args: ["PR=93/93", "two words", "literal;$(echo bad)`echo bad`", "*"],
     });
-    assert.ok(!existsSync(join(f.root, ".codex-runs")));
+    const ledger = readFileSync(join(f.root, ".codex-runs/verification.jsonl"), "utf8");
+    assert.equal(JSON.parse(ledger).caller, "pr-check");
+    assert.equal(JSON.parse(ledger).exitCode, 0);
   } finally {
     f.cleanup();
   }

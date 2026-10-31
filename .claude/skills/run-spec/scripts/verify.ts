@@ -7,6 +7,7 @@
  * worktrees exit 1. Read configuration from the invoking checkout, like land.
  * --dry-run prints the plan without running verification or writing a log.
  * Apply verificationEnv and serialize the verification action when configured.
+ * Append one main-owned verification ledger entry after each real attempt.
  */
 import {
   appendFileSync,
@@ -27,7 +28,10 @@ import {
   type Command,
   type Values,
 } from "./shared.ts";
-import { runVerification } from "./verification-lock.ts";
+import {
+  withVerificationRecord,
+  verificationLedgerHelp,
+} from "./verification-ledger.ts";
 
 const tailLines = 20;
 
@@ -58,47 +62,55 @@ const verify = async (values: Values, numbers: number[]): Promise<void> => {
     console.log(`完整日志：${log}（仅预览，不写入）`);
     return;
   }
-  mkdirSync(directory, { recursive: true });
-  const descriptor = openSync(log, "wx");
-  const [program, ...args] = config.verificationCommand;
-  let result: Awaited<ReturnType<typeof runVerification>>;
-  try {
-    result = await runVerification(
-      checkout,
-      config.exclusiveVerification,
-      program,
-      args,
-      {
-        cwd,
-        env: { ...process.env, ...verificationEnvironment(config, root) },
-        stdio: ["inherit", descriptor, descriptor],
-      },
-    );
-  } finally {
-    closeSync(descriptor);
-  }
-  if (result.error || result.signal)
-    appendFileSync(
-      log,
-      result.error
-        ? "\n出错：验证命令无法运行，请检查程序路径和运行权限。\n"
-        : `\n出错：验证命令被信号 ${result.signal} 中断。\n`,
-    );
-  const tail: string[] = [];
-  const lines = createInterface({
-    input: createReadStream(log),
-    crlfDelay: Infinity,
-  });
-  for await (const line of lines) {
-    tail.push(line);
-    if (tail.length > tailLines) tail.shift();
-  }
-  for (const line of tail) console.log(line);
-  const status = result.status ?? 2;
-  console.log(
-    `${status === 0 ? "验证通过" : "出错：验证失败"}（退出码 ${status}，日志：${log}）`,
+  await withVerificationRecord(
+    root,
+    "verify",
+    ticket === undefined ? { kind: "main" } : { kind: "ticket", number: ticket },
+    false,
+    async (attempt) => {
+      mkdirSync(directory, { recursive: true });
+      const descriptor = openSync(log, "wx");
+      const [program, ...args] = config.verificationCommand;
+      let result: Awaited<ReturnType<typeof attempt.run>>;
+      try {
+        result = await attempt.run(
+          checkout,
+          config.exclusiveVerification,
+          program,
+          args,
+          {
+            cwd,
+            env: { ...process.env, ...verificationEnvironment(config, root) },
+            stdio: ["inherit", descriptor, descriptor],
+          },
+        );
+      } finally {
+        closeSync(descriptor);
+      }
+      if (result.error || result.signal)
+        appendFileSync(
+          log,
+          result.error
+            ? "\n出错：验证命令无法运行，请检查程序路径和运行权限。\n"
+            : `\n出错：验证命令被信号 ${result.signal} 中断。\n`,
+        );
+      const tail: string[] = [];
+      const lines = createInterface({
+        input: createReadStream(log),
+        crlfDelay: Infinity,
+      });
+      for await (const line of lines) {
+        tail.push(line);
+        if (tail.length > tailLines) tail.shift();
+      }
+      for (const line of tail) console.log(line);
+      const status = result.status ?? 2;
+      console.log(
+        `${status === 0 ? "验证通过" : "出错：验证失败"}（退出码 ${status}，日志：${log}）`,
+      );
+      process.exitCode = status;
+    },
   );
-  process.exitCode = status;
 };
 
 export const verifyCommand: Command = {
@@ -120,5 +132,6 @@ Windows 不支持进程组，保持按持锁进程及启动时间回收，无法
 退出码与验证命令一致；程序无法启动或被信号中断时以 2 退出。
 工单 worktree 未登记或路径不存在时说明路径并以 1 退出。
 cleanup <spec> 清理本 spec 子工单的验证日志，保留 main 和其他工单的日志。
+${verificationLedgerHelp}
 --dry-run 只打印命令、运行目录和日志计划，不执行命令、不写日志。`,
 };

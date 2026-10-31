@@ -14,6 +14,8 @@
  * POSIX callers forward SIGINT/SIGTERM to the worker's entire process group.
  * Empty incomplete locks recover after ten seconds. Waiters poll once per
  * second and report at most once per five minutes. No external dependencies.
+ * Results include command timestamps and actual lock-wait minutes measured in
+ * the acquiring worker; bypassed/inherited locks have zero wait minutes.
  */
 import { spawn, spawnSync, type SpawnOptions } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -76,12 +78,18 @@ type Result = {
   status: number | null;
   signal: NodeJS.Signals | null;
   error?: Error;
+  queuedMinutes: number;
+  startedAt: string | null;
+  finishedAt: string | null;
 };
 type Message = {
-  type: "queue" | "result";
+  type: "queue" | "acquired" | "result";
   status?: number | null;
   signal?: NodeJS.Signals | null;
   error?: string;
+  queuedMinutes?: number;
+  startedAt?: string | null;
+  finishedAt?: string | null;
 };
 const queueMessage =
   "排队中：正在等待同一仓库的完整验证结束；锁释放后自动开始。";
@@ -171,10 +179,11 @@ const inheritedOwner = (lock: string, marker: string | undefined): boolean => {
 
 const acquire = async (
   lock: string,
-): Promise<{ release: () => void; marker: string }> => {
+): Promise<{ release: () => void; marker: string; queuedMinutes: number }> => {
   const identity = processIdentity(process.pid);
   if (!identity) throw new Error("无法确定当前验证锁进程的启动时间。");
   let lastReport = -Infinity;
+  let queuedAt: number | undefined;
   for (;;) {
     let acquired = false;
     try {
@@ -219,8 +228,11 @@ const acquire = async (
       return {
         release,
         marker: JSON.stringify({ lock, owner: owner.slice(lock.length + 1) }),
+        queuedMinutes:
+          queuedAt === undefined ? 0 : (performance.now() - queuedAt) / 60000,
       };
     }
+    queuedAt ??= performance.now();
     let reclaimed = false;
     try {
       const owners = readdirSync(lock);
@@ -262,6 +274,7 @@ const run = (
   options: SpawnOptions,
 ): Promise<Result> =>
   new Promise((resolveResult) => {
+    const startedAt = new Date().toISOString();
     let failure: Error | undefined;
     const child = spawn(program, args, options);
     child.once("error", (error) => {
@@ -271,6 +284,9 @@ const run = (
       resolveResult({
         status: failure ? null : status,
         signal,
+        queuedMinutes: 0,
+        startedAt,
+        finishedAt: new Date().toISOString(),
         ...(failure ? { error: failure } : {}),
       }),
     );
@@ -281,11 +297,21 @@ export const verificationWorker = async (): Promise<void> => {
   try {
     const [lock, program, ...args] = process.argv.slice(1);
     ownership = await acquire(lock);
+    send({
+      type: "acquired",
+      queuedMinutes: ownership.queuedMinutes,
+      startedAt: new Date().toISOString(),
+    });
     const result = await run(program, args, {
       env: { ...process.env, [markerKey]: ownership.marker },
       stdio: "inherit",
     });
-    send({ ...result, error: result.error?.message, type: "result" });
+    send({
+      ...result,
+      queuedMinutes: ownership.queuedMinutes,
+      error: result.error?.message,
+      type: "result",
+    });
     process.exitCode = result.status ?? 2;
   } catch (error) {
     send({
@@ -322,6 +348,9 @@ export const runVerification = async (
         options.stdio ?? "inherit",
       ];
   let reported: Message | undefined;
+  let queuedAt: number | undefined;
+  let queuedMinutes = 0;
+  let startedAt: string | null = null;
   const worker = spawn(
     process.execPath,
     [
@@ -339,8 +368,14 @@ export const runVerification = async (
     },
   );
   worker.on("message", (message: Message) => {
-    if (message.type === "queue") console.log(queueMessage);
-    else if (message.type === "result") reported = message;
+    if (message.type === "queue") {
+      queuedAt ??= performance.now();
+      console.log(queueMessage);
+    } else if (message.type === "acquired") {
+      queuedMinutes = message.queuedMinutes ?? 0;
+      queuedAt = undefined;
+      startedAt = message.startedAt ?? new Date().toISOString();
+    } else if (message.type === "result") reported = message;
   });
   const forward = (signal: NodeJS.Signals) => {
     if (!worker.pid) return;
@@ -367,6 +402,14 @@ export const runVerification = async (
       resolveResult({
         status: reported?.status ?? status,
         signal: reported?.signal ?? signal,
+        queuedMinutes:
+          reported?.queuedMinutes ??
+          (queuedAt === undefined
+            ? queuedMinutes
+            : (performance.now() - queuedAt) / 60000),
+        startedAt: reported?.startedAt ?? startedAt,
+        finishedAt:
+          reported?.finishedAt ?? (startedAt ? new Date().toISOString() : null),
         ...(reported?.error
           ? { error: new Error(reported.error) }
           : failure
