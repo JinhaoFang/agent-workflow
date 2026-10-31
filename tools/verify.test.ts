@@ -30,7 +30,7 @@ const fixture = (context: TestContext) => {
   };
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
-  const run = () => runCommand(process.execPath, ["tools/verify.ts"], { cwd: root, env });
+  const run = (args: string[] = []) => runCommand(process.execPath, ["tools/verify.ts", ...args], { cwd: root, env });
   return { root, git, write, run };
 };
 
@@ -105,4 +105,33 @@ test("an empty test set skips Node's broader discovery", (context) => {
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /\[verify\] node:test \(0 files, skipped\)/);
   assert.doesNotMatch(result.stdout + result.stderr, /must not run/);
+});
+
+test("static verification checks types, comments and documented commands without executing tests", (context) => {
+  const f = fixture(context);
+  f.write("tools/probe.test.ts", "throw new Error('测试不应运行');\n");
+  const result = f.run(["--static"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /tsc \(Node\)/);
+  assert.match(result.stdout, /comment position/);
+  assert.match(result.stdout, /规则文档命令存在性/);
+  assert.match(result.stdout, /静态检查通过/);
+  assert.doesNotMatch(result.stdout + result.stderr, /node:test|测试不应运行/);
+  f.write("tools/probe.test.ts", "export const invalid: string = 1;\n");
+  const invalid = f.run(["--static"]);
+  assert.equal(invalid.status, 2, invalid.stdout + invalid.stderr);
+  assert.match(invalid.stdout, /TS2322/);
+});
+
+test("verification help and invalid arguments exit before checks", (context) => {
+  const f = fixture(context);
+  const help = f.run(["--help"]);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /用法：pnpm verify.*--static/);
+  for (const args of [["--unknown"], ["extra"]]) {
+    const result = f.run(args);
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /^出错：/);
+    assert.doesNotMatch(result.stdout, /\[verify\]/);
+  }
 });

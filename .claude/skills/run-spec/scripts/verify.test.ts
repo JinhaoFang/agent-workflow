@@ -81,7 +81,9 @@ process.exitCode = Number(process.env.VERIFY_FIXTURE_EXIT);
       },
     });
     assert.ifError(result.error);
-    const logs = existsSync(records) ? readdirSync(records) : [];
+    const logs = existsSync(records)
+      ? readdirSync(records).filter((name) => name.endsWith(".log"))
+      : [];
     return {
       ...result,
       logs,
@@ -162,7 +164,7 @@ test("verify retains complete interleaved output and prints only 20 tail lines p
       );
       evidence(status === 0 ? "verify-pass" : "verify-fail", result, full);
     }
-    assert.equal(readdirSync(f.records).length, 2);
+    assert.equal(readdirSync(f.records).filter((name) => name.endsWith(".log")).length, 2);
   } finally {
     f.cleanup();
   }
@@ -197,7 +199,7 @@ test("verify runs ticket verification from main or another worktree, always logg
       assert.ok(!existsSync(join(sibling, ".codex-runs")));
       evidence("verify-ticket", result, f.output);
     }
-    assert.equal(readdirSync(f.records).length, 2);
+    assert.equal(readdirSync(f.records).filter((name) => name.endsWith(".log")).length, 2);
   } finally {
     f.cleanup();
   }

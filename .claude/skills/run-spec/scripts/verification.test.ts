@@ -8,6 +8,9 @@
  * verification descendants and nested CLI invocations. Run with node --test
  * or pnpm verify. TICKET_97_EVIDENCE captures output/events before
  * fixture cleanup; all GitHub calls stay inside the fake executable.
+ * Ledger cases check complete rows, branch attribution and null fallbacks,
+ * nonfatal write failures, concurrent append, dry runs and queue durations
+ * against observable child events; TICKET_3_EVIDENCE saves samples.
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -51,6 +54,69 @@ type Event = {
   parent: number;
   time: number;
   marker?: string;
+};
+type LedgerEntry = {
+  branch: string | null;
+  startedAt: string;
+  finishedAt: string;
+  queuedMinutes: number;
+  layer: string;
+  target: { kind: string; number?: number };
+  caller: string;
+  exitCode: number;
+  stopReason: { step: string; message: string } | null;
+  verification: { startedAt: string; finishedAt: string; exitCode: number } | null;
+};
+const ledger = (root: string): LedgerEntry[] => {
+  const file = join(root, ".codex-runs/verification.jsonl");
+  if (!existsSync(file)) return [];
+  const content = readFileSync(file, "utf8");
+  assert.ok(content.endsWith("\n"));
+  return content.trimEnd().split("\n").map((line) => {
+    const entry = JSON.parse(line);
+    assert.deepEqual(Object.keys(entry).sort(), [
+      "branch", "caller", "exitCode", "finishedAt", "layer", "queuedMinutes", "startedAt",
+      "stopReason", "target", "verification",
+    ]);
+    assert.ok(entry.branch === null || typeof entry.branch === "string");
+    assert.equal(new Date(entry.startedAt).toISOString(), entry.startedAt);
+    assert.equal(new Date(entry.finishedAt).toISOString(), entry.finishedAt);
+    assert.ok(entry.startedAt <= entry.finishedAt);
+    assert.equal(entry.layer, "full");
+    assert.ok(Number.isFinite(entry.queuedMinutes) && entry.queuedMinutes >= 0);
+    if (entry.verification) {
+      assert.ok(entry.startedAt <= entry.verification.startedAt);
+      assert.ok(entry.verification.startedAt <= entry.verification.finishedAt);
+      assert.ok(entry.verification.finishedAt <= entry.finishedAt);
+    }
+    return entry;
+  });
+};
+const ledgerEvidence = (name: string, root: string) => {
+  const directory = process.env.TICKET_3_EVIDENCE;
+  if (!directory) return;
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, `${name}.jsonl`),
+    readFileSync(join(root, ".codex-runs/verification.jsonl")),
+  );
+};
+const assertQueue = (root: string, events: Event[], caller: string) => {
+  const entry = ledger(root).find(
+    (entry) => entry.caller === caller && entry.target.kind !== "main",
+  )!;
+  const start = events.find(
+    (event) =>
+      event.label === "waiter" &&
+      event.phase !== "install" &&
+      event.event === "start",
+  )!;
+  const duration = start.time - Date.parse(entry.startedAt);
+  assert.ok(entry.queuedMinutes >= 1 / 60, JSON.stringify(entry));
+  assert.ok(
+    Math.abs(entry.queuedMinutes * 60000 - duration) < 1500,
+    JSON.stringify({ entry, duration }),
+  );
 };
 const evidence = (name: string, value: unknown) => {
   if (!process.env.TICKET_97_EVIDENCE) return;
@@ -119,7 +185,13 @@ if (process.env.TEST_GATE && phase !== "install") {
 const args = process.argv.slice(2);
 if (args[0] === "repo") console.log(JSON.stringify({nameWithOwner:"fixture/repo"}));
 else if (args[0] === "api" && args.at(-1).endsWith("/parent")) console.log(JSON.stringify({number:17}));
+else if (args[0] === "api" && args.some(arg => arg.endsWith("/sub_issues"))) console.log(JSON.stringify([[{number:21}]]));
 else if (args[0] === "api") console.log(JSON.stringify({number:21,state:"open",labels:[{name:"role:engineering"}]}));
+else if (args[0] === "pr" && args[1] === "view") {
+ if (JSON.stringify(args) !== JSON.stringify(["pr","view",args[2],"--json","headRefName"])) process.exitCode = 91;
+ else if (process.env.TEST_PR_HEAD_FAIL === "1") process.exitCode = 1;
+ else console.log(process.env.TEST_PR_HEAD_JSON ?? JSON.stringify({headRefName:"spec/17-pr-head"}));
+}
 else if (args[0] === "pr") { process.argv.splice(2, 0, "gh"); require(${JSON.stringify(runner)}); }
 else process.exitCode = 91;
 `,
@@ -233,6 +305,224 @@ else process.exitCode = 91;
     cleanup: () => rmSync(temporary, { recursive: true, force: true }),
   };
 };
+
+test("verification ledger records main/ticket checks, default/custom PR checks and land exactly once with preserved statuses", () => {
+  const f = fixture();
+  try {
+    f.addWorktree();
+    f.remote();
+    const commands: [string, string[], number, string, string][] = [
+      ["verify", [], 0, "main", f.worktree],
+      ["verify", ["21"], 7, "ticket", f.root],
+      ["pr-check", ["93"], 0, "pr", f.worktree],
+      ["pr-check", ["94"], 6, "pr", f.root],
+      ["land", ["21"], 0, "ticket", f.root],
+    ];
+    let previous = "";
+    for (const [index, [command, args, status, kind, cwd]] of commands.entries()) {
+      if (index === 3) {
+        f.configure({ prCheckCommand: [process.execPath, f.runner, "pr"] });
+        f.commitConfig();
+      }
+      const result = f.run(command, args, cwd, { TEST_EXIT: String(status) });
+      assert.equal(result.status, status, result.stdout + result.stderr);
+      const entries = ledger(f.root);
+      assert.equal(entries.length, index + 1);
+      const entry = entries.at(-1)!;
+      assert.equal(entry.caller, command);
+      assert.equal(entry.branch, kind === "main" ? "spec/17-test" : kind === "ticket" ? "ticket/21" : "spec/17-pr-head");
+      assert.deepEqual(
+        entry.target,
+        kind === "main" ? { kind } : { kind, number: Number(args[0]) },
+      );
+      assert.equal(entry.exitCode, status);
+      assert.equal(entry.verification?.exitCode, status);
+      assert.equal(entry.stopReason, null);
+      assert.equal(entry.queuedMinutes, 0);
+      const content = readFileSync(join(f.root, ".codex-runs/verification.jsonl"), "utf8");
+      assert.ok(content.startsWith(previous));
+      previous = content;
+    }
+    assert.ok(!existsSync(f.worktree));
+    const cleaned = f.run("cleanup", ["17", "--no-scorecard"]);
+    assert.equal(cleaned.status, 0, cleaned.stdout + cleaned.stderr);
+    assert.equal(readFileSync(join(f.root, ".codex-runs/verification.jsonl"), "utf8"), previous);
+    ledgerEvidence("verification-sample", f.root);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("verification ledger uses null for detached main and unavailable PR heads without changing check statuses", () => {
+  const f = fixture();
+  try {
+    f.addWorktree();
+    f.git(["checkout", "--detach"]);
+    f.git(["checkout", "--detach"], f.worktree);
+    assert.equal(f.run("verify", [], f.worktree).status, 0);
+    assert.equal(ledger(f.root).at(-1)!.branch, null);
+    assert.equal(f.run("verify", ["21"]).status, 0);
+    assert.equal(ledger(f.root).at(-1)!.branch, "ticket/21");
+    for (const command of [undefined, [process.execPath, f.runner, "pr"]]) {
+      f.configure(command ? { prCheckCommand: command } : {}, f.worktree);
+      const cases: NodeJS.ProcessEnv[] = [
+        { TEST_PR_HEAD_FAIL: "1" },
+        { TEST_PR_HEAD_JSON: "{}" },
+        { TEST_PR_HEAD_JSON: "{" },
+        { TEST_PR_HEAD_JSON: '{"headRefName":""}' },
+      ];
+      for (const extra of cases) {
+        const result = f.run("pr-check", ["93"], f.worktree, { ...extra, TEST_EXIT: "6" });
+        assert.equal(result.status, 6, result.stdout + result.stderr);
+        const entry = ledger(f.root).at(-1)!;
+        assert.equal(entry.branch, null);
+        assert.equal(entry.verification?.exitCode, 6);
+        assert.equal(result.stderr, "");
+      }
+    }
+    ledgerEvidence("branch-fallback", f.root);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("verification ledger write failures print one stderr line and preserve successful, failed and errored command statuses", () => {
+  const captured: unknown[] = [];
+  for (const command of ["verify", "land", "pr-check"]) {
+    for (const scenario of ["success", "failed", "launch-error"]) {
+      let originalError = "";
+      const blockers = command === "pr-check" ? ["none", "ledger-directory", "records-file"] : ["none", "ledger-directory"];
+      for (const blocker of blockers) {
+        const f = fixture();
+        try {
+          const configuredCommand = scenario === "launch-error"
+            ? [join(f.temporary, "missing-program")]
+            : [process.execPath, f.runner, "verify"];
+          f.configure({ verificationCommand: configuredCommand, prCheckCommand: configuredCommand });
+          f.commitConfig();
+          if (command === "land") {
+            f.addWorktree();
+            f.remote();
+          }
+          if (blocker === "records-file") writeFileSync(join(f.root, ".codex-runs"), "blocked");
+          else if (blocker === "ledger-directory") mkdirSync(join(f.root, ".codex-runs/verification.jsonl"), { recursive: true });
+          const result = f.run(command, command === "verify" ? [] : ["21"], f.root, {
+            TEST_EXIT: scenario === "failed" ? "7" : "0",
+            TEST_EXIT_PHASE: "verify",
+          });
+          const expected = scenario === "success" ? 0 : scenario === "launch-error" ? 2 : command === "land" ? 1 : 7;
+          assert.equal(result.status, expected, result.stdout + result.stderr);
+          const lines = result.stderr.split("\n").filter(Boolean);
+          const warnings = lines.filter((line) => line.startsWith("出错：验证台账写入失败"));
+          assert.equal(warnings.length, blocker === "none" ? 0 : 1, result.stderr);
+          const error = lines.filter((line) => !warnings.includes(line)).join("\n");
+          if (blocker === "none") originalError = error;
+          else assert.equal(error, originalError, result.stderr);
+          captured.push({ command, scenario, blocker, exitCode: result.status, stderr: result.stderr });
+        } finally {
+          f.cleanup();
+        }
+      }
+    }
+  }
+  const directory = process.env.TICKET_3_EVIDENCE;
+  if (directory) {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "ledger-write-failure.json"), JSON.stringify(captured, null, 2) + "\n");
+  }
+});
+
+test("dry runs never create or append the ledger, and all three help texts explain its fields", () => {
+  const f = fixture();
+  try {
+    f.addWorktree();
+    for (const existing of [false, true]) {
+      if (existing) assert.equal(f.run("verify").status, 0);
+      const file = join(f.root, ".codex-runs/verification.jsonl");
+      const before = existsSync(file) ? readFileSync(file, "utf8") : null;
+      for (const command of ["verify", "land", "pr-check"]) {
+        const args = command === "verify" ? [] : ["21"];
+        const result = f.run(command, [...args, "--dry-run"]);
+        assert.equal(result.status, 0, result.stdout + result.stderr);
+        assert.equal(existsSync(file) ? readFileSync(file, "utf8") : null, before);
+        const help = f.run(command, ["--help"], tmpdir());
+        assert.equal(help.status, 0, help.stderr);
+        for (const field of ["branch", "startedAt", "finishedAt", "queuedMinutes", "layer", "target", "caller", "exitCode", "stopReason", "verification"])
+          assert.ok(help.stdout.includes(field), field);
+        assert.match(help.stdout, /主工作区 \.codex-runs\/verification\.jsonl/);
+        assert.match(help.stdout, /评分表.*branch.*spec/);
+        assert.match(help.stdout, /标准错误.*一行.*退出码/);
+        assert.match(help.stdout, /--dry-run 不创建或追加台账/);
+        const directory = process.env.TICKET_3_EVIDENCE;
+        if (directory) {
+          mkdirSync(directory, { recursive: true });
+          writeFileSync(join(directory, `${command}-help.txt`), help.stdout);
+        }
+      }
+    }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("simultaneous unlocked verification processes append complete JSON lines without changing earlier bytes", async () => {
+  const f = fixture();
+  const gate = join(f.temporary, "release");
+  const children: ReturnType<typeof f.start>[] = [];
+  try {
+    assert.equal(f.run("verify").status, 0);
+    const file = join(f.root, ".codex-runs/verification.jsonl");
+    const previous = readFileSync(file, "utf8");
+    for (let index = 0; index < 8; index++)
+      children.push(f.start("verify", [], `concurrent-${index}`, f.root, gate));
+    await until(() => f.events().filter((event) => event.event === "start").length === 9);
+    writeFileSync(gate, "");
+    const results = await Promise.all(children.map((child) => child.done));
+    for (const result of results) assert.equal(result.code, 0, result.stderr);
+    assert.ok(readFileSync(file, "utf8").startsWith(previous));
+    const entries = ledger(f.root);
+    assert.equal(entries.length, 9);
+    assert.ok(entries.every((entry) => entry.queuedMinutes === 0 && entry.exitCode === 0));
+    ledgerEvidence("concurrent-append", f.root);
+  } finally {
+    writeFileSync(gate, "");
+    await Promise.all(children.map((child) => child.done));
+    f.cleanup();
+  }
+});
+
+test(
+  "interrupting a queued verification records wait time without counting an unstarted check",
+  { skip: process.platform === "win32" },
+  async () => {
+    const f = fixture();
+    const gate = join(f.temporary, "release");
+    const children: ReturnType<typeof f.start>[] = [];
+    try {
+      f.configure({ exclusiveVerification: true });
+      const holder = f.start("verify", [], "holder", f.root, gate);
+      children.push(holder);
+      await until(() => f.events().some((event) => event.label === "holder"));
+      const waiter = f.start("verify", [], "cancelled");
+      children.push(waiter);
+      await until(() => waiter.output().includes("排队中"));
+      await delay(1200);
+      waiter.child.kill("SIGTERM");
+      assert.equal((await waiter.done).code, 2);
+      const entries = ledger(f.root);
+      assert.equal(entries.length, 1);
+      assert.equal(entries[0].verification, null);
+      assert.equal(entries[0].exitCode, 2);
+      assert.ok(entries[0].queuedMinutes >= 1 / 60);
+      assert.ok(!f.events().some((event) => event.label === "cancelled"));
+      ledgerEvidence("interrupted-queue", f.root);
+    } finally {
+      writeFileSync(gate, "");
+      await Promise.all(children.map((child) => child.done));
+      f.cleanup();
+    }
+  },
+);
 
 test("verificationEnv reaches verify, land install/check, dispatch install/Codex and both PR checks with effective literal values", () => {
   for (const command of [
@@ -390,7 +680,15 @@ test("verify serializes across main and ticket invocations, logs in main and bou
       ],
     );
     assert.ok(f.events().every((event) => event.locked));
-    assert.equal(readdirSync(join(f.root, ".codex-runs")).length, 2);
+    assert.equal(readdirSync(join(f.root, ".codex-runs")).filter((name) => name.endsWith(".log")).length, 2);
+    const entries = ledger(f.root);
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0].queuedMinutes, 0);
+    const waiter = entries[1];
+    assert.ok(waiter.queuedMinutes >= 1 / 60);
+    const started = f.events().find((event) => event.label === "second" && event.event === "start")!;
+    assert.ok(Math.abs(waiter.queuedMinutes * 60000 - (started.time - Date.parse(waiter.startedAt))) < 1500);
+    ledgerEvidence("verify-queue", f.root);
     assert.ok(!existsSync(join(f.worktree, ".codex-runs")));
     assert.ok(!existsSync(f.lock));
     evidence("verify-queue", {
@@ -430,6 +728,7 @@ test("land verification and custom pr-check share the verify lock, while land in
       const second = f.start(command, ["21"], "waiter");
       children.push(second);
       await until(() => second.output().includes("排队中"));
+      await delay(1200);
       assert.ok(
         !f
           .events()
@@ -453,6 +752,8 @@ test("land verification and custom pr-check share the verify lock, while land in
         ],
       );
       assert.ok(events.every((event) => event.locked));
+      assertQueue(f.root, f.events(), command);
+      ledgerEvidence(`queue-${command}`, f.root);
       evidence(`queue-${command}`, { results, events: f.events() });
     } finally {
       writeFileSync(gate, "");
@@ -483,6 +784,7 @@ test("default pr-check skips the lock even when explicitly configured, and disab
       "foreign lock",
     );
     evidence("lock-bypass", { events: f.events() });
+    assert.ok(ledger(f.root).every((entry) => entry.queuedMinutes === 0));
   } finally {
     f.cleanup();
   }
@@ -872,6 +1174,12 @@ test("exclusive verification preserves launch/signal failures and releases the j
         });
         const result = f.run(command, command === "pr-check" ? ["93"] : []);
         assert.equal(result.status, 2, result.stdout + result.stderr);
+        const entry = ledger(f.root).at(-1)!;
+        assert.equal(entry.caller, command);
+        assert.equal(entry.exitCode, 2);
+        if (scenario === "missing-program") assert.equal(entry.verification, null);
+        else assert.equal(entry.verification?.exitCode, 2);
+        assert.equal(entry.stopReason, null);
         assert.match(result.stdout + result.stderr, /出错：/);
         assert.ok(!existsSync(f.lock));
       }

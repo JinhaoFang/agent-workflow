@@ -20,6 +20,8 @@
  * Ticket instructions read comments; parent-spec instructions read only body.
  * Installation and dispatch inherit effective verificationEnv; exclusive
  * verification instructions route complete checks through main tickets.ts.
+ * Layered repositories instruct Codex to run only related tests and static
+ * checks during development, routing optional full checks through main verify.
  */
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -186,14 +188,15 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
     `spec-${spec}`,
     String(ticket),
   );
-  const verificationCommand = config.exclusiveVerification
-    ? [
-        process.execPath,
-        join(root, ".claude/skills/run-spec/scripts/tickets.ts"),
-        "verify",
-        String(ticket),
-      ]
-    : config.verificationCommand;
+  const fullVerificationCommand = [
+    process.execPath,
+    join(root, ".claude/skills/run-spec/scripts/tickets.ts"),
+    "verify",
+    String(ticket),
+  ];
+  const verificationCommand = config.staticCheckCommand ?? (
+    config.exclusiveVerification ? fullVerificationCommand : config.verificationCommand
+  );
   const task = `完成 GitHub 工单 #${ticket}（父 spec #${spec}）。先运行 gh issue view ${ticket} --json title,body,comments 读取工单正文和评论，再运行 gh issue view ${spec} --json title,body 只读父 spec 正文，不读父 spec 评论。按工单的边界和验收标准完成、验证并提交，最后按角色文档的格式汇报。验证命令参数数组：${JSON.stringify(verificationCommand)}。`;
   const pushInstruction = values["allow-push"]
     ? `只允许把本工单分支 ${branch} 推送到远端，不开 PR，不推送其他分支`
@@ -204,9 +207,11 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
     Object.keys(verificationEnv).length
       ? `实际生效的验证环境变量（已替换 {mainRoot}，已有同名进程环境优先；安装和派发进程均已携带）：${JSON.stringify(verificationEnv)}。`
       : "",
-    config.exclusiveVerification
-      ? `完整验证必须使用主工作区 tickets.ts 的上述绝对路径命令（verify ${ticket}），通过仓库验证锁排队；不要直接运行配置的验证命令。局部测试照常。该命令自动将完整日志写入 ${join(root, ".codex-runs")}，无需手动改动主工作区。`
-      : "",
+    config.staticCheckCommand
+      ? `开发时只跑和改动相关的测试，以及静态检查命令参数数组：${JSON.stringify(config.staticCheckCommand)}；不跑完整验证，完整验证由 land 跑。改动面广、自己判断需要完整验证时，用主工作区 tickets.ts verify ${ticket}，命令参数数组：${JSON.stringify(fullVerificationCommand)}${config.exclusiveVerification ? "（通过仓库验证锁排队）" : ""}；不要直接运行配置的完整验证命令。该命令自动记录台账并将完整日志写入 ${join(root, ".codex-runs")}，无需手动改动主工作区。`
+      : config.exclusiveVerification
+        ? `完整验证必须使用主工作区 tickets.ts 的上述绝对路径命令（verify ${ticket}），通过仓库验证锁排队；不要直接运行配置的验证命令。局部测试照常。该命令自动将完整日志写入 ${join(root, ".codex-runs")}，无需手动改动主工作区。`
+        : "",
     resume
       ? "这是原地续做：上次派发中断，worktree 中未提交的改动是上次执行写的，请核对已有进度后继续完成本工单。"
       : existing && !needsPreparation
@@ -412,10 +417,12 @@ export const dispatchCommand: Command = {
   help: `${entry} dispatch <工单> [--note <文字> | --note-file <文件>] [--allow-push] [--resume] [--dry-run]
 读取 docs/agents/run-spec.json，为工程工单准备或复用干净的 worktree，
 在该目录前台运行派发脚本，透传记录名、进度路径和退出码。
+一个 worktree 同时只跑一个 Codex；普通派发同样在有活着的运行或进行中的 rebase 时拒绝。
 --allow-push 只允许把本工单分支推送到远端，不开 PR，不推送其他分支；
 不带时指令仍为「不要推送」。
 补充说明支持 UTF-8 文件；非空说明先评论到工单，标题含本次记录名，
 正文保留原文；返工也评论并自动要求另起提交。无说明时不评论。
+补充说明里有引号、换行或以 - 开头时用 --note-file。
 --resume 在不干净的原 worktree 里续做中断的派发，保留未提交改动，不要求返工另起提交；
 worktree 不存在、干净、有活着的运行或进行中的 rebase 时拒绝并说明。
 读取工单正文和评论，父 spec 只读正文；未挂 spec 时提示 link 命令。
@@ -423,6 +430,8 @@ verificationEnv 默认 {}，安装和派发进程携带替换 {mainRoot} 后的�
 实际值写入派发指令和记录，因此配置里不要放密钥，--dry-run 可预览。
 exclusiveVerification 默认 false；开启时指令要求完整验证运行主工作区 tickets.ts verify <工单> 的绝对路径命令，
 通过仓库锁排队，日志自动写入主工作区 .codex-runs；局部测试照常。
+配置 staticCheckCommand 时，指令要求开发时只跑相关测试和静态检查，不跑完整验证；
+需要完整验证时始终走主工作区 tickets.ts verify <工单>，按 exclusiveVerification 决定是否排队。
 以 DispatchDock 全局记录及进程存活判断并发，codexConcurrency 默认 2，
 可用 RUN_SPEC_CODEX_CONCURRENCY 覆盖；达到上限时加锁排队，每 5 分钟最多打印一行。
 Codex 返回 Concurrency limit exceeded 时回到排队自动重试；用 slots 查看运行与空余名额。

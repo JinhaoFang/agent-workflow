@@ -10,6 +10,8 @@
  * Verify logs cover child ownership, main/other-spec retention and dry-run.
  * Watch/review-spec cleanup covers exact numeric owners, report sidecars and
  * interrupted snapshot directories, retaining unrelated and default names.
+ * Existing deletion cases explicitly bypass scorecards; scorecard.test.ts tests
+ * the default gate against persisted fake GitHub comments and owned records.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -156,7 +158,7 @@ process.stdout.write(JSON.stringify(response.value));
   );
   const run = (args: string[] = ["17"], cwd = root) => {
     rmSync(log, { force: true });
-    const result = spawnSync(process.execPath, [cli, "cleanup", ...args], {
+    const result = spawnSync(process.execPath, [cli, "cleanup", ...args, "--no-scorecard"], {
       cwd,
       encoding: "utf8",
       timeout: 30000,

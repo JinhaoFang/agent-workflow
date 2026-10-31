@@ -28,6 +28,7 @@
  * gh failures wait one second and retry once. Writes may supply an applied-state
  * probe; comments compare exact bodies across all pages before a second write.
  * Failed probes preserve the original diagnostic and prevent unsafe rewrites.
+ * Optional staticCheckCommand/staticOnlyPaths enable path-based verification layers.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -201,6 +202,8 @@ export const matchesRecord = (file: string, prefix: string): boolean => {
 
 export type DispatchConfig = {
   verificationCommand: string[];
+  staticCheckCommand: string[] | null;
+  staticOnlyPaths: string[];
   installCommand: string[];
   symlinkDirectories: string[];
   acceptanceRoot: string;
@@ -216,7 +219,9 @@ export type DispatchConfig = {
     | "prCheckCommand"
     | "verificationEnv"
     | "exclusiveVerification"
-    | "disposableIgnored",
+    | "disposableIgnored"
+    | "staticCheckCommand"
+    | "staticOnlyPaths",
     string
   >;
 };
@@ -311,6 +316,10 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     disposableIgnored: Object.hasOwn(config, "disposableIgnored")
       ? "配置"
       : "默认",
+    staticCheckCommand: Object.hasOwn(config, "staticCheckCommand")
+      ? "配置"
+      : "默认",
+    staticOnlyPaths: Object.hasOwn(config, "staticOnlyPaths") ? "配置" : "默认",
   };
   if (!Object.hasOwn(config, "codexConcurrency")) config.codexConcurrency = 2;
   if (
@@ -374,6 +383,36 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     throw new OptionalConfigError(
       "配置 disposableIgnored 必须是 gitignore 模式数组，每项为非空单行字符串且不能含 NUL",
     );
+  if (Object.hasOwn(config, "staticCheckCommand")) {
+    if (
+      !Array.isArray(config.staticCheckCommand) ||
+      !config.staticCheckCommand.length ||
+      !config.staticCheckCommand.every(
+        (part: unknown) => typeof part === "string" && part.trim().length > 0,
+      )
+    )
+      throw new OptionalConfigError(
+        "配置 staticCheckCommand 必须是非空的程序和参数数组，每项必须是非空字符串",
+      );
+  } else config.staticCheckCommand = null;
+  if (Object.hasOwn(config, "staticOnlyPaths")) {
+    if (
+      !Array.isArray(config.staticOnlyPaths) ||
+      !config.staticOnlyPaths.every(
+        (pattern: unknown) =>
+          typeof pattern === "string" &&
+          pattern.trim().length > 0 &&
+          !/[\0\r\n]/.test(pattern),
+      )
+    )
+      throw new OptionalConfigError(
+        "配置 staticOnlyPaths 必须是 gitignore 模式数组，每项为非空单行字符串且不能含 NUL",
+      );
+    if (!config.staticCheckCommand)
+      throw new OptionalConfigError(
+        "配置 staticOnlyPaths 必须同时配置 staticCheckCommand",
+      );
+  } else config.staticOnlyPaths = [];
   config.optionalSources = optionalSources;
   return config;
 };

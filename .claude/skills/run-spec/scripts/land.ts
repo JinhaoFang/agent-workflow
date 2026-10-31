@@ -22,6 +22,10 @@
  * disposableIgnored discards matched ignored leaves outside .codex-runs and
  * the current spec's QA directory at retention; matching and counts are also
  * available in dry runs, with [] preserving v3.
+ * Append one main-owned ledger entry per attempt, including the step and
+ * diagnostic when stopped; record actual verification separately from retries.
+ * Choose a verification layer after rebase using --no-renames paths; journal
+ * its integration base and layer so static-only success never replaces full.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -54,15 +58,40 @@ import {
   type Command,
   type Values,
 } from "./shared.ts";
-import { runVerification } from "./verification-lock.ts";
+import {
+  withVerificationRecord,
+  verificationLedgerHelp,
+  type VerificationAttempt,
+} from "./verification-ledger.ts";
+import {
+  printVerificationLayer,
+  selectVerification,
+  type VerificationLayer,
+} from "./verification-layer.ts";
 
 const land = async (values: Values, numbers: number[]): Promise<void> => {
   const checkout = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
-  const config = dispatchConfig(checkout);
   const root = git(checkout, ["worktree", "list", "--porcelain"])
     .split("\n")[0]
     .slice(9);
   const ticket = numbers[0];
+  await withVerificationRecord(
+    root,
+    "land",
+    { kind: "ticket", number: ticket },
+    Boolean(values["dry-run"]),
+    (attempt) => landAttempt(values, checkout, root, ticket, attempt),
+  );
+};
+
+const landAttempt = async (
+  values: Values,
+  checkout: string,
+  root: string,
+  ticket: number,
+  attempt: VerificationAttempt,
+): Promise<void> => {
+  const config = dispatchConfig(checkout);
   const { endpoint } = github(true);
   const { spec, integration } = ticketIntegration(root, endpoint(ticket));
   const branch = `ticket/${ticket}`;
@@ -83,6 +112,8 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
   type LandJournal = {
     integration: string;
     commit: string;
+    base?: string;
+    layer?: VerificationLayer;
     pushedHead?: string;
     copied?: boolean;
     copiedPaths?: string[];
@@ -108,6 +139,39 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
       rmSync(temporary, { force: true });
     }
   };
+  const selection = () => selectVerification(config, root, {
+    base: merged ? journal!.base ?? integration : integration,
+    head: merged ? journal!.commit : branch,
+  });
+  const verifySelected = async (cwd: string): Promise<VerificationLayer> => {
+    const selected = selection();
+    printVerificationLayer(config, selected);
+    attempt.layer = selected.layer;
+    const [program, ...args] = selected.command;
+    const verification = await attempt.run(
+      checkout,
+      selected.layer === "full" && config.exclusiveVerification,
+      program,
+      args,
+      {
+        cwd,
+        env: { ...process.env, ...verificationEnvironment(config, root) },
+        stdio: "inherit",
+      },
+    );
+    if (verification.error || verification.signal)
+      throw new Error(merged
+        ? "验证命令运行出错；未继续清理，worktree 已保留"
+        : "验证命令运行出错；未合并，worktree 已保留");
+    if (verification.status !== 0)
+      throw new CheckFailure(merged
+        ? "验证未通过；未继续清理，worktree 已保留"
+        : "验证未通过；未合并，worktree 已保留");
+    if (git(cwd, ["status", "--porcelain"]))
+      throw new CheckFailure(`验证后 worktree 不干净；未合并：${cwd}`);
+    console.log("验证已通过");
+    return selected.layer;
+  };
   let rebase: string | undefined;
   if (!merged && (!registered || !existsSync(worktree)))
     throw new CheckFailure(`工单 worktree 不存在：${worktree}`);
@@ -118,6 +182,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
       )
       .find(existsSync);
     if (rebase) {
+      attempt.step = "rebase";
       if (
         merged ||
         readFileSync(join(rebase, "head-name"), "utf8").trim() !==
@@ -154,6 +219,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
       `派发记录和验收产物尚未复制，但工单 worktree 不存在：${worktree}`,
     );
   const specArtifacts = join(config.acceptanceRoot, `spec-${spec}`);
+  attempt.step = "preflight";
   const artifacts = join(specArtifacts, String(ticket));
   const records = join(worktree, ".codex-runs");
   const names = existsSync(records)
@@ -221,8 +287,13 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
   };
   if (values["dry-run"]) {
     console.log(`合并计划：#${ticket} → ${integration}（主工作区 ${root}）`);
-    if (merged)
-      console.log("工单已合入，rebase、安装、验证和快进合并已完成，跳过");
+    if (merged) {
+      if (journal!.layer === "static" && selection().layer === "full") {
+        console.log("工单已合入，但之前只通过静态检查；将补跑完整验证后再续做");
+        console.log(`验证命令（${registered ? worktree : root}）：${JSON.stringify(selection().command)}`);
+      } else
+        console.log("工单已合入，rebase、安装、验证和快进合并已完成，跳过");
+    }
     else {
       console.log(
         `${rebase ? "继续已有 rebase，再" : "在 worktree"} rebase 到 ${integration}：${worktree}`,
@@ -231,7 +302,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
         `安装命令（${worktree}）：${JSON.stringify(config.installCommand)}`,
       );
       console.log(
-        `验证命令（${worktree}）：${JSON.stringify(config.verificationCommand)}`,
+        `验证命令（${worktree}）：${JSON.stringify(selection().command)}${config.staticCheckCommand ? "（rebase 后按路径选层）" : ""}`,
       );
       console.log(`主工作区快进合并 ${branch}`);
     }
@@ -290,9 +361,11 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
     }
   };
   if (!merged) {
+    attempt.step = "rebase";
     if (rebase) runRebase(["--continue"]);
     runRebase([integration]);
     console.log(`已 rebase 到 ${integration}`);
+    attempt.step = "install";
     const saveSnapshot = prepareInstallationSnapshot(
       worktree,
       config.symlinkDirectories,
@@ -322,33 +395,32 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
       );
     }
     console.log("安装命令已完成");
-    const [program, ...args] = config.verificationCommand;
-    const verification = await runVerification(
-      checkout,
-      config.exclusiveVerification,
-      program,
-      args,
-      {
-        cwd: worktree,
-        env: { ...process.env, ...verificationEnvironment(config, root) },
-        stdio: "inherit",
-      },
-    );
-    if (verification.error || verification.signal)
-      throw new Error("验证命令运行出错；未合并，worktree 已保留");
-    if (verification.status !== 0)
-      throw new CheckFailure("验证未通过；未合并，worktree 已保留");
-    if (git(worktree, ["status", "--porcelain"]))
-      throw new CheckFailure(`验证后 worktree 不干净；未合并：${worktree}`);
-    console.log("验证已通过");
-    journal = { integration, commit: git(root, ["rev-parse", branch]) };
+    const layer = await verifySelected(worktree);
+    attempt.step = "merge";
+    journal = {
+      integration,
+      commit: git(root, ["rev-parse", branch]),
+      base: git(root, ["rev-parse", integration]),
+      layer,
+    };
     saveJournal();
     git(root, ["merge", "--ff-only", branch]);
     console.log(`已快进合并 ${branch} → ${integration}`);
-  } else console.log("工单已合入，rebase、安装、验证和快进合并已完成，跳过");
+  } else {
+    const selected = selection();
+    if (journal!.layer === "static" && selected.layer === "full") {
+      console.log("工单已合入，但之前只通过静态检查；补跑完整验证后再续做");
+      journal!.layer = await verifySelected(registered ? worktree : root);
+      saveJournal();
+    } else {
+      attempt.layer = journal!.layer ?? "full";
+      console.log("工单已合入，rebase、安装、验证和快进合并已完成，跳过");
+    }
+  }
   const head = git(root, ["rev-parse", integration]);
   if (journal!.pushedHead === head) console.log("推送已完成，跳过");
   else {
+    attempt.step = "push";
     git(root, ["push", "-u", "origin", integration]);
     journal!.pushedHead = head;
     saveJournal();
@@ -356,6 +428,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
   }
   if (journal!.copied) console.log("复制派发记录和验收产物已完成，跳过");
   else {
+    attempt.step = "copy";
     const copiedPaths = copyPaths();
     if (names.length) mkdirSync(join(root, ".codex-runs"), { recursive: true });
     for (const name of names)
@@ -377,6 +450,7 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
   if (!registered && !existsSync(worktree))
     console.log("删除 worktree 已完成，跳过");
   else {
+    attempt.step = "retain";
     keepIgnoredArtifacts(
       worktree,
       config.symlinkDirectories,
@@ -386,11 +460,13 @@ const land = async (values: Values, numbers: number[]): Promise<void> => {
       config.disposableIgnored,
       [".codex-runs", specArtifacts],
     );
+    attempt.step = "remove-worktree";
     git(root, ["worktree", "remove", worktree]);
     console.log(`已删除 worktree：${worktree}`);
   }
   if (!branchExists) console.log("删除分支已完成，跳过");
   else {
+    attempt.step = "remove-branch";
     git(root, ["branch", "-d", branch]);
     console.log(`已删除分支：${branch}`);
   }
@@ -403,6 +479,12 @@ export const landCommand: Command = {
   help: `${entry} land <工单> [--dry-run]
 主工作区必须干净且在集成分支上；工单 worktree 干净且有新提交。
 每次 rebase 完成后（含冲突解决后重跑），先运行配置的安装命令，再验证。
+配了 staticCheckCommand 时，用 --no-renames 比较 rebase 后 <集成分支>...<工单分支>，
+改名的两端和删除都参与；全部路径匹配 staticOnlyPaths（gitignore 模式）才只跑静态检查。
+混有其他路径、改动为空、远端集成分支不存在、主工作区不在 spec 分支或无法比较时完整验证。
+只配 staticCheckCommand 时跑完整验证；只配 staticOnlyPaths 是配置错误，以 2 退出。
+输出验证层及原因；静态检查不取验证锁，未配分层时保持原行为。
+续做日志记录已验证提交、比较基线和层；只通过静态检查时，若续做要求完整验证会补跑。
 安装和验证应用 verificationEnv，替换配置值中的 {mainRoot}，保留已有同名进程环境变量。
 exclusiveVerification 开启时，验证步骤与 verify、自定义 pr-check 共用仓库锁，等待信息每 5 分钟最多一行。
 POSIX 独立进程组全部退出后才回收；Windows 不支持进程组，仍只按持锁进程及启动时间回收。
@@ -424,5 +506,6 @@ disposableIgnored 默认为 []；配置非空时按 Git 的 gitignore 规则直�
 保留目录已有同名条目时，旧副本自动归档到其中的 .previous-<随机后缀>/，不覆盖。
 冲突以 1 退出并保留现场；解决并暂存后重跑可继续。
 合并后失败可重跑续做，跳过已完成的推送和删除；复制完成后仍核对当前内容。
+${verificationLedgerHelp}
 --dry-run 按计划复制成功列出当前将移走的条目；不执行安装、验证或移动，不改分支、文件或远端。`,
 };

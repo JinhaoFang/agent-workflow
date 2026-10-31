@@ -1,0 +1,1690 @@
+<!doctype html>
+<!--
+spec #2（workflow-v4）的汇报，用 .claude/skills/run-spec/report-template.html 生成，浏览器直接打开。
+数据在文件末尾 data-slot="data"：report 由设计负责人填写，scorecard 是 tickets.ts scorecard 2 --out 的原样输出。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spec 汇报</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10); --wash: rgba(11,11,11,.04);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --goodtext: #006300;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10); --wash: rgba(255,255,255,.05);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --goodtext: #0ca30c;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 24px 20px 64px; }
+header { margin-bottom: 8px; }
+h1 { font-size: 24px; line-height: 1.3; margin: 4px 0 8px; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+h3 { font-size: 15px; margin: 0 0 6px; }
+p { margin: 0 0 8px; }
+a { color: var(--s1); }
+.meta, .muted { color: var(--muted); font-size: 13px; }
+.lead { font-size: 16px; color: var(--ink2); }
+section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+.banner { display: block; margin: 12px 0 4px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--serious); color: var(--ink); text-decoration: none; background: var(--wash); }
+.banner b { color: var(--ink); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.tile .v { font-size: 24px; font-weight: 600; line-height: 1.2; }
+.tile .k { color: var(--ink2); font-size: 13px; }
+.tile .n { color: var(--muted); font-size: 12px; }
+ul.plain, ol.plain { margin: 0; padding-left: 20px; }
+ul.plain li, ol.plain li { margin: 4px 0; }
+.card { border-top: 1px solid var(--grid); padding: 12px 0; }
+.card:first-child { border-top: 0; padding-top: 0; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.status { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.status i { font-style: normal; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: #fff; font-size: 11px; }
+.st-good i { background: var(--good); } .st-warning i { background: var(--warning); color: #0b0b0b; }
+.st-serious i { background: var(--serious); } .st-critical i { background: var(--critical); } .st-info i { background: var(--muted); }
+pre { margin: 6px 0 0; padding: 8px 10px; background: var(--wash); border-radius: 6px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow: auto; }
+img.thumb { max-width: 100%; max-height: 220px; border: 1px solid var(--border); border-radius: 6px; display: block; margin-top: 6px; }
+.ev { margin-top: 6px; font-size: 13px; color: var(--ink2); }
+.ev .num { font-size: 18px; color: var(--ink); font-weight: 600; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: var(--ink2); font-size: 12px; font-family: inherit; }
+svg .axis { stroke: var(--axis); stroke-width: 1; }
+svg .gridl { stroke: var(--grid); stroke-width: 1; }
+svg .lane { fill: var(--wash); }
+.chart { margin: 10px 0 18px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink2); margin: 6px 0; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); vertical-align: -1px; }
+details { margin-top: 10px; }
+summary { cursor: pointer; color: var(--ink2); font-size: 14px; }
+.tw { overflow-x: auto; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15); max-width: 280px; white-space: pre-line; }
+.empty { color: var(--muted); font-size: 14px; }
+footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
+@media (max-width: 640px) {
+  main { padding: 16px 12px 48px; }
+  section { padding: 14px 12px; }
+  .row { grid-template-columns: 1fr; }
+  h1 { font-size: 20px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="meta" data-slot="meta"></p>
+    <h1 data-slot="title"></h1>
+    <p class="lead" data-slot="result"></p>
+    <a class="banner" href="#asks" data-slot="banner" hidden></a>
+  </header>
+
+  <section id="done">
+    <h2>1. 做了什么，效果如何</h2>
+    <div class="tiles" data-slot="done-tiles"></div>
+    <div data-slot="delivered"></div>
+  </section>
+
+  <section id="goals">
+    <h2>2. 目标与证明</h2>
+    <p class="muted">按 spec 问题陈述里的现状，用同一口径重测。灰点是改前，蓝点是改后，竖线是目标。</p>
+    <div data-slot="goals"></div>
+  </section>
+
+  <section id="asks">
+    <h2>3. 要你做的</h2>
+    <div data-slot="asks"></div>
+  </section>
+
+  <section id="evidence">
+    <h2>4. 证据</h2>
+    <p class="muted">可以抽查的实测值、命令输出和截图，链接只作补充。</p>
+    <div data-slot="evidence"></div>
+  </section>
+
+  <section id="cost">
+    <h2>5. 代价与时间</h2>
+    <h3>时间线</h3>
+    <p class="muted">按资源分泳道；超过 45 分钟没有活动的空档压缩成一道竖纹。</p>
+    <div class="legend" data-slot="lane-legend"></div>
+    <div class="chart" data-slot="timeline"></div>
+    <h3>时间去向</h3>
+    <div class="chart" data-slot="time-bars"></div>
+    <h3>验证与合并</h3>
+    <div class="tiles" data-slot="verify-tiles"></div>
+    <h3>用量</h3>
+    <p class="muted">输入含缓存读取；条长是输入 token。</p>
+    <div class="chart" data-slot="usage-bars"></div>
+    <p class="muted" data-slot="usage-note"></p>
+    <details><summary>派发明细</summary><div data-slot="dispatch-table"></div></details>
+    <details><summary>验证明细</summary><div data-slot="verify-table"></div></details>
+  </section>
+
+  <section id="risks">
+    <h2>6. 风险与遗留</h2>
+    <div data-slot="risks"></div>
+  </section>
+
+  <details>
+    <summary>流程发现与数据口径</summary>
+    <div data-slot="findings"></div>
+    <div data-slot="notes"></div>
+  </details>
+
+  <footer data-slot="footer"></footer>
+</main>
+<div class="tip" data-slot="tip" hidden></div>
+
+<script type="application/json" data-slot="data">
+{
+ "report": {
+  "spec": 2,
+  "title": "workflow-v4：方法层拆分后的收拢",
+  "date": "2026-10-31",
+  "timezone": "Asia/Taipei",
+  "repo": "JinhaoFang/agent-workflow",
+  "pr": {
+   "number": 13,
+   "state": "待合并"
+  },
+  "result": "方法层收拢成五条思路，测试分层、验证台账、评分表和按六点重做的汇报模板已落地，10 张工单全部关闭，本机 CI 416 项通过。必读说明的体量没有变少（50,495 → 50,908 字节）。PR #13 待合并。",
+  "delivered": [
+   {
+    "what": "五条思路",
+    "tickets": [
+     6
+    ],
+    "meaning": "方法层的判断集中写在 principles.md 一处，技能正文的步骤指回思路，不再一条条加规则。"
+   },
+   {
+    "what": "测试分层",
+    "tickets": [
+     4
+    ],
+    "meaning": "只改文档的改动只跑静态检查；Codex 开发时只跑相关测试，完整验证在 land 时跑一次。"
+   },
+   {
+    "what": "验证台账",
+    "tickets": [
+     3
+    ],
+    "meaning": "每次验证、合并、PR 检查记一行，验证次数和分钟不用再从日志里重建。"
+   },
+   {
+    "what": "评分表",
+    "tickets": [
+     5,
+     12
+    ],
+    "meaning": "收尾一条命令采集过程数据并发到 spec，没发就 cleanup 会被拦下。本页第 5 节全部来自它。"
+   },
+   {
+    "what": "汇报模板按六点重做",
+    "tickets": [
+     7,
+     9
+    ],
+    "meaning": "就是本页：要你做的放前面，证据放在结论旁，时间线一屏看完。"
+   },
+   {
+    "what": "setup-run-spec 收拢与升级须知",
+    "tickets": [
+     8
+    ],
+    "meaning": "可选约定移到按条件读的 optional.md；README 写明从 v3.1 升级到 v4 的六步。"
+   },
+   {
+    "what": "--help 补三处说明",
+    "tickets": [
+     11
+    ],
+    "meaning": "从正文移走的参数（中断后续做、watch）在 --help 里找得到。"
+   },
+   {
+    "what": "PathJX #233 推算",
+    "tickets": [
+     10
+    ],
+    "meaning": "测试分层的事前估计，PathJX 升级后用评分表实测对照。"
+   }
+  ],
+  "goals": [
+   {
+    "name": "必读说明",
+    "unit": "字节",
+    "before": 50495,
+    "after": 50908,
+    "status": "info",
+    "statusText": "只报告：没变少",
+    "method": "run-spec 的 SKILL.md、report.md，setup 的 SKILL.md、roles.md、run-spec.md、issue-tracker-conventions.md，加新增的 principles.md；wc -c",
+    "evidence": {
+     "value": "旧 6 个文件 −6,099；新增思路文件 +6,512",
+     "output": "旧 6 个文件：50,495 → 44,396 B（−12%）\n+ principles.md 6,512 B → 合计 50,908 B\n按条件读的 optional.md 2,438 B，算上是 53,346 B",
+     "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543794554",
+     "linkText": "目标核对"
+    }
+   },
+   {
+    "name": "脚本",
+    "unit": "行",
+    "before": 4782,
+    "after": 5737,
+    "status": "info",
+    "statusText": "只报告",
+    "method": "技能里的 .ts，不含测试和测试语料 record-fixtures.ts，wc -l；口径同 v3.1 评估",
+    "evidence": {
+     "value": "+955 行",
+     "output": "新增 verification-ledger.ts 131、verification-layer.ts 105、\nscorecard.ts 292、scorecard-records.ts 189",
+     "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543794554",
+     "linkText": "目标核对"
+    }
+   },
+   {
+    "name": "测试",
+    "unit": "行",
+    "before": 9352,
+    "after": 10651,
+    "status": "info",
+    "statusText": "只报告",
+    "method": "*.test.ts，wc -l",
+    "evidence": {
+     "value": "测试 359 → 416 项",
+     "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543794554",
+     "linkText": "目标核对"
+    }
+   },
+   {
+    "name": "汇报模板",
+    "unit": "KB",
+    "before": 80.8,
+    "after": 65.9,
+    "status": "info",
+    "statusText": "只报告",
+    "method": "report-template.html，含示例数据和一张缩略图",
+    "evidence": {
+     "value": "−18%",
+     "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543794554",
+     "linkText": "目标核对"
+    }
+   },
+   {
+    "name": "拆分清单 17 项留在必读里",
+    "unit": "项",
+    "before": 17,
+    "after": 0,
+    "status": "good",
+    "statusText": "达成",
+    "method": "每项取关键词 grep 7 个必读文件",
+    "evidence": {
+     "output": "15 项：必读里没有匹配\nW5：只剩指向 dispatch --help 的一句\nW41：只剩指向 optional.md 的一句和保留的【原文】标注",
+     "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543794554",
+     "linkText": "目标核对"
+    },
+    "target": 0
+   },
+   {
+    "name": "五条思路的定义处",
+    "unit": "",
+    "before": "规则归类在 roles.md，反馈归类和执行中重新判断在 design.md，各写一份",
+    "after": "只在 principles.md，其他文件只引用",
+    "status": "good",
+    "statusText": "达成",
+    "method": "grep 五条标题和关键句，范围是两个技能、AGENTS.md、docs/roles、docs/agents",
+    "evidence": {
+     "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543794554",
+     "linkText": "目标核对"
+    }
+   },
+   {
+    "name": "失效的「…」节名引用",
+    "unit": "处",
+    "before": 2,
+    "after": 0,
+    "status": "good",
+    "statusText": "达成",
+    "method": "技能和规则文档里的「…」逐个查有没有对应标题；剩下的未匹配项是 issue 正文的节名、字段名和占位符",
+    "evidence": {
+     "output": "docs/workflow/bootstrap.md「以后拆分」「装到别的仓库」→ e1ff995 修",
+     "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543794554",
+     "linkText": "目标核对"
+    },
+    "target": 0
+   },
+   {
+    "name": "完整验证次数（PathJX #233 按 v4 推算）",
+    "unit": "次",
+    "before": 18,
+    "after": 16,
+    "status": "good",
+    "statusText": "达成（推算）",
+    "method": "#10 按 v4 规则逐张推算：下限按 #233 的返工次数，上限按每张改代码的工单合并时多失败一次",
+    "evidence": {
+     "value": "11–16 次",
+     "output": "汇报 HTML 也只走静态检查时：10–15 次\n补证发现 #233 实际至少尝试了 26 次完整验证",
+     "link": "https://github.com/JinhaoFang/agent-workflow/issues/10#issuecomment-6541644258",
+     "linkText": "#10 验收"
+    }
+   },
+   {
+    "name": "汇报按六点打分",
+    "unit": "",
+    "before": "v3.1：证据只有链接，约 15 分钟读完",
+    "after": "待你打分",
+    "status": "warning",
+    "statusText": "待你打分",
+    "method": "你按六点逐点回答，并记下读完看懂用了多久",
+    "evidence": {
+     "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543794554",
+     "linkText": "目标核对"
+    }
+   },
+   {
+    "name": "汇报的过程数据来源",
+    "unit": "",
+    "before": "v3.1 评估时 Codex 花 76 分钟、约 6,500 万 token 重建",
+    "after": "第 5 节全部来自 scorecard 2，缺的 8 项写明原因",
+    "status": "good",
+    "statusText": "达成",
+    "method": "本页的数据块里 scorecard 是 --out 的原样输出",
+    "evidence": {
+     "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543819802",
+     "linkText": "评分表"
+    }
+   }
+  ],
+  "asks": [
+   {
+    "kind": "决定",
+    "what": "合并 PR #13",
+    "why": "10 张工单都已验收，收尾审查的 3 项都修了，本机 CI 416 项通过。合并后我打 workflow-v4 tag，在空仓库试装，在 design-system 的临时副本上试升级。",
+    "options": [
+     "合并",
+     "先看 PR 再定"
+    ],
+    "recommend": "合并"
+   },
+   {
+    "kind": "打分",
+    "what": "按六点给本页打分，并记下读完看懂用了多久",
+    "why": "这是本 spec 目标核对的第 3 项；v3 约 10 分钟，v3.1 约 15 分钟。"
+   },
+   {
+    "kind": "决定",
+    "what": "删除已合并的遗留分支和 worktree",
+    "why": "video-studio：本地和远端分支 docs/v31-evaluation（PR #111 已合并），worktree 和本地、远端分支 docs/method-split-freeze（PR #112 已合并）。agent-workflow：本地分支 chore/scaffold（PR #1 已合并，远端已删）。",
+    "options": [
+     "全部删除",
+     "保留"
+    ],
+    "recommend": "全部删除"
+   }
+  ],
+  "evidence": [
+   {
+    "claim": "本机 CI 通过（私有仓库的 Actions 启动不了）",
+    "value": "416/416",
+    "output": "[verify] tsc (Node): 2.16s\n# tests 416  # pass 416  # fail 0\n提交信息检查通过：15 个非合并提交",
+    "link": "https://github.com/JinhaoFang/agent-workflow/pull/13#issuecomment-6543815139",
+    "linkText": "PR 评论"
+   },
+   {
+    "claim": "删掉一条派发，评分表和页面跟着变（#7）",
+    "value": "Codex 时间 20 → 10 分钟",
+    "output": "派给 Codex 的工单 1 → 0 张；开工开销 4 分钟 → 未知\n子代理用量 26 → 6；派发明细少一行；其余不变",
+    "image": "data:image/webp;base64,UklGRiASAABXRUJQVlA4WAoAAAAgAAAAWgIAnAAASUNDUMgBAAAAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADZWUDggMhAAANBbAJ0BKlsCnQA+tValTicko6MicStQ4BaJY27oH8ijU1aN1GlgnJKo/dTEv+lLu36me4D9EbxnzB/sf68nom/1/qAf8/qGOff/b74hv7zkvXof+u9vP+byO/T/mh9fEWfI744agTqvx7mEeu9+DqKeDugL/beDt92/2PsAfnj/s+rrn1fbPUN8uL2MejyP9pYD9gUEtqxNIBKBhUTHud/Mt94bFr5KW9xcDt6SAtz4qFOGlqWu1t2E2Q+5Afo8xa+SlvrTJVSbr+kQmbVfxSZH0gZv8oe5H3+UPcfCoPjvF6rDHb3vRJLeG+IGWw3X+UPcj7+8qonazE358WMGGBAH+4aqh/GJ9kpb+XMFv4wc8WFJNbIstV30V2E60yVVIxRXNXWAB2DrnffUKDqmDvVGdcHcBPTJWiIUa9vUrlsN1/k9ZlBf6WR6WqGECQuC6KEkOKF37KJwgF+lTmouN21Atu6oZWt84zYBCOw6r6mo2OZbtJNIkW4z7DHh2kQ2yAVFa5qugWw3X+G3j5nkGFHp0ksq5Auq9ddISQ0+m/ZJyYHcqkYEvmBlnFD2Y2egBMq5ICXzAgun9R2DdB2GGglsfEJVFNtitMF6wJE7g2Slzcyjuth5FibhZ6U9PLq0/7Pm5lNBLJ/4Zhg03iWZh64I/yo2Juo4tcMyxYExO7VZAEcjCy/TJ7o2JFrqWe8ThOGwGXF3QDEqhFvMhTq4fXmqIcjHDMHRUlJll/lyq7LYgx67JtFMCXtHrHstgV+MhhpFkZY+CHO81LZWg81F0Rk75KXQzX5PA1K7Bu3mUtf/wBiV+z9xD5u2YIZKW+tNNRACucrGas5NJ9rbpwPetCVfkwSsUC9YEfQkwPTkkj+TKIRZ1+Z8HpiIoEKTfrgGymk5VRZTQTnw6dGLjEHR98mUQAnGmqjDk8taiK4JTf/g1C36b0Hb0zlyInXvrcoiTTyfTJjQS1+a4lmW6zxZ6LuwXCg0TfNwAP7VJ04/u7NZW04f7Y+4bGu4lmwQxaF9gcS5khixTGTNGpeNjWcYiSIk3IlSExR4w4C1d5buZejOMpK2Wp9kGMFJMdrv3gSX7mcyMKeG531f/DhiNIDQRBMMTYDeOfiHctyOSuQ6L/VVRzSmlA29xmmAfH86tPMHdBH0uoRvms1Beu5b2NR7HufSUf+vybwHj+hzsV7OrommR72APS0WO5i/25jhYn6H6I+9+CUfgfXDVenDqyyuky2EJlZ9tj733xvhXzW11V91M3nrZg+FAiBbjz7JeLguT5D2ooIfBRXfd/KgPYL6FVG2RPTLpYm3uZXt3GpI17uXrhk9f566ZEyOUHNqVvekfEgW5DRxfFDsVIGILz8dvI/S3Ws81b+zbnZPrwHHnzFJjAjHrg/VAg9VH/KuxWz++y998XjW39L++JXQ3hW40G6s6foFlZMAm2F0uBA8sAwtp0Iq/9vWKkOMB+AMj6yQ3K7pfWpJaVeSXBnA6xoUbmG0l3DNk/degKC4JL9GYabzirm75nwb+XQelLUmAa29D9/Egyby9RbxAABlkB3Cz3WG22uces5UnwciMUkNGTNK/rc3mF8ndFHvRu6RNeixMZXNBxAr7UNLH18z1wfkTPPl7CVaWrLe6eZEtjDd11AzyOv7fukIFwnQwOOtpa92lJW4YKU9k7lYUz+4zGE2q8tCOLb4Z3/yQVregT6QMw1H+FL8jhSFEG+FxR0QqDrGIagOM5OBcO7Nk8SqbJCDQ3IJxsusy0P4cXxUqFAf/uUn0j1VcooOiKqOqatoTgf3aqLCdts6R1BH79aep74MgTqZV9mR87QFAbmn93trIuuBRnXpET9EoUtnpkGdZhleWv7qsXTz/+xRibO2qzRGm5j1BPnkdRtt+9FmR/nbFll1UQuWfI4b4XJz0cwAy+nuQBSTldilfhCkd8cWaCk77gw5PZGtC1IO/TnTpFSwQVerQa3mXn/RcAeYN50anViczlr5mK8nqrYB+Rgwt6GfxuC8Mg+Nx5TJJ8j8ibjVV0EBzbyEr3nQCNbCmGnd1ighpXR365MIpNmO2+wlxXROyJrbmPB4E6/MyGj4nI3WeWvbUenP4M0pQCx8HSlT4SjFeJDgH2WlzDAfJPHPXWZJsEfavE8qmVCuRid+8XUoDOg8qPyeOGH9OM3xytO5FXNd8aWHPkUJpl0QXCi72JIEHKE5YEUfYqYHWhP18RGKdIOk1uqFfcXEL7GfFaaIrAuQ+GaJ++J/2uJNRkoroft9wYI2V+vI4SF0l367ExPEnzo+lzmxRcdE+fw0BskUJQgWCs2MwI1arSO1daWJRYc7ZCVP6AAO65VyNDk9bXe8q842EZKNpk+KJO+b3+qndaj3o51gYxmhy/ttywptkU5Ll1qr4INg3ocX1b0eWIDTMpNxhGmX70Q+qbN9Rz+L+r9Fz9oHOCrwD0LTL+InWDm3L8wVWcmdo3cSm0FSN+lUmZFb/v+ufmNIS7lFLudZNQw6I+j+SUFfCUh9SdWaMryuN4Il9PmnbtmF/HT1mAsK/lbW0N3HyS3KsAZ1LSkD/Bucy5y4dZR7apDMhU4lg9mnL52nXaZIXVZhnN2fIdjf/HUrrxYBUhVci6k/5m55zkyC0OaVoaEaFfdEU4IWgWd2zKgFWMfKyQ58zwnyOOfsZP7B+L9/8X4l1mcbQHFzve7ImlmQGE9bg8IH0oL8kN73MhAj7IdV/nERfm/SfjMSyG0JTOghPh5EHj4HNvMdfZoBuKJbfdgeN7RrioBnqwU3u44LxzdSl3KU7UlLyVf3mrSDZ93yFJ+bPhCCpchKxe2+wL/bkH3h8vzj8k8RoZEoMWlLRFOpIqAIx8W1hFIQd+vpMyVM8vEqfD4wmQbykMtxQoFaMWoGEjLl8OHMx9ic+ybqQakDDsNg+EoAcy2e4RQ1WB7PYW8x/syvLnb/wtDY/vk3d54PkipuCRUvPXSZBF+hFftV7MOpmREoTeINPQO/ySkR6pcjkQ3h3APYNcpJT4+IpGlcdQVDsGSI2rfI8sBKTDW8I/HFxEPIOdFxFEOt/wvCfwjV6DJgOORPR6z2nWfgk1xOldPmwBoT3lewI21d/VoP7Lh5mdQRFItLPJEzLMGtuSMijXhvTwcuYPGZeII/+6GozgDmI/4ujBdTLWN1MsmLc+LMltAMal/jvKYkyTP9+u9AASq1IyOz3gi30PEHGDV1mtbA2MQOpXcmVjLuzr3MV6l4FoD0Wo6uPeGSpx8ls9IXyC2dJWFWSA8SbJTrJVciAZs8TF0cN0hepWjna66pmnGwkh/Tp7hIK5awXqUD7VxAvz9aIX1PjaBAQgATTTXbSJqx4flxaCr9G+gyVz1IVqcY34XcbzgDtX0OaiuL64NaCt/Hhy+maxH0J4lIUlgAnnVIqVwB4YRggNtBWgOBL8Uv6SJqRKyms/Mg73bqDhX1QhogxEivD8+MGZvb44PxeESLyFCSkgTWDeuez0uZCP4YoOcpvL3yr5Y5sWxasRIu1lirY/4lAySgGlfBFdOHqqzbct6LXAzANbdz0AEbvwv88iuEuRVsC4JieeHNuGBo9ZHGMleN7g30HR6bfwOzk//ZsucihGJ41PHIY/jk8Ka9fJQmNpVTGYl2CFF3q362rY1w37lxts+IeQV7w/CMhGzWBrJosVFnPzFtf3hL8+aGXaXoGChUOCdZzuC20LGo69Q/QwV5hIRjmXyjx4UtPMKtscWjsR7Mz38YAgMP3rvEdhh3D82NORazjnybjhbOP6peNZWlJ0sfrLfpDh/nVsQlLLxYUgUAwZ/IDZtSEaga49iWIxAPlaXeVg5jejf3b2CDLG6Wn8MUHOTb7KOWRIWmcBKHO6PUpRJRPYvwEU9Ac5uOJ8cyAzqkcFemr3P/eNvuL1iyzKwocqfFxMfirmmliW/cp3hDlT+dQ4BYkxG2p7FRnRXTeYaz1kJaYWryAUIg77rUfxXZtj5sJFfZyqbyRZ2yk1wtPaKsaFzAbI66J2R7T5NIai95e3MYuZtWZ+OvJPY51teO1f7vhWBcUDX7/OVV8M/YRCDHOMgTaNw3Rqn6FatBCGArNe9ZxeLIsdTr0D/iYRJD2nEa1CB5JM5NeiJ3H+D0dw1QqbzWQRAss40qn3vmBf9vvFfqPGZNvn+nJ1R6X1vZGs212/O4tKn+f51Q5N1DsDGnA21bS+BjOHEM3/ekPL7nzaBLTXJfQ68Ty8vZLn9TR+sfDS1bkA90a2NukSaYPSatrlIcQdVGkngAi2sXcNpoV9xSsNF9WNN3O0Gee3wrfos2IpEtRQAACSAuSKxVUpXK0n7dO6QbPASXti0qQzs1UEFJvEKK4guBUkUDOHJM0USWbZSEwMhelgR/6J0ld92Y/3Jgi6k70AP3t69bV6J9ud51bOqCeFURu9KANNZfuNS+t/U897pkroG/j3aH/2Ri6CE8tu0ZP4PCbs95+WYmN9lOYQFCPCFoJLzTH1P8UaCOgGo2+ZfgBMMkCMacbJf2Ikx8OrnH+5mwyB23cmKTwFIwDIictt30tj/Lx/Dje9roWdJGtBHuv69U2ILx42PWtS7LuiW0xAAMnxYZuNpesUhWRvq7CXQst6lheFxi/mN9Du3OjpTTbxARvTYRfM1wmxpvZAvYB8IPFra1SODOnuTJ9GrRBHEmYWNdTxI6P24Yt/saSjp84BZYLJrtUViLdj+IYuDtmMONSe3u6XjN4ybjqG6OG0MICICu2aRE+QUqRJtN4eg7br07A91twUSe6QUpn7GQUkA8BCuQpRyhf5+FF5dDOqZcufWclm9EAMAB5yxxEqKIvwws6Q+lyPKkta7mBkfozlKYbrOVYKCuj3QLpfM514xcL2VL5hdk0J1baRMLYXXjURJNhDFmalfgEiNFpIPKoxgfBhFMBwe0yBhKBj6tdmJUEvVLEkJRAtWqxHOJBWcrnunA2S6cTeH/RCwUQH4nL7H9ETsnjD47yjWtdiJ1epVhXynAOFClHfaGYQuaSI8ADlouXpTtBnGKavZ7UkNccabEhEcBR2L51NJIBD7w6mnuC0SMGbX5gS+pcLi7Q9THySC3vBbBw6kA9icSfBHnKra/DVXuYmJiNlLC7vqT4aWFPX0oRZkWnXMdzd5/KvAp6mgusYYSAg4R+DqbWg5/rUx3rSJ7VtX7h9OQjxIiKbWcxpADQJoRRRsFzNaIqYHIerdiQzH4lfLFtwuwk9xGuBNh8StuhGz285xW55f9cjjmNvRorDw2lKhO8YDorwIBPYheKzxa4FHD9Kbl9m1FAMVrIbV+oqYduxwWwcF4pg5PnWnhVd7MwaWdrlbLDZOnLmvyYwnfLfJhVw8cQc/kX1myBYravaNeGFUno6/Dpxd1Gd9hsFpPu6rKYnXcWNFG+9jngDmWbQEkIKeAyqrq9uAB9L5Rwsb8q/f8sLSIwzePLiPNKDXgKEPDfnbDgLaNFxta1R9j1Ox4juiKE6OWsv4qrLV6etip2LqQL7t9UdbvG9t+0SRMlCLs07qDpepPePsB140DYUAAAA==",
+    "imageAlt": "删派发前后的代价与时间一节",
+    "link": "https://github.com/JinhaoFang/agent-workflow/issues/7#issuecomment-6543581950",
+    "linkText": "#7 验收"
+   },
+   {
+    "claim": "评分表的固定输入：完整 JSON 与手写预期一致（#5）",
+    "value": "逐字段一致",
+    "output": "设计负责人 26 分钟、等用户 24 分钟、用户介入 4 次\n压缩摘要不算用户输入；AskUserQuestion 的回答算",
+    "link": "https://github.com/JinhaoFang/agent-workflow/issues/5#issuecomment-6543306128",
+    "linkText": "#5 验收"
+   },
+   {
+    "claim": "收尾审查 3 项 P2 全部修复",
+    "value": "3/3",
+    "output": "手机展开派发明细：溢出 14 px → 0（7031458）\n验证程序不存在：verification=null，verificationLaunch=1（#12）\n合并失败只数 land：landCount=1，fullVerificationFailures=0（#12）",
+    "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543675997",
+    "linkText": "审查取舍"
+   }
+  ],
+  "risks": [
+   {
+    "level": "warning",
+    "what": "必读说明没有变少",
+    "impact": "移出必读的 17 项省下的篇幅，又被思路文件和测试分层、评分表的说明补了回来；agent 每次开工读的量和 v3.1 差不多。",
+    "next": "下个版本用过以后，按观察记录看哪些机制没用上，再决定删什么。"
+   },
+   {
+    "level": "warning",
+    "what": "一次派发中断，评分表就没有整个 spec 的 Codex 时间",
+    "impact": "本页 Codex 泳道和时间去向的 Codex 一行就是\"未记录\"：gh-5-2 在会话中断时被杀，没有结束记录。各次派发的分钟数仍在派发明细里。",
+    "next": "记为观察第 101 条，用过再评估要不要只算起止齐全的派发。"
+   },
+   {
+    "level": "warning",
+    "what": "测试分层还没在真实 spec 上检验",
+    "impact": "11–16 次是推算；本 spec 自己改的主要是脚本，几乎每张工单都要跑完整验证，看不出分层的效果。",
+    "next": "PathJX 升级后，看下一个 spec 的评分表（目标核对第 6 项）。"
+   },
+   {
+    "level": "warning",
+    "what": "三个仓库还在用 v3.1",
+    "impact": "合并之前，video-studio、design-system、PathJX 都照旧从 video-studio 安装 v3.1。",
+    "next": "合并后按 video-studio → design-system → PathJX 依次切换，每步合并前问你；产品线那台机器要你重装。"
+   }
+  ],
+  "findings": [
+   "只读工单不走 land，产物留在 worktree 里，要手工拷回主工作区（#9、#10；观察第 99 条）。",
+   "#3 的台账测试调用 cleanup，碰上 #5 新加的评分表拦截，land 5 第一次完整验证失败（3f4cc14 修）。并行工单互相改到对方依赖的行为，合并时才暴露。",
+   "#5 用本会话的真实记录实测，才发现用户介入口径的两处漏洞：压缩摘要被算成用户输入、AskUserQuestion 的回答没算（观察第 100 条，返工后修好）。",
+   "#7 的手机横向滚动检查量法有误，收尾审查才发现（观察第 102 条）。",
+   "会话在 17:47 中断，两个 Codex 作业被杀：#5 用 --resume 续做；中断后环境变量为空，第一次重派的核查没有启动。"
+  ],
+  "notes": [
+   {
+    "item": "主会话范围",
+    "note": "只有一个 Claude 主会话（ff4f14bd），从 15:46 开始，包括拆仓库（spec 的「抽出」一节）和本 spec 的全部工作，中间经过两次上下文压缩。"
+   },
+   {
+    "item": "验证台账的起点",
+    "note": "台账是 #3 合并（17:11）后才开始记的，第一行在 17:34。开工时的基线完整验证（16:57，359 项）和 land 3 本身的验证不在评分表里，所以合并次数是 5，不含 land 3。"
+   },
+   {
+    "item": "评分表没算的派发",
+    "note": "#6 的两次只读核查 check-6-1、check-6-2 用 codex-task 直接派发，名字不归本 spec，评分表没有计入；另有一次因路径变量为空没有启动。"
+   },
+   {
+    "item": "返工 #12 没有单独复审",
+    "note": "返工只改两处条件判断和帮助文字，验收时逐行看过 diff，并由 land 跑完整验证。"
+   },
+   {
+    "item": "用户介入 5 次",
+    "note": "包括会话开头的任务说明、中断后的\"继续当前任务\"和三次 AskUserQuestion 的回答；压缩摘要不算。"
+   }
+  ]
+ },
+ "scorecard": {
+  "version": 1,
+  "spec": 2,
+  "cutoffAt": "2026-10-31T13:13:24.268Z",
+  "collectedAt": "2026-10-31T13:13:28.061Z",
+  "verification": {
+   "value": {
+    "runs": [
+     {
+      "layer": "full",
+      "target": {
+       "kind": "ticket",
+       "number": 4
+      },
+      "caller": "land",
+      "branch": "ticket/4",
+      "start": "2026-10-31T09:34:47.174Z",
+      "end": "2026-10-31T09:35:46.495Z",
+      "queuedMinutes": 0,
+      "minutes": 0.9886833333333334,
+      "exitCode": 0
+     },
+     {
+      "layer": "static",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/2-workflow-v4",
+      "start": "2026-10-31T09:44:54.670Z",
+      "end": "2026-10-31T09:44:57.975Z",
+      "queuedMinutes": 0,
+      "minutes": 0.05508333333333333,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/2-workflow-v4",
+      "start": "2026-10-31T12:15:14.592Z",
+      "end": "2026-10-31T12:16:24.501Z",
+      "queuedMinutes": 0,
+      "minutes": 1.16515,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "ticket",
+       "number": 5
+      },
+      "caller": "land",
+      "branch": "ticket/5",
+      "start": "2026-10-31T12:18:30.031Z",
+      "end": "2026-10-31T12:19:41.012Z",
+      "queuedMinutes": 0,
+      "minutes": 1.1830166666666666,
+      "exitCode": 1
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "ticket",
+       "number": 5
+      },
+      "caller": "land",
+      "branch": "ticket/5",
+      "start": "2026-10-31T12:21:09.998Z",
+      "end": "2026-10-31T12:22:22.111Z",
+      "queuedMinutes": 0,
+      "minutes": 1.2018833333333334,
+      "exitCode": 0
+     },
+     {
+      "layer": "static",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/2-workflow-v4",
+      "start": "2026-10-31T12:26:30.920Z",
+      "end": "2026-10-31T12:26:34.185Z",
+      "queuedMinutes": 0,
+      "minutes": 0.05441666666666667,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "ticket",
+       "number": 11
+      },
+      "caller": "land",
+      "branch": "ticket/11",
+      "start": "2026-10-31T12:30:27.632Z",
+      "end": "2026-10-31T12:31:35.317Z",
+      "queuedMinutes": 0,
+      "minutes": 1.1280833333333333,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/2-workflow-v4",
+      "start": "2026-10-31T12:48:33.627Z",
+      "end": "2026-10-31T12:49:44.493Z",
+      "queuedMinutes": 0,
+      "minutes": 1.1811,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/2-workflow-v4",
+      "start": "2026-10-31T13:02:53.767Z",
+      "end": "2026-10-31T13:04:17.022Z",
+      "queuedMinutes": 0,
+      "minutes": 1.3875833333333334,
+      "exitCode": 0
+     },
+     {
+      "layer": "static",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/2-workflow-v4",
+      "start": "2026-10-31T13:05:41.412Z",
+      "end": "2026-10-31T13:05:44.886Z",
+      "queuedMinutes": 0,
+      "minutes": 0.0579,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "ticket",
+       "number": 12
+      },
+      "caller": "land",
+      "branch": "ticket/12",
+      "start": "2026-10-31T13:08:18.465Z",
+      "end": "2026-10-31T13:09:32.389Z",
+      "queuedMinutes": 0,
+      "minutes": 1.2320666666666666,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "pr",
+       "number": 13
+      },
+      "caller": "pr-check",
+      "branch": "spec/2-workflow-v4",
+      "start": "2026-10-31T13:11:32.743Z",
+      "end": "2026-10-31T13:12:49.967Z",
+      "queuedMinutes": 0,
+      "minutes": 1.2870666666666666,
+      "exitCode": 0
+     }
+    ],
+    "fullCount": 9,
+    "fullMinutes": 10.754633333333333,
+    "staticCount": 3
+   },
+   "reason": null
+  },
+  "merges": {
+   "value": {
+    "landCount": 5,
+    "fullVerificationFailures": 1,
+    "stops": {
+     "rebaseConflict": 0,
+     "installFailure": 0,
+     "verificationFailure": 1,
+     "pushFailure": 0,
+     "other": 0
+    }
+   },
+   "reason": null
+  },
+  "dispatches": {
+   "value": [
+    {
+     "record": "gh-3",
+     "ticket": 3,
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T08:57:58.996Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-10-31T09:11:32.212Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 13.5536,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 3335145,
+       "cachedInputTokens": 3241856,
+       "outputTokens": 30450
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-10",
+     "ticket": 10,
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T09:12:11.204Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-10-31T09:22:02.191Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 9.849783333333333,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 2155148,
+       "cachedInputTokens": 2074880,
+       "outputTokens": 22506
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-3-2",
+     "ticket": 3,
+     "category": {
+      "value": "返工",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T09:12:53.825Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-10-31T09:18:02.719Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 5.148233333333334,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 1127328,
+       "cachedInputTokens": 1064320,
+       "outputTokens": 15417
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-4",
+     "ticket": 4,
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T09:20:05.804Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-10-31T09:34:09.920Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 14.0686,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 3440376,
+       "cachedInputTokens": 3311360,
+       "outputTokens": 33894
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-5",
+     "ticket": 5,
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T09:22:04.971Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-10-31T09:41:24.012Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 19.31735,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 4325654,
+       "cachedInputTokens": 4193280,
+       "outputTokens": 45259
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-5-2",
+     "ticket": 5,
+     "category": {
+      "value": "返工",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T09:43:14.878Z",
+      "reason": null
+     },
+     "end": {
+      "value": null,
+      "reason": "派发尚未结束或缺少结束记录"
+     },
+     "minutes": {
+      "value": null,
+      "reason": "派发起止不完整"
+     },
+     "exitCode": {
+      "value": null,
+      "reason": "派发尚未结束或缺少退出码"
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 704172,
+       "cachedInputTokens": 642176,
+       "outputTokens": 10870
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-5-3",
+     "ticket": 5,
+     "category": {
+      "value": "续做",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T12:11:43.522Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-10-31T12:18:04.998Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 6.357933333333333,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 943442,
+       "cachedInputTokens": 873856,
+       "outputTokens": 14459
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-9",
+     "ticket": 9,
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T12:23:06.559Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-10-31T12:37:46.018Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 14.65765,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 3489931,
+       "cachedInputTokens": 3382400,
+       "outputTokens": 29372
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-11",
+     "ticket": 11,
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T12:27:15.113Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-10-31T12:30:03.996Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 2.8147166666666665,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 502693,
+       "cachedInputTokens": 454016,
+       "outputTokens": 6073
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "review-2-final",
+     "ticket": null,
+     "category": {
+      "value": "审查",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T12:51:13.233Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-10-31T12:58:08.092Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 6.914316666666667,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 2436125,
+       "cachedInputTokens": 2314112,
+       "outputTokens": 9479
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-12",
+     "ticket": 12,
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-10-31T12:59:45.840Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-10-31T13:07:57.012Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 8.1862,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 1857524,
+       "cachedInputTokens": 1767552,
+       "outputTokens": 16003
+      },
+      "reason": null
+     }
+    }
+   ],
+   "reason": null
+  },
+  "time": {
+   "codexSlots": {
+    "value": null,
+    "reason": "派发起止记录缺失或有尚未结束的派发"
+   },
+   "verification": {
+    "value": {
+     "spans": [
+      {
+       "start": "2026-10-31T09:34:47.174Z",
+       "end": "2026-10-31T09:35:46.495Z"
+      },
+      {
+       "start": "2026-10-31T09:44:54.670Z",
+       "end": "2026-10-31T09:44:57.975Z"
+      },
+      {
+       "start": "2026-10-31T12:15:14.592Z",
+       "end": "2026-10-31T12:16:24.501Z"
+      },
+      {
+       "start": "2026-10-31T12:18:30.031Z",
+       "end": "2026-10-31T12:19:41.012Z"
+      },
+      {
+       "start": "2026-10-31T12:21:09.998Z",
+       "end": "2026-10-31T12:22:22.111Z"
+      },
+      {
+       "start": "2026-10-31T12:26:30.920Z",
+       "end": "2026-10-31T12:26:34.185Z"
+      },
+      {
+       "start": "2026-10-31T12:30:27.632Z",
+       "end": "2026-10-31T12:31:35.317Z"
+      },
+      {
+       "start": "2026-10-31T12:48:33.627Z",
+       "end": "2026-10-31T12:49:44.493Z"
+      },
+      {
+       "start": "2026-10-31T13:02:53.767Z",
+       "end": "2026-10-31T13:04:17.022Z"
+      },
+      {
+       "start": "2026-10-31T13:05:41.412Z",
+       "end": "2026-10-31T13:05:44.886Z"
+      },
+      {
+       "start": "2026-10-31T13:08:18.465Z",
+       "end": "2026-10-31T13:09:32.389Z"
+      },
+      {
+       "start": "2026-10-31T13:11:32.743Z",
+       "end": "2026-10-31T13:12:49.967Z"
+      }
+     ],
+     "minutes": 10.922033333333333
+    },
+    "reason": null
+   },
+   "queue": {
+    "value": {
+     "spans": [],
+     "minutes": 0
+    },
+    "reason": null
+   },
+   "designLead": {
+    "value": {
+     "spans": [
+      {
+       "start": "2026-10-31T07:46:44.107Z",
+       "end": "2026-10-31T08:00:09.981Z"
+      },
+      {
+       "start": "2026-10-31T08:12:31.702Z",
+       "end": "2026-10-31T09:22:56.541Z"
+      },
+      {
+       "start": "2026-10-31T09:34:10.504Z",
+       "end": "2026-10-31T09:49:57.456Z"
+      },
+      {
+       "start": "2026-10-31T12:10:57.797Z",
+       "end": "2026-10-31T13:13:24.268Z"
+      }
+     ],
+     "minutes": 162.06893333333335
+    },
+    "reason": null
+   },
+   "waitingUser": {
+    "value": {
+     "spans": [],
+     "minutes": 0
+    },
+    "reason": null
+   }
+  },
+  "overhead": {
+   "value": [
+    {
+     "record": "gh-3",
+     "firstEditAt": {
+      "value": "2026-10-31T09:00:32.681Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 2.5614166666666667,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 388267,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-10",
+     "firstEditAt": {
+      "value": "2026-10-31T09:18:43.627Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 6.540383333333334,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 1100694,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-3-2",
+     "firstEditAt": {
+      "value": "2026-10-31T09:14:43.957Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 1.8355333333333332,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 220155,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-4",
+     "firstEditAt": {
+      "value": "2026-10-31T09:21:58.372Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 1.8761333333333334,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 438268,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-5",
+     "firstEditAt": {
+      "value": "2026-10-31T09:25:20.758Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 3.263116666666667,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 620495,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-5-2",
+     "firstEditAt": {
+      "value": "2026-10-31T09:44:41.252Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 1.4395666666666667,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 148310,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-5-3",
+     "firstEditAt": {
+      "value": "2026-10-31T12:15:06.147Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 3.377083333333333,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 352363,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-9",
+     "firstEditAt": {
+      "value": "2026-10-31T12:28:12.162Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 5.093383333333334,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 940621,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-11",
+     "firstEditAt": {
+      "value": "2026-10-31T12:28:33.609Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 1.3082666666666667,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 191734,
+      "reason": null
+     }
+    },
+    {
+     "record": "review-2-final",
+     "firstEditAt": {
+      "value": null,
+      "reason": "Codex 会话中未找到成功的 apply_patch 事件"
+     },
+     "minutes": {
+      "value": null,
+      "reason": "缺少派发开始或首次成功改文件事件"
+     },
+     "inputTokens": {
+      "value": null,
+      "reason": "首次改文件之前缺少累计 token_count"
+     }
+    },
+    {
+     "record": "gh-12",
+     "firstEditAt": {
+      "value": "2026-10-31T13:02:13.301Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 2.457683333333333,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 262861,
+      "reason": null
+     }
+    }
+   ],
+   "reason": null
+  },
+  "userInterventions": {
+   "value": 5,
+   "reason": null
+  },
+  "failures": {
+   "dispatchWithoutReport": {
+    "value": 0,
+    "reason": null
+   },
+   "landStops": {
+    "value": 1,
+    "reason": null
+   },
+   "verificationLaunch": {
+    "value": 0,
+    "reason": null
+   }
+  },
+  "usage": {
+   "codexDispatch": {
+    "value": {
+     "inputTokens": 21881413,
+     "cachedInputTokens": 21005696,
+     "outputTokens": 224303
+    },
+    "reason": null
+   },
+   "codexReview": {
+    "value": {
+     "inputTokens": 2436125,
+     "cachedInputTokens": 2314112,
+     "outputTokens": 9479
+    },
+    "reason": null
+   },
+   "mainSession": {
+    "value": {
+     "inputTokens": 92462450,
+     "cachedInputTokens": 91244707,
+     "outputTokens": 448694
+    },
+    "reason": null
+   },
+   "independentReview": {
+    "value": {
+     "inputTokens": 2528023,
+     "cachedInputTokens": 2397066,
+     "outputTokens": 50924
+    },
+    "reason": null
+   },
+   "subagents": {
+    "value": {
+     "inputTokens": 8431735,
+     "cachedInputTokens": 8002432,
+     "outputTokens": 50646
+    },
+    "reason": null
+   },
+   "subagentNotifications": {
+    "value": null,
+    "reason": "未提供 Claude 会话或任务通知没有 subagent_tokens"
+   }
+  },
+  "missing": [
+   {
+    "field": "dispatches.gh-5-2.end",
+    "reason": "派发尚未结束或缺少结束记录"
+   },
+   {
+    "field": "dispatches.gh-5-2.minutes",
+    "reason": "派发起止不完整"
+   },
+   {
+    "field": "dispatches.gh-5-2.exitCode",
+    "reason": "派发尚未结束或缺少退出码"
+   },
+   {
+    "field": "overhead.review-2-final.firstEditAt",
+    "reason": "Codex 会话中未找到成功的 apply_patch 事件"
+   },
+   {
+    "field": "overhead.review-2-final.minutes",
+    "reason": "缺少派发开始或首次成功改文件事件"
+   },
+   {
+    "field": "overhead.review-2-final.inputTokens",
+    "reason": "首次改文件之前缺少累计 token_count"
+   },
+   {
+    "field": "time.codexSlots",
+    "reason": "派发起止记录缺失或有尚未结束的派发"
+   },
+   {
+    "field": "usage.subagentNotifications",
+    "reason": "未提供 Claude 会话或任务通知没有 subagent_tokens"
+   }
+  ]
+ }
+}
+</script>
+<script>
+{
+  const $ = (slot) => document.querySelector(`[data-slot="${slot}"]`);
+  const el = (tag, attrs = {}, ...kids) => {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === "text") node.textContent = v;
+      else if (k === "style") node.style.cssText = v;
+      else node.setAttribute(k, v === true ? "" : v);
+    }
+    for (const kid of kids.flat()) if (kid !== null && kid !== undefined) node.append(kid);
+    return node;
+  };
+  const NS = "http://www.w3.org/2000/svg";
+  const svgEl = (tag, attrs = {}, text) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) node.setAttribute(k, v);
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const put = (slot, ...content) => $(slot).append(...content.flat(2).filter((c) => c !== null && c !== undefined));
+  const DATA = JSON.parse($("data").textContent);
+  const R = DATA.report;
+  const S = DATA.scorecard;
+  const val = (field) => (field && typeof field === "object" && "value" in field ? field.value : field);
+  const why = (field) => (field && typeof field === "object" && field.reason ? field.reason.replace(/^未记录[：:]\s*/, "") : "缺数");
+  const tz = R.timezone || undefined;
+  const fmtNum = (n, digits = 0) => (n === null || n === undefined ? "未知" : Number(n).toLocaleString("zh-CN", { maximumFractionDigits: digits }));
+  const fmtMin = (m) => {
+    if (m === null || m === undefined) return "未知";
+    if (m < 60) return `${fmtNum(m, 1)} 分钟`;
+    return `${Math.floor(m / 60)} 小时 ${Math.round(m % 60)} 分`;
+  };
+  const fmtTok = (n) => (n === null || n === undefined ? "未知" : n >= 1e4 ? `${fmtNum(n / 1e4, n >= 1e6 ? 0 : 1)} 万` : fmtNum(n));
+  const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString("zh-CN", { timeZone: tz, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "未知");
+  const fmtClock = (ms) => new Date(ms).toLocaleTimeString("zh-CN", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false });
+  const link = (text, href) => (href ? el("a", { href, text }) : document.createTextNode(text));
+  const issue = (n) => link(`#${n}`, R.repo ? `https://github.com/${R.repo}/issues/${n}` : null);
+  const status = (level, text) => {
+    const icon = { good: "✓", warning: "!", serious: "!", critical: "✕", info: "i" }[level] || "·";
+    return el("span", { class: `status st-${level}` }, el("i", { text: icon }), text);
+  };
+  const evidenceBlock = (ev) => {
+    if (!ev) return null;
+    const box = el("div", { class: "ev" });
+    if (ev.value) box.append(el("div", { class: "num", text: ev.value }));
+    if (ev.output) box.append(el("pre", { text: ev.output }));
+    if (ev.image) box.append(el("img", { class: "thumb", src: ev.image, alt: ev.imageAlt || "截图" }));
+    if (ev.link) box.append(el("div", {}, link(ev.linkText || "原始记录", ev.link)));
+    return box;
+  };
+  const tip = $("tip");
+  document.addEventListener("pointermove", (event) => {
+    const target = event.target.closest && event.target.closest("[data-tip]");
+    if (!target) { tip.hidden = true; return; }
+    tip.textContent = target.getAttribute("data-tip");
+    tip.hidden = false;
+    const x = Math.min(event.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
+    const y = Math.min(event.clientY + 12, window.innerHeight - tip.offsetHeight - 8);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  });
+
+  document.title = `spec #${R.spec} 汇报：${R.title}`;
+  $("meta").textContent = [R.date, `spec #${R.spec}`, R.pr ? `PR #${R.pr.number}（${R.pr.state}）` : null].filter(Boolean).join(" · ");
+  $("title").textContent = R.title;
+  $("result").textContent = R.result;
+  const asks = R.asks || [];
+  if (asks.length) {
+    const banner = $("banner");
+    banner.hidden = false;
+    banner.append(el("b", { text: `有 ${asks.length} 件事要你做` }), "：", asks.map((a) => a.what).join("；"), " → 第 3 节");
+  }
+
+  const goals = R.goals || [];
+  const judged = goals.filter((g) => g.status !== "info");
+  const met = judged.filter((g) => g.status === "good").length;
+  const dispatches = val(S && S.dispatches) || [];
+  const tickets = new Set(dispatches.map((d) => d.ticket).filter((t) => t !== null && t !== undefined));
+  const spanStarts = [];
+  const spanEnds = [];
+  if (S) for (const lane of Object.values(S.time || {})) for (const s of (val(lane) || {}).spans || []) { spanStarts.push(Date.parse(s.start)); spanEnds.push(Date.parse(s.end)); }
+  const wall = spanStarts.length ? (Math.max(...spanEnds) - Math.min(...spanStarts)) / 60000 : null;
+  const tile = (v, k, n) => el("div", { class: "tile" }, el("div", { class: "v", text: v }), el("div", { class: "k", text: k }), n ? el("div", { class: "n", text: n }) : null);
+  put("done-tiles", 
+    tile(judged.length ? `${met}/${judged.length}` : "—", "目标达成", [judged.length - met ? `${judged.length - met} 项未完全达成` : null, goals.length - judged.length ? `另 ${goals.length - judged.length} 项只报告` : null].filter(Boolean).join("，") || null),
+    tile(String((R.delivered || []).length), "交付", S ? `派给 Codex 的工单 ${tickets.size} 张` : null),
+    tile(fmtMin(wall), "从开工到数据截点", S ? `截点 ${fmtTime(S.cutoffAt)}` : null),
+  );
+  const delivered = R.delivered || [];
+  put("delivered", delivered.length
+    ? el("div", { class: "tw" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { text: "交付" }), el("th", { text: "工单" }), el("th", { text: "对你的意义" }))),
+        el("tbody", {}, delivered.map((d) => el("tr", {}, el("td", { text: d.what }), el("td", {}, (d.tickets || []).flatMap((t, i) => (i ? [" ", issue(t)] : [issue(t)]))), el("td", { text: d.meaning }))))))
+    : el("p", { class: "empty", text: "无" }));
+
+  const dumbbell = (g, W) => {
+    const nums = [g.before, g.after, g.target].filter((n) => typeof n === "number");
+    if (nums.length < 2) return null;
+    const max = Math.max(...nums) * 1.08 || 1;
+    const H = 46, L = 6, Rr = 6, x = (n) => L + (n / max) * (W - L - Rr);
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${g.name}：改前 ${g.before}，改后 ${g.after}` });
+    svg.append(svgEl("line", { class: "axis", x1: L, x2: W - Rr, y1: 30, y2: 30 }));
+    if (typeof g.before === "number" && typeof g.after === "number") svg.append(svgEl("line", { x1: x(g.before), x2: x(g.after), y1: 18, y2: 18, stroke: "var(--axis)", "stroke-width": 2 }));
+    if (typeof g.target === "number") svg.append(svgEl("line", { x1: x(g.target), x2: x(g.target), y1: 8, y2: 28, stroke: "var(--ink2)", "stroke-width": 2 }));
+    const dot = (n, fill, label, anchorUp) => {
+      const group = svgEl("g", { "data-tip": `${label} ${fmtNum(n, 2)} ${g.unit || ""}` });
+      group.append(svgEl("circle", { cx: x(n), cy: 18, r: 10, fill: "transparent" }), svgEl("circle", { cx: x(n), cy: 18, r: 5, fill, stroke: "var(--surface)", "stroke-width": 2 }));
+      const px = x(n), anchor = px < 40 ? "start" : px > W - 40 ? "end" : "middle";
+      group.append(svgEl("text", { x: anchor === "start" ? Math.max(px - 4, 0) : anchor === "end" ? Math.min(px + 4, W) : px, y: anchorUp ? 8 : 44, "text-anchor": anchor }, `${label} ${fmtNum(n, 2)}`));
+      return group;
+    };
+    if (typeof g.before === "number") svg.append(dot(g.before, "var(--muted)", "改前", true));
+    if (typeof g.after === "number") svg.append(dot(g.after, "var(--s1)", "改后", false));
+    return svg;
+  };
+  const delta = (g) => (typeof g.before === "number" && typeof g.after === "number" && g.before ? `改后比改前 ${g.after >= g.before ? "+" : ""}${fmtNum((100 * (g.after - g.before)) / g.before, 1)}%` : null);
+  const drawGoals = () => {
+  const gw = Math.max(240, Math.floor(($("goals").clientWidth - 16) / (innerWidth > 640 ? 2 : 1)));
+  $("goals").replaceChildren();
+  put("goals", goals.length ? goals.map((g) => el("div", { class: "card" },
+    el("div", { class: "row" },
+      el("div", {},
+        el("h3", {}, g.name, " ", status(g.status || "warning", g.statusText || "")),
+        g.unit ? el("div", { class: "muted", text: `单位：${g.unit}${typeof g.target === "number" ? `；目标 ${fmtNum(g.target, 2)}` : ""}` }) : null,
+        dumbbell(g, gw),
+        typeof g.before !== "number" || typeof g.after !== "number" ? el("div", { class: "pair" }, el("span", { class: "muted", text: "改前 " }), String(g.before ?? "未知"), el("br"), el("span", { class: "muted", text: "改后 " }), String(g.after ?? "未知")) : null,
+        delta(g) ? el("div", { text: delta(g) }) : null,
+        g.method ? el("div", { class: "muted", text: `怎么测：${g.method}` }) : null),
+      el("div", {}, evidenceBlock(g.evidence), (g.links || []).length ? el("div", { class: "ev" }, g.links.flatMap((l, i) => (i ? [" · ", link(l.text, l.href)] : [link(l.text, l.href)]))) : null))))
+    : el("p", { class: "empty", text: "问题陈述没有可度量的现状；判断方法写在第 1 节。" }));
+  };
+
+  put("asks", asks.length ? el("ol", { class: "plain" }, asks.map((a) => el("li", {},
+    el("b", { text: `【${a.kind}】${a.what}` }),
+    a.why ? el("div", { class: "muted", text: a.why }) : null,
+    (a.options || []).length ? el("div", { text: `选项：${a.options.join(" / ")}` }) : null,
+    a.recommend ? el("div", { text: `推荐：${a.recommend}` }) : null)))
+    : el("p", { class: "empty", text: "这次没有要你做的事。" }));
+
+  const evidence = R.evidence || [];
+  put("evidence", evidence.length ? evidence.map((e) => el("div", { class: "card" }, el("div", { class: "row" }, el("div", {}, el("b", { text: e.claim })), evidenceBlock(e))))
+    : el("p", { class: "empty", text: "无" }));
+
+  const LANES = [
+    ["codexSlots", "Codex", "var(--s1)"],
+    ["verification", "验证", "var(--s2)"],
+    ["queue", "排队", "var(--s3)"],
+    ["designLead", "设计负责人", "var(--s4)"],
+    ["waitingUser", "等用户", "var(--s5)"],
+  ];
+  put("lane-legend", LANES.map(([, name, c]) => el("span", { style: `--c:${c}`, text: name })));
+  const timeline = () => {
+    if (!S) return el("p", { class: "empty", text: "没有评分表数据。" });
+    const lanes = LANES.map(([key, name, color]) => ({ key, name, color, field: S.time[key], spans: ((val(S.time[key]) || {}).spans || []).map((s) => [Date.parse(s.start), Date.parse(s.end)]) }));
+    const all = lanes.flatMap((l) => l.spans).sort((a, b) => a[0] - b[0]);
+    if (!all.length) return el("p", { class: "empty", text: "评分表里没有时段。" });
+    const GAP = 45 * 60000;
+    const segs = [];
+    for (const [a, b] of all) {
+      const last = segs[segs.length - 1];
+      if (last && a - last[1] <= GAP) last[1] = Math.max(last[1], b);
+      else segs.push([a, b]);
+    }
+    const W = Math.max(300, $("timeline").clientWidth), LW = W < 600 ? 64 : 92, GW = 14, ROW = 26, TOP = 6, PAD = 4;
+    const active = segs.reduce((n, [a, b]) => n + (b - a), 0) || 1;
+    const usable = W - LW - GW * (segs.length - 1) - PAD;
+    const offsets = [];
+    let cursor = LW;
+    for (const [a, b] of segs) { offsets.push(cursor); cursor += ((b - a) / active) * usable + GW; }
+    const x = (t) => {
+      for (let i = 0; i < segs.length; i++) if (t <= segs[i][1] || i === segs.length - 1) return offsets[i] + ((Math.max(t, segs[i][0]) - segs[i][0]) / active) * usable;
+      return W;
+    };
+    const H = TOP + lanes.length * ROW + 24;
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "按资源分泳道的时间线" });
+    lanes.forEach((lane, i) => {
+      const y = TOP + i * ROW;
+      svg.append(svgEl("rect", { class: "lane", x: LW, y, width: W - LW - PAD, height: ROW - 6, rx: 3 }));
+      svg.append(svgEl("text", { x: LW - 8, y: y + 14, "text-anchor": "end" }, lane.name));
+      if (val(lane.field) === null) svg.append(svgEl("text", { x: LW + 8, y: y + 14 }, W < 600 ? "未记录" : `未记录：${why(lane.field)}`));
+      for (const [a, b] of lane.spans) {
+        const x1 = x(a), w = Math.max(x(b) - x1, 2);
+        const g = svgEl("g", { "data-tip": `${lane.name}\n${fmtClock(a)}–${fmtClock(b)}（${fmtMin((b - a) / 60000)}）` });
+        g.append(svgEl("rect", { x: x1 - 2, y, width: w + 4, height: ROW - 6, fill: "transparent" }), svgEl("rect", { x: x1, y: y + 3, width: w, height: ROW - 12, rx: 2, fill: lane.color }));
+        svg.append(g);
+      }
+    });
+    const base = TOP + lanes.length * ROW;
+    segs.forEach(([a, b], i) => {
+      if (i) {
+        const gx = offsets[i] - GW / 2;
+        svg.append(svgEl("line", { x1: gx - 2, x2: gx - 2, y1: TOP, y2: base - 6, stroke: "var(--axis)" }), svgEl("line", { x1: gx + 2, x2: gx + 2, y1: TOP, y2: base - 6, stroke: "var(--axis)" }));
+        svg.append(svgEl("g", { "data-tip": `空档 ${fmtMin((a - segs[i - 1][1]) / 60000)}` }, svgEl("rect", { x: gx - 7, y: TOP, width: 14, height: base - TOP, fill: "transparent" })));
+      }
+      const px = x(b) - x(a);
+      const step = [15, 30, 60, 120, 240, 480, 960].map((m) => m * 60000).find((s) => (s / Math.max(b - a, 1)) * px >= 70);
+      if (!step) return;
+      for (let t = Math.ceil(a / step) * step; t <= b; t += step) {
+        svg.append(svgEl("line", { class: "gridl", x1: x(t), x2: x(t), y1: base - 4, y2: base }));
+        svg.append(svgEl("text", { x: x(t), y: base + 14, "text-anchor": "middle" }, fmtClock(t)));
+      }
+    });
+    return svg;
+  };
+
+  const hbars = (rows, unitFmt, ariaLabel, W) => {
+    const max = Math.max(1, ...rows.map((r) => r.value || 0));
+    const narrow = W < 600, LW = narrow ? 76 : 120, VW = narrow ? 120 : 280, ROW = 26;
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${rows.length * ROW + 4}`, role: "img", "aria-label": ariaLabel });
+    rows.forEach((r, i) => {
+      const y = i * ROW;
+      svg.append(svgEl("text", { x: LW - 8, y: y + 16, "text-anchor": "end" }, r.label));
+      if (r.value === null || r.value === undefined) { svg.append(svgEl("text", { x: LW, y: y + 16 }, narrow ? "未记录" : `未记录：${r.reason || "缺数"}`)); return; }
+      const w = r.value > 0 ? Math.max(((W - LW - VW) * r.value) / max, 2) : 0;
+      const g = svgEl("g", { "data-tip": r.tip || `${r.label}：${r.text || unitFmt(r.value)}` });
+      g.append(svgEl("rect", { x: LW, y, width: W - LW - VW, height: ROW - 4, fill: "transparent" }), svgEl("rect", { x: LW, y: y + 5, width: w, height: ROW - 14, rx: 2, fill: r.color || "var(--s1)" }));
+      g.append(svgEl("text", { x: LW + w + 8, y: y + 16 }, (narrow ? r.short : r.text) || unitFmt(r.value)));
+      svg.append(g);
+    });
+    return svg;
+  };
+
+  const ver = val(S && S.verification);
+  const merges = val(S && S.merges);
+  const failures = S ? Object.values(S.failures || {}).map(val) : [];
+  const failureSum = failures.every((n) => typeof n === "number") ? failures.reduce((a, b) => a + b, 0) : null;
+  const overhead = (val(S && S.overhead) || []).map((o) => val(o.minutes)).filter((n) => typeof n === "number").sort((a, b) => a - b);
+  const median = overhead.length ? overhead[Math.floor(overhead.length / 2)] : null;
+  put("verify-tiles", 
+    tile(ver ? `${ver.fullCount} 次` : "未记录", "完整验证", ver ? `共 ${fmtMin(ver.fullMinutes)}` : why(S && S.verification)),
+    tile(ver ? `${ver.staticCount} 次` : "未记录", "静态检查"),
+    tile(merges ? `${merges.landCount} 次` : "未记录", "合并（land）", merges ? `完整验证失败 ${merges.fullVerificationFailures} 次` : null),
+    tile(failureSum === null ? "未知" : `${failureSum} 次`, "流程故障", "派发无汇报、land 停下、验证启动失败"),
+    tile(val(S && S.userInterventions) === null || !S ? "未知" : `${val(S.userInterventions)} 次`, "用户介入"),
+    tile(median === null ? "未知" : fmtMin(median), "开工开销（中位）", "派发到第一次改文件"),
+  );
+  if (S) {
+    const n = val(S.usage.subagentNotifications);
+    put("usage-note", n === null ? `任务通知里的子代理 token：未记录（${why(S.usage.subagentNotifications)}）。` : `任务通知报的子代理 token 合计 ${fmtTok(n)}，可和上面子代理一行互相核对。`);
+  }
+
+  const USAGE = [["codexDispatch", "Codex 派发"], ["codexReview", "Codex 审查"], ["mainSession", "主会话"], ["independentReview", "独立审查"], ["subagents", "子代理"]];
+  const drawCharts = () => {
+    drawGoals();
+    for (const slot of ["timeline", "time-bars", "usage-bars"]) $(slot).replaceChildren();
+    put("timeline", timeline());
+    const bw = Math.max(300, $("time-bars").clientWidth);
+    put("time-bars", S ? hbars(LANES.map(([key, name, color]) => ({ label: name, color, value: (val(S.time[key]) || {}).minutes ?? null, reason: why(S.time[key]) })), fmtMin, "各类时间的分钟数", bw) : el("p", { class: "empty", text: "没有评分表数据。" }));
+    put("usage-bars", S ? hbars(USAGE.map(([key, label]) => {
+      const u = val(S.usage[key]);
+      return { label, value: u ? u.inputTokens : null, reason: why(S.usage[key]), short: u ? `输入 ${fmtTok(u.inputTokens)}` : null,
+        text: u ? `输入 ${fmtTok(u.inputTokens)}（缓存 ${Math.round((100 * u.cachedInputTokens) / (u.inputTokens || 1))}%）· 输出 ${fmtTok(u.outputTokens)}` : null };
+    }), fmtTok, "各来源的输入 token", bw) : el("p", { class: "empty", text: "没有评分表数据。" }));
+  };
+  drawCharts();
+  const resize = { timer: 0, width: innerWidth };
+  addEventListener("resize", () => {
+    if (innerWidth === resize.width) return;
+    resize.width = innerWidth;
+    clearTimeout(resize.timer);
+    resize.timer = setTimeout(drawCharts, 150);
+  });
+
+  const table = (head, rows) => el("div", { class: "tw" }, el("table", {}, el("thead", {}, el("tr", {}, head.map(([t, num]) => el("th", { class: num ? "num" : null, text: t })))),
+    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el("td", { class: head[i][1] ? "num" : null }, c)))))));
+  put("dispatch-table", dispatches.length ? table([["记录"], ["工单"], ["类别"], ["开始"], ["分钟", 1], ["退出码", 1], ["输入", 1], ["输出", 1]],
+    dispatches.map((d) => { const u = val(d.usage); return [d.record || "", d.ticket ? issue(d.ticket) : "", val(d.category) ?? "未知", fmtTime(val(d.start)), fmtNum(val(d.minutes), 1), String(val(d.exitCode) ?? "未知"), fmtTok(u && u.inputTokens), fmtTok(u && u.outputTokens)]; }))
+    : el("p", { class: "empty", text: "无" }));
+  const runs = (ver && ver.runs) || [];
+  put("verify-table", runs.length ? table([["层"], ["对象"], ["调用方"], ["开始"], ["排队", 1], ["运行", 1], ["退出码", 1]],
+    runs.map((r) => [r.layer === "full" ? "完整" : "静态", r.target.kind === "main" ? "主工作区" : `${r.target.kind === "pr" ? "PR" : "工单"} #${r.target.number}`, r.caller, fmtTime(r.start), fmtNum(r.queuedMinutes, 1), fmtNum(r.minutes, 1), String(r.exitCode)]))
+    : el("p", { class: "empty", text: "无" }));
+
+  const risks = R.risks || [];
+  const LEVEL = { critical: "高", serious: "中", warning: "低", good: "已处理" };
+  put("risks", risks.length ? risks.map((r) => el("div", { class: "card" },
+    el("h3", {}, status(r.level || "warning", LEVEL[r.level] || ""), " ", r.what),
+    r.impact ? el("div", { text: `影响：${r.impact}` }) : null,
+    r.next ? el("div", { class: "muted", text: `去向：${r.next}` }) : null))
+    : el("p", { class: "empty", text: "无" }));
+
+  put("findings", el("h3", { text: "流程发现" }), (R.findings || []).length ? el("ul", { class: "plain" }, R.findings.map((f) => el("li", { text: f }))) : el("p", { class: "empty", text: "无" }));
+  const notes = [...(R.notes || []).map((n) => [n.item, n.note]), ...((S && S.missing) || []).map((m) => [`评分表缺数：${m.field}`, m.reason])];
+  put("notes", el("h3", { text: "数据口径与缺项" }), notes.length ? table([["项"], ["说明"]], notes) : el("p", { class: "empty", text: "无" }));
+  $("footer").textContent = S ? `过程数据来自评分表（tickets.ts scorecard ${R.spec}），截点 ${fmtTime(S.cutoffAt)}，采集 ${fmtTime(S.collectedAt)}。目标、证据、决定和风险由设计负责人填写。` : "没有评分表数据。";
+}
+</script>
+</body>
+</html>

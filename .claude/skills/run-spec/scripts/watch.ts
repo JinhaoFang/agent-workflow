@@ -195,6 +195,8 @@ export const watchCommand: Command = {
   passthrough: true,
   execute: watch,
   help: `${entry} watch --every <分钟> --rules <规则文件> [--name <名字>] [--dry-run] -- <状态命令…>
+请在后台运行（例如 Claude Code 的 run_in_background），结束时会收到通知，不用轮询；
+前台运行会一直占住会话。
 立即运行一次只读状态命令；每次 OK 后等待指定分钟数再运行，支持小数（至少 1 毫秒）。
 命令和参数通过数组原样传入，不经 shell；相对路径按当前目录解析，规则文件启动时读取一次。
 合并标准输出和错误输出，只把末尾 ${outputLimit} 个 UTF-8 字节交给小模型；状态命令失败信息也交给它判断。

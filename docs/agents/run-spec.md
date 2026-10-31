@@ -12,6 +12,8 @@
 | 配置项 | 本仓库的值 | 为什么 |
 |---|---|---|
 | `verificationCommand` | `["pnpm", "verify"]` | 类型检查、注释位置、文档命令、全部测试，步骤见 `tools/verify.ts`。 |
+| `staticCheckCommand` | `["pnpm", "verify", "--static"]` | 只跑类型检查、注释位置和文档命令，不跑测试；开发时配合相关测试使用，完整验证由 `land` 跑。 |
+| `staticOnlyPaths` | `["**/*.md"]` | 按扩展名匹配 Markdown，包含根目录文件；JSON 配置、HTML 汇报和代码仍跑完整验证。 |
 | `installCommand` | `["pnpm", "install", "--frozen-lockfile"]` | 按锁文件安装。 |
 | `symlinkDirectories` | `[".agents"]` | 第三方技能（Matt 的技能），Codex 要读。 |
 | `acceptanceRoot` | `"out/qa"` | 验收产物不进 git。 |

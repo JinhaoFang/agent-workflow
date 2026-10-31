@@ -383,7 +383,7 @@ const doctor = (values: Values): void => {
   let config: DispatchConfig | undefined;
   check(
     "执行配置完整",
-    "按 docs/agents/run-spec.md 补齐或修正 docs/agents/run-spec.json 的必填项；可选 codexConcurrency 为正整数（默认 2，可由 RUN_SPEC_CODEX_CONCURRENCY 覆盖），prCheckCommand 为非空参数数组（默认 gh pr checks {pr} --watch），verificationEnv 为字符串到字符串的对象（默认 {}），exclusiveVerification 为布尔值（默认 false），disposableIgnored 为 gitignore 模式数组（默认 []）。",
+    "按 docs/agents/run-spec.md 补齐或修正 docs/agents/run-spec.json 的必填项；可选 codexConcurrency 为正整数（默认 2，可由 RUN_SPEC_CODEX_CONCURRENCY 覆盖），prCheckCommand 为非空参数数组（默认 gh pr checks {pr} --watch），verificationEnv 为字符串到字符串的对象（默认 {}），exclusiveVerification 为布尔值（默认 false），disposableIgnored 为 gitignore 模式数组（默认 []）；staticCheckCommand 为非空参数数组，staticOnlyPaths 为 gitignore 模式数组，后者需要同时配置前者。",
     () => {
       try {
         config = dispatchConfig(root);
@@ -402,6 +402,8 @@ const doctor = (values: Values): void => {
     "prCheckCommand",
     "exclusiveVerification",
     "disposableIgnored",
+    "staticCheckCommand",
+    "staticOnlyPaths",
   ] as const)
     check(
       `可选配置 ${key}`,
@@ -549,6 +551,9 @@ Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签�
 codex-dispatch、run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；
 执行配置完整、主工作区派发脚本存在；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
 报告可选配置 codexConcurrency、prCheckCommand、verificationEnv、exclusiveVerification、disposableIgnored 的实际取值及来源；
+报告 staticCheckCommand（默认 null，未配置）、staticOnlyPaths（默认 []）的实际取值及来源；
+staticCheckCommand 为非空参数数组；staticOnlyPaths 为非空单行 gitignore 模式的数组，不能含 NUL；
+只配 staticOnlyPaths 是配置错误；上述两项格式或组合错误以 2 退出。
 disposableIgnored 默认 []，每项为非空单行 gitignore 模式，不能含 NUL；格式错误退出 2；
 verificationEnv 显示替换 {mainRoot} 并保留已有进程环境后的实际值与逐变量来源；格式错误退出 2；
 软链接目录用临时目录中的同名软链接实测，识别带末尾斜杠的无效规则；

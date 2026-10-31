@@ -199,6 +199,45 @@ console.log("codex-cli 0.1.0 (fixture)");
   };
 };
 
+test("doctor reports static configuration values and sources and rejects malformed combinations with exit 2", () => {
+  const f = fixture();
+  try {
+    for (const configured of [false, true]) {
+      f.write("docs/agents/run-spec.json", JSON.stringify({
+        ...f.config,
+        ...(configured ? { staticCheckCommand: ["pnpm", "verify", "--static"], staticOnlyPaths: ["**/*.md"] } : {}),
+      }));
+      const result = f.run();
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes(`可选配置 staticCheckCommand；实际取值 ${configured ? '["pnpm","verify","--static"]' : 'null'}；来源：${configured ? "配置" : "默认"}`));
+      assert.ok(result.stdout.includes(`可选配置 staticOnlyPaths；实际取值 ${configured ? '["**/*.md"]' : '[]'}；来源：${configured ? "配置" : "默认"}`));
+      const directory = process.env.TICKET_4_EVIDENCE;
+      if (directory) {
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(join(directory, `doctor-${configured ? "layered" : "legacy"}.log`), result.stdout + result.stderr);
+      }
+    }
+    for (const options of [
+      { staticCheckCommand: "pnpm verify --static" },
+      { staticCheckCommand: [] },
+      { staticCheckCommand: ["node", " "] },
+      { staticCheckCommand: null },
+      { staticOnlyPaths: ["**/*.md"] },
+      { staticOnlyPaths: [] },
+      { staticCheckCommand: ["node"], staticOnlyPaths: "**/*.md" },
+      { staticCheckCommand: ["node"], staticOnlyPaths: [1] },
+      { staticCheckCommand: ["node"], staticOnlyPaths: [""] },
+      { staticCheckCommand: ["node"], staticOnlyPaths: ["a\nb"] },
+      { staticCheckCommand: ["node"], staticOnlyPaths: ["a\0b"] },
+    ]) {
+      f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, ...options }));
+      const result = f.run();
+      assert.equal(result.status, 2, result.stdout + result.stderr);
+      assert.match(result.stderr, /出错：.*static(?:CheckCommand|OnlyPaths)/);
+    }
+  } finally { f.cleanup(); }
+});
+
 test("doctor reports verification defaults and effective configured values/sources, including environment overrides", () => {
   const f = fixture();
   try {

@@ -4,6 +4,7 @@
  * in every element, including the executable. Inherit output and preserve exit
  * status; launch/signal failures exit 2. --dry-run prints the command only.
  * Apply verificationEnv; custom checks share the repository verification mutex.
+ * Append one main-owned ledger entry for default and custom check commands.
  */
 import {
   dispatchConfig,
@@ -14,7 +15,10 @@ import {
   type Command,
   type Values,
 } from "./shared.ts";
-import { runVerification } from "./verification-lock.ts";
+import {
+  withVerificationRecord,
+  verificationLedgerHelp,
+} from "./verification-ledger.ts";
 
 const prCheck = async (values: Values, numbers: number[]): Promise<void> => {
   const checkout = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
@@ -31,24 +35,32 @@ const prCheck = async (values: Values, numbers: number[]): Promise<void> => {
   const root = git(checkout, ["worktree", "list", "--porcelain"])
     .split("\n")[0]
     .slice(9);
-  const result = await runVerification(
-    checkout,
-    config.exclusiveVerification &&
-      JSON.stringify(config.prCheckCommand) !==
-        JSON.stringify(defaultPrCheckCommand),
-    program,
-    args,
-    {
-      cwd: checkout,
-      env: { ...process.env, ...verificationEnvironment(config, root) },
-      stdio: "inherit",
+  await withVerificationRecord(
+    root,
+    "pr-check",
+    { kind: "pr", number: numbers[0] },
+    false,
+    async (attempt) => {
+      const result = await attempt.run(
+        checkout,
+        config.exclusiveVerification &&
+          JSON.stringify(config.prCheckCommand) !==
+            JSON.stringify(defaultPrCheckCommand),
+        program,
+        args,
+        {
+          cwd: checkout,
+          env: { ...process.env, ...verificationEnvironment(config, root) },
+          stdio: "inherit",
+        },
+      );
+      if (result.error)
+        throw new Error("PR 检查命令无法运行，请检查程序路径和运行权限。");
+      if (result.signal)
+        throw new Error(`PR 检查命令被信号 ${result.signal} 中断。`);
+      process.exitCode = result.status ?? 2;
     },
   );
-  if (result.error)
-    throw new Error("PR 检查命令无法运行，请检查程序路径和运行权限。");
-  if (result.signal)
-    throw new Error(`PR 检查命令被信号 ${result.signal} 中断。`);
-  process.exitCode = result.status ?? 2;
 };
 
 export const prCheckCommand: Command = {
@@ -67,5 +79,6 @@ POSIX 独立进程组全部退出后才回收；Windows 不支持进程组，仍
 默认 gh pr checks 命令不取锁，即使显式配置为默认数组。
 程序和参数通过数组传入，不经 shell；直接显示命令输出，退出码与命令一致。
 参数错误、程序无法启动或被信号中断时以 2 退出。
+${verificationLedgerHelp}
 --dry-run 只打印替换后的命令和运行目录，不执行命令。`,
 };
