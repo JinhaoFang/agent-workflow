@@ -417,10 +417,12 @@ export const dispatchCommand: Command = {
   help: `${entry} dispatch <工单> [--note <文字> | --note-file <文件>] [--allow-push] [--resume] [--dry-run]
 读取 docs/agents/run-spec.json，为工程工单准备或复用干净的 worktree，
 在该目录前台运行派发脚本，透传记录名、进度路径和退出码。
+一个 worktree 同时只跑一个 Codex；普通派发同样在有活着的运行或进行中的 rebase 时拒绝。
 --allow-push 只允许把本工单分支推送到远端，不开 PR，不推送其他分支；
 不带时指令仍为「不要推送」。
 补充说明支持 UTF-8 文件；非空说明先评论到工单，标题含本次记录名，
 正文保留原文；返工也评论并自动要求另起提交。无说明时不评论。
+补充说明里有引号、换行或以 - 开头时用 --note-file。
 --resume 在不干净的原 worktree 里续做中断的派发，保留未提交改动，不要求返工另起提交；
 worktree 不存在、干净、有活着的运行或进行中的 rebase 时拒绝并说明。
 读取工单正文和评论，父 spec 只读正文；未挂 spec 时提示 link 命令。
