@@ -15,6 +15,7 @@
  * and preserves existing process values; exclusiveVerification defaults false.
  * disposableIgnored defaults to [] and accepts one gitignore pattern per string.
  * Commands retain required numeric positionals, may add optionalPositionals,
+ * or use textPositionals to receive task text in the handler's args array.
  * and may opt into passthrough for untouched arguments after the first `--`.
  * Handlers may return a promise; the CLI awaits dispatch queueing and failures.
  * Parent lookup diagnoses HTTP 404 with a link command using the current spec
@@ -55,6 +56,7 @@ export type Command = {
   options: Options;
   positionals: number;
   optionalPositionals?: number;
+  textPositionals?: boolean;
   passthrough?: boolean;
   normalizeArgs?: (args: string[]) => string[];
   execute: (
@@ -194,7 +196,7 @@ export const github = (dryRun: boolean) => {
 
 export const recordName = (file: string): string =>
   file.replace(
-    /(?:\.progress\.log|\.events\.jsonl|\.(?:json|jsonl|md|log))$/,
+    /(?:\.progress\.log|\.events\.jsonl|\.batch\.json|\.(?:json|jsonl|md|log))$/,
     "",
   );
 
@@ -445,8 +447,11 @@ export const runClaude = (options: {
   tools: string[];
   cwd: string;
   model?: string;
+  effort?: string;
+  launcher?: { executable: string; args: string[] };
 }): ClaudeResult => {
   const args = [
+    ...(options.launcher?.args ?? []),
     "-p",
     "--output-format",
     "json",
@@ -455,8 +460,9 @@ export const runClaude = (options: {
     "--tools",
     options.tools.join(","),
     ...(options.model ? ["--model", options.model] : []),
+    ...(options.effort ? ["--effort", options.effort] : []),
   ];
-  const result = spawnSync("claude", args, {
+  const result = spawnSync(options.launcher?.executable ?? "claude", args, {
     cwd: options.cwd,
     input: options.prompt,
     encoding: "utf8",
@@ -597,7 +603,9 @@ export const runCommands = (
   ) {
     throw usageError("缺少必需参数或有多余位置参数。", definition.help);
   }
-  return definition.execute(values, positionals.map(issueNumber), args);
+  return definition.textPositionals
+    ? definition.execute(values, [], positionals)
+    : definition.execute(values, positionals.map(issueNumber), args);
 };
 
 export const entry = "node .claude/skills/run-spec/scripts/tickets.ts";

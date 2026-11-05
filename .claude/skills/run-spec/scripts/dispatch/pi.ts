@@ -66,13 +66,13 @@ function usageFor(message: Event): Usage | null {
   return Number.isSafeInteger(input) ? { input, cached: value.cacheRead, output: value.output } : null;
 }
 
-function actualEffort(events: Event[], root: string): string | null {
+function actualEffort(events: Event[], root: string, recordsRoot = root): string | null {
   const changed = events.filter(event => event.type === "thinking_level_changed" && typeof event.level === "string").at(-1);
   if (changed) return changed.level;
   const id = events.find(event => event.type === "session")?.id;
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]+$/.test(id)) return null;
   try {
-    const runs = join(root, ".codex-runs");
+    const runs = join(recordsRoot, ".codex-runs");
     for (const directory of readdirSync(runs, { withFileTypes: true })) {
       if (!directory.isDirectory() || !directory.name.endsWith(".pi-sessions")) continue;
       for (const file of readdirSync(join(runs, directory.name))) {
@@ -106,6 +106,15 @@ export const pi: Adapter = {
     mkdirSync(sessions, { recursive: true });
     tools.clear();
     return { executable: launcher.executable, args, stdin: settings.permission === "read-only" ? `${prompt}\n\n只读权限：只允许读取文件、运行 git diff 等不改文件的命令；禁止写文件、修改配置或执行会产生文件改动的测试。bash 不受系统沙箱约束，请严格遵守。` : prompt };
+  },
+  restrictedCommand({ prompt, settings, detection, env, tools: profile }) {
+    const launcher = detection.launcher ?? resolveLauncher(env, settings.path);
+    const args = [...launcher.args, "--mode", "json", "--approve", "--no-session", "--no-extensions", "--no-mcp"];
+    if (settings.model !== null) args.push("--model", settings.model);
+    if (settings.effort !== null) args.push("--thinking", settings.effort);
+    args.push(...(profile === "files" ? ["--tools", "read,grep,find,ls"] : ["--no-tools"]));
+    tools.clear();
+    return { executable: launcher.executable, args, stdin: prompt };
   },
   isolationArgs: () => ["--no-skills"],
   permissions: {
@@ -151,7 +160,7 @@ export const pi: Adapter = {
     if (event.type === "error" || (event.type === "auto_retry_end" && event.success === false)) return [{ kind: "error", text: String(event.finalError ?? event.message ?? event.error ?? "pi 运行失败") }];
     return [];
   },
-  outcome({ code, failed, events, root }) {
+  outcome({ code, failed, events, root, recordsRoot }) {
     const messages = events.filter(event => event.type === "message_end" && event.message?.role === "assistant").map(event => event.message);
     const usage = messages.map(usageFor);
     const totals = usage.reduce<Usage>((total, value) => ({ input: total.input + (value?.input ?? 0), cached: total.cached + (value?.cached ?? 0), output: total.output + (value?.output ?? 0) }), { input: 0, cached: 0, output: 0 });
@@ -162,7 +171,7 @@ export const pi: Adapter = {
       success: code === 0 && !failed && settled > activity && events[settled]?.aborted === false && last?.stopReason === "stop" && !messages.some(message => ["error", "aborted", "length"].includes(message.stopReason)) && !events.some(event => event.type === "error" || (event.type === "auto_retry_end" && event.success === false)),
       usage: usage.length > 0 && usage.every(value => value !== null) && Object.values(totals).every(Number.isSafeInteger) ? totals : null,
       actualModel: typeof last?.provider === "string" && typeof last.model === "string" ? `${last.provider}/${last.model}` : null,
-      actualEffort: typeof last?.thinkingLevel === "string" ? last.thinkingLevel : actualEffort(events, root),
+      actualEffort: typeof last?.thinkingLevel === "string" ? last.thinkingLevel : actualEffort(events, root, recordsRoot),
     };
   },
 };

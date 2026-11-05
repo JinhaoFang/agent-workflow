@@ -87,6 +87,7 @@ const fixture = (
 const fs = require("node:fs");
 const path = require("node:path");
 const base = process.env.WATCH_FIXTURE;
+if (process.argv.includes('--version')) { console.log('fixture claude'); process.exit(0); }
 const log = path.join(base, "claude-calls.jsonl");
 const previous = fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\\n").length : 0;
 const reply = JSON.parse(fs.readFileSync(path.join(base, "replies.json"), "utf8"))[previous];
@@ -124,6 +125,7 @@ process.exitCode = status.exit ?? 0;
     ...process.env,
     PATH: `${bin}${delimiter}${process.env.PATH}`,
     WATCH_FIXTURE: temporary,
+    XDG_CONFIG_HOME: join(temporary, "xdg"),
   };
   const args = [
     "watch",
@@ -508,4 +510,24 @@ test("watch dry-run previews main log and literal argv without running or writin
   } finally {
     f.cleanup();
   }
+});
+
+test("watch uses configured Claude path/model/effort and never expands the empty tool set", () => {
+  const f = fixture([{ text: "DONE: 检查完成" }]);
+  try {
+    const directory = join(f.env.XDG_CONFIG_HOME, "agent-workflow");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "seats.json"), JSON.stringify({
+      seats: { watch: { default: { agent: "claude", model: "custom-watch", effort: "low", permission: "full" } } },
+      agents: { claude: { path: join(f.bin, "claude") } },
+    }));
+    const result = f.run();
+    assert.equal(result.status, 0, result.stderr);
+    const [call] = f.calls("claude");
+    assert.equal(call.args[call.args.indexOf("--model") + 1], "custom-watch");
+    assert.equal(call.args[call.args.indexOf("--effort") + 1], "low");
+    assert.equal(call.args[call.args.indexOf("--tools") + 1], "");
+    assert.ok(!call.args.includes("--settings"));
+    assert.ok(!call.args.includes("--permission-mode"));
+  } finally { f.cleanup(); }
 });

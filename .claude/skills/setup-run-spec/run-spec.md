@@ -58,7 +58,7 @@ npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill se
 }
 ```
 
-五个席位是 `engineering`、`review`、`spec-review`、`research`、`watch`。每个席位写 `default` 加工作类型命名档，每档字段为 `agent`（`codex`、`claude`、`pi`）、`model`、`effort`、`permission`（`read-only`、`workspace-write`、`full`）。模型与强度可为 `null`，表示交给框架默认；模型名用各框架自己的写法。`review` 还可写非空列表，`doctor` 逐项展示；单次派发入口不展开审查列表。
+五个席位是 `engineering`、`review`、`spec-review`、`research`、`watch`。每个席位写 `default` 加工作类型命名档，每档字段为 `agent`（`codex`、`claude`、`pi`）、`model`、`effort`、`permission`（`read-only`、`workspace-write`、`full`）。模型与强度可为 `null`，表示交给框架默认；模型名用各框架自己的写法。`review` 还可写非空列表，`doctor` 逐项展示；用 `tickets.ts run --seat review` 启动整批，`review --record <批次前缀>` 合计各份用量和模型。辅助派发用 `run --seat research --spec <S>` 自动关联评分表，参数见 `run --help`。
 
 pi 的模型写 `提供商/模型`，强度传 `--thinking`；权限损失、技能隔离和会话位置见[接入说明](../run-spec/scripts/dispatch/README.md)。
 
@@ -68,7 +68,7 @@ pi 的模型写 `提供商/模型`，强度传 `--thinking`；权限损失、技
 
 ## 执行时要知道的其他值
 
-- **`claude` CLI**：`review-spec` 调用 `claude -p`，`doctor` 检查它可用。
+- **受限席位**：`review-spec`、`watch` 分别读取 `spec-review`、`watch` 配置，默认仍为 Claude、Claude + haiku；前者仅给文件读取工具，后者不给工具。pi 不提供 Claude 专有费用明细；Codex 适配器不能保证等价工具裁剪，这两个命令拒绝启动，普通派发不受影响。
 - **本机说明**：`<开发环境文档>「本机说明」`。只在某台机器上成立的坑写在那里；派发、合并或验证报环境错误时读，平时不读。
 - **独占资源**：`<值>`。同一时间只能给一张工单用的资源（例如单张 GPU），没有写"无"。用到它的工单正文写一行「独占资源：<名称>」，`run-spec` 第 2 步一次只派一张。
 - **汇报目录**：`<值>`。汇报的写法见 `run-spec` 技能里的 `report.md`。

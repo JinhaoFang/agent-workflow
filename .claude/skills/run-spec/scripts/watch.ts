@@ -7,6 +7,7 @@
  * .codex-runs/watch-<name>.log. OK stays silent; DONE exits 0, PROBLEM (including
  * exhausted model retries) exits 1, and argument/local runtime errors exit 2.
  * --dry-run prints the plan without commands, model calls or filesystem writes.
+ * 按 watch 席位调用空工具档，默认 Claude + haiku 的参数保持原样。
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -25,12 +26,14 @@ import { join } from "node:path";
 import {
   entry,
   git,
-  runClaude,
   usageError,
   type ClaudeResult,
   type Command,
   type Values,
 } from "./shared.ts";
+
+import { callSeat, restrictedSeat } from "./seat-call.ts";
+import { describeSeat } from "./dispatch/settings.ts";
 
 const outputLimit = 16 * 1024;
 type Verdict = "OK" | "PROBLEM" | "DONE";
@@ -80,21 +83,21 @@ const statusOutput = (args: string[]) => {
 const verdictFrom = (response: ClaudeResult) => {
   if (response.error || response.exitCode !== 0)
     return {
-      error: response.error ?? `claude 调用失败（退出码 ${response.exitCode}）`,
+      error: response.error ?? `模型调用失败（退出码 ${response.exitCode}）`,
     };
   const [first, ...rest] = response.text.trim().split(/\r?\n/);
   const match = /^(OK|PROBLEM|DONE)(?:[ \t]*[:：][ \t]*(.*))?[ \t]*$/.exec(
     first,
   );
   if (!match)
-    return { error: "claude 回复首行无效，必须是 OK、PROBLEM 或 DONE。" };
+    return { error: "模型回复首行无效，必须是 OK、PROBLEM 或 DONE。" };
   return {
     verdict: match[1] as Verdict,
     reason: [match[2] ?? "", ...rest].join("\n").trim(),
   };
 };
 
-const watch = (values: Values, _numbers: number[], args: string[]): void => {
+const watch = async (values: Values, _numbers: number[], args: string[]): Promise<void> => {
   const interval = Number(values.every) * 60 * 1000;
   if (!Number.isSafeInteger(Math.ceil(interval)) || interval < 1)
     throw usageError(
@@ -119,9 +122,10 @@ const watch = (values: Values, _numbers: number[], args: string[]): void => {
     .slice("worktree ".length);
   if (!root) throw new Error("无法定位主工作区。");
   const log = join(root, ".codex-runs", `watch-${name}.log`);
+  const settings = restrictedSeat("watch", process.cwd());
   if (values["dry-run"]) {
     console.log(
-      `巡检计划：每次 OK 后等待 ${values.every} 分钟；状态命令 ${JSON.stringify(args)}；输出保留末尾 ${outputLimit} 字节；日志：${log}`,
+      `巡检计划：每次 OK 后等待 ${values.every} 分钟；状态命令 ${JSON.stringify(args)}；输出保留末尾 ${outputLimit} 字节；日志：${log}\n${describeSeat(settings)}`,
     );
     return;
   }
@@ -142,10 +146,10 @@ ${JSON.stringify(status)}`;
     let verdict: Verdict = "PROBLEM";
     let reason = "";
     for (let attempt = 0; attempt < 2; attempt++) {
-      const response = runClaude({
+      const response = await callSeat({
+        settings,
         prompt,
         tools: [],
-        model: "haiku",
         cwd: process.cwd(),
       });
       const parsed = verdictFrom(response);
@@ -155,7 +159,7 @@ ${JSON.stringify(status)}`;
         reason = parsed.reason ?? "";
         break;
       }
-      reason = `claude 连续两次调用或回复失败：${attempts.map((item, index) => `第 ${index + 1} 次：${item.failure}`).join("；")}`;
+      reason = `模型连续两次调用或回复失败：${attempts.map((item, index) => `第 ${index + 1} 次：${item.failure}`).join("；")}`;
     }
     appendFileSync(
       log,
@@ -200,8 +204,10 @@ export const watchCommand: Command = {
 立即运行一次只读状态命令；每次 OK 后等待指定分钟数再运行，支持小数（至少 1 毫秒）。
 命令和参数通过数组原样传入，不经 shell；相对路径按当前目录解析，规则文件启动时读取一次。
 合并标准输出和错误输出，只把末尾 ${outputLimit} 个 UTF-8 字节交给小模型；状态命令失败信息也交给它判断。
-复用公共 claude -p 调用：--model haiku --tools "" --strict-mcp-config --no-session-persistence；
-公共调用另带 --output-format json 读取用量。小模型失败或首行格式无效时重试一次，连续失败按问题退出。
+按 watch 席位配置启动；默认复用公共 claude -p 调用：--model haiku --tools "" --strict-mcp-config --no-session-persistence；
+公共调用另带 --output-format json 读取用量；配置路径、模型、强度均生效。
+pi 使用 --no-tools，缺少 Claude 费用明细；Codex 无等价空工具集，拒绝启动。
+本命令不给工具，不另加技能隔离开关；席位权限不能开放工具。小模型失败或首行格式无效时重试一次，连续失败按问题退出。
 回复首行约定：OK、PROBLEM、DONE，可加冒号和原因，或在后续行写原因。
 OK 完全静默；PROBLEM 打印原因并以 1 退出；DONE 打印原因并以 0 退出；参数错误或本地运行出错以 2 退出。
 每次判定追加时间、判定、状态结果、模型回复和重试信息到主工作区 .codex-runs/watch-<名字>.log。

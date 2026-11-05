@@ -74,6 +74,24 @@ if (process.env.CASE === 'nonzero') { console.error('pi 进程失败'); process.
   return { root, home, env, args, allowed, run, read, summary: () => JSON.parse(read(".json")), cleanup: () => rmSync(temporary, { recursive: true, force: true }) };
 };
 
+test("tickets run reads pi effort from main records while executing in a linked worktree", () => {
+  const f = fixture();
+  try {
+    const commit = spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "--allow-empty", "-m", "fixture"], { cwd: f.root, encoding: "utf8" });
+    assert.equal(commit.status, 0, commit.stderr);
+    const tree = `${f.root}.worktrees/29`;
+    const added = spawnSync("git", ["worktree", "add", "-b", "ticket/29", tree], { cwd: f.root, encoding: "utf8" });
+    assert.equal(added.status, 0, added.stderr);
+    const result = spawnSync(process.execPath, [join(import.meta.dirname, "tickets.ts"), "run", task, "--seat", "research", "--agent", "pi", "--name", "sample"], {
+      cwd: tree, env: { ...f.env, CASE: "session-effort" }, encoding: "utf8", timeout: 10000,
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(f.summary().actualEffort, "low");
+    assert.equal(f.summary().actualModel, "zai-coding-cn/glm-5.3-flash");
+    assert.ok(!existsSync(join(tree, ".codex-runs")));
+  } finally { f.cleanup(); }
+});
+
 test("pi CLI uses stdin, seat settings, explicit allowed skills and discoverable sessions", () => {
   const f = fixture();
   try {

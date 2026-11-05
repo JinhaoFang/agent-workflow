@@ -24,6 +24,7 @@
  * 保留 stdin、原始日志、统一事件、进度和 v1 全局登记；不接管窗口或托管服务。
  * 成败与用量由适配器给出，保存为同名 .json 和登记的 end 字段。
  * 外部信号只登记 interrupted，不伪造 end；仍存活的 agent 继续占名额。
+ * recordsRoot 可分离执行与记录目录，onRecord 在独占记录名确定后登记精确归属。
  */
 import { spawn } from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
@@ -49,7 +50,7 @@ export const settingsFor = (opts: Record<string, string>, root = process.cwd()):
   return settings[0];
 };
 
-export const run = async (args: string[], root = process.cwd()): Promise<number> => {
+export const run = async (args: string[], root = process.cwd(), options: { recordsRoot?: string; onRecord?: (name: string) => void } = {}): Promise<number> => {
   const parsed = parseArgs(args);
   const details = taskDetails(root, parsed);
   const dryRun = Boolean(process.env.CODEX_DRY_RUN);
@@ -60,20 +61,22 @@ export const run = async (args: string[], root = process.cwd()): Promise<number>
   }
   const adapter = dryRun ? null : adapterFor(settings.agent);
   const started = Date.now();
-  const paths = recordPaths(root, details.name, progressHeader(details.title, details.role?.name, started, adapter?.label ?? settings.agent), dryRun);
+  const recordsRoot = options.recordsRoot ?? root;
+  const paths = recordPaths(recordsRoot, details.name, progressHeader(details.title, details.role?.name, started, adapter?.label ?? settings.agent), dryRun);
   if (dryRun) {
     console.log(`记录名：${paths.name}\n----\n${details.prompt}`);
     return 0;
   }
   console.log(`记录名：${paths.name}\n进度：${paths.progress}`);
-  return runPrepared(adapter!, settings, parsed, details, paths, started, root);
+  options.onRecord?.(paths.name);
+  return runPrepared(adapter!, settings, parsed, details, paths, started, root, recordsRoot);
 };
 
 const adapterAvailable = (agent: string): boolean => {
   try { adapterFor(agent); return true; } catch { return false; }
 };
 
-const runPrepared = async (adapter: Adapter, settings: SeatSettings, parsed: ReturnType<typeof parseArgs>, details: ReturnType<typeof taskDetails>, paths: ReturnType<typeof recordPaths>, started: number, root: string): Promise<number> => {
+const runPrepared = async (adapter: Adapter, settings: SeatSettings, parsed: ReturnType<typeof parseArgs>, details: ReturnType<typeof taskDetails>, paths: ReturnType<typeof recordPaths>, started: number, root: string, recordsRoot: string): Promise<number> => {
   const registry = registryWriter(dispatchHome());
   writeFileSync(paths.raw, "");
   writeFileSync(paths.events, "");
@@ -105,11 +108,11 @@ const runPrepared = async (adapter: Adapter, settings: SeatSettings, parsed: Ret
   };
   const finish = (code: number | null, failed = false): number => {
     if (!adapter.writesReport && lastSay !== null) writeFileSync(paths.report, lastSay);
-    const outcome = adapter.outcome({ code, failed, events: rawEvents, settings, root });
+    const outcome = adapter.outcome({ code, failed, events: rawEvents, settings, root, recordsRoot });
     const exit = outcome.success ? 0 : code === 0 || code === null ? 1 : code;
     const minutes = ((Date.now() - started) / 60000).toFixed(1);
     const summary = { v: 1, id, name: paths.name, ...metadata, ...outcome, exit, processExit: code, started, at: Date.now(), minutes: Number(minutes) };
-    writeFileSync(join(root, ".codex-runs", `${paths.name}.json`), JSON.stringify(summary, null, 2) + "\n");
+    writeFileSync(join(recordsRoot, ".codex-runs", `${paths.name}.json`), JSON.stringify(summary, null, 2) + "\n");
     appendFileSync(paths.progress, progressFooter(exit, minutes, paths.report, adapter.label));
     registry({ ...summary, event: "end" });
     if (exit !== 0 && !interactive) for (const text of errors) console.log(`出错：${clip(text)}`);

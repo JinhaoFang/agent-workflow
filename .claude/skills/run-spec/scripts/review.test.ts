@@ -239,7 +239,7 @@ test("review comments original conclusion with root, nested agents and cumulativ
     assert.ok(body.startsWith(conclusion + "\n## 用量\n"));
     assert.match(
       body,
-      /派发 review-17-batch-2（会话 root）：用时 1.5 分钟，输入 1,000（其中缓存 800），输出 50 tokens/,
+      /派发 review-17-batch-2（框架 codex；模型 未知）（会话 root）：用时 1.5 分钟，输入 1,000（其中缓存 800），输出 50 tokens/,
     );
     assert.match(
       body,
@@ -587,3 +587,24 @@ for (const state of ["complete", "missing", "unflushed", "summary-only-tokens"] 
     }
   });
 }
+
+test("review batch keeps known totals and all model labels when one member has no usage", () => {
+  const first = `${name}-1-claude`;
+  const second = `${name}-2-pi`;
+  const input = {
+    [`.codex-runs/${name}.batch.json`]: JSON.stringify({ version: 1, seat: "review", spec: 17, prefix: name, records: [first, second] }),
+    [`.codex-runs/${first}.json`]: JSON.stringify({ v: 1, framework: "claude", success: true, minutes: 1, actualModel: "actual-claude", usage: { input: 120, cached: 50, output: 30 } }),
+    [`.codex-runs/${second}.json`]: JSON.stringify({ v: 1, framework: "pi", success: false, minutes: 2, actualModel: "actual-pi", usage: null }),
+  };
+  const result = run([...argumentsForReview, "--dry-run"], input, []);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /模型 actual-claude/);
+  assert.match(result.stdout, /模型 actual-pi/);
+  assert.match(result.stdout, /合计（已知部分；不完整）：用时 3 分钟，输入 120（其中缓存 50），输出 30 tokens/);
+  assert.match(result.stdout, /缺少完整用量/);
+  assert.match(result.stdout, /未成功结束/);
+  assert.doesNotMatch(result.stdout, /扫描限制|thread.started/);
+  const malformed = run([...argumentsForReview, "--dry-run"], { [`.codex-runs/${name}.batch.json`]: JSON.stringify({ version: 1, seat: "review", spec: 17, prefix: name, records: ["../escape"] }) }, []);
+  assert.equal(malformed.status, 2);
+  assert.deepEqual(malformed.calls, []);
+});

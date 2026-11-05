@@ -29,7 +29,13 @@
 
 `SeatSettings` 承载 `seat/workType/agent/model/effort/permission`，并保留 Codex 的 `tier/path`；新增 `sources` 保存逐字段来源、`fallbackReason` 保存工作类型回落原因，两项写入同名汇总及全局 start/end 登记。`settings.ts` 统一解析五个席位、用户 `seats.json`、仓库 `seats/agents/workTypes`、兼容环境及命令覆盖，字段和优先级见 setup-run-spec 的 `run-spec.md`。`tickets dispatch` 通过内部 `--settings <JSON>` 把已解析值传到工单 worktree，避免用 worktree 的旧仓库配置再次解析。
 
-`adapters.ts` 是适配器登记处；接入框架时在这里登记。配置允许三种框架，未登记时 dry-run 和 doctor 显示不可用，实际启动拒绝。`doctor` 直接取适配器的 `permissions` 显示参数、损失及只读限制，不复制权限表。`spec-review/watch` 的内置值已可解析，调用点及 review 列表执行由后续工单接入。
+`adapters.ts` 是适配器登记处；接入框架时在这里登记。配置允许三种框架，未登记时 dry-run 和 doctor 显示不可用，实际启动拒绝。`doctor` 直接取适配器的 `permissions` 显示参数、损失及只读限制，不复制权限表。
+
+`tickets.ts run <任务文件|任务文字> --seat <席位> [--spec <S>] [--name <记录名>]` 在当前工作区执行，记录统一写主工作区 `.codex-runs`；覆盖参数见 `run --help`。带 `--spec` 时逐份复用 `scorecard --record` 的精确关联存储，失败记录也保留关联；评分表把非规范命名的记录计为辅助派发，cleanup 沿用辅助原始证据保护。预览不启动模型、不写记录、清单、关联或 GitHub。已安装仓库无需迁移旧记录或配置。
+
+`review` 列表的各项依次收到相同提示，记录名为 `<批次前缀>-<序号>-<框架>`；单项保留前缀本身。带 spec 的 review 默认前缀为 `review-<S>`，重名将整个前缀追加 `-2`、`-3`。原子创建的 `<前缀>.batch.json` 保存全部精确名，`review --record <前缀>` 按清单合计、逐份列出实际模型；缺失或失败仍保留已知用量并注明不完整。批次清单不作为额外派发计入评分表。
+
+`review-spec` 读取 `spec-review` 席位，`watch` 读取 `watch` 席位。默认 Claude 的参数保持原样，分别只给 `Read,Glob,Grep` 和空工具集，关闭 MCP 与会话持久化；配置的路径、模型和强度生效，权限配置不能扩充工具。`seat-call.ts` 复用适配器检测、事件和成败用量；适配器可提供 `restrictedCommand`，工具档为 `files/none`。pi 对应 `read,grep,find,ls` 或 `--no-tools`，关闭扩展和 MCP，使用 `--no-session`；不运行技能发现，不另加技能隔离开关，Claude 专有费用明细不可用。Codex exec 的现有适配器无法保证同等工具集合，受限席位配置为 Codex 时以 2 拒绝启动，普通 research/review 派发照常支持 Codex。
 
 Codex 以进程非零退出、`turn.failed`、顶层 `error` 或非配置警告的 item `error` 判失败。缺用量不等于失败，用量记 `null`；完整 `turn.completed` 用量按轮相加。实际模型/强度优先从原始事件或匹配 cwd/thread 的本机 Codex 会话中读取。技能开关依据 [Codex 官方技能文档](https://developers.openai.com/codex/skills)：`skills.config` 支持每项以 `name` 或绝对 `path` 作为唯一选择器，`enabled=false` 禁用。
 

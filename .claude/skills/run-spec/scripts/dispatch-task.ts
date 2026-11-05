@@ -11,7 +11,7 @@ const help = `用法：node .claude/skills/run-spec/scripts/dispatch-task.ts <�
   [--model <模型>] [--effort <强度>] [--tier <档位>] [--sandbox <read-only|workspace-write|danger-full-access>]
 模型和强度未指定时沿用所选框架默认；过渡期兼容 CODEX_MODEL/CODEX_EFFORT/CODEX_TIER 和旧 config.json。
 席位读取 XDG_CONFIG_HOME/agent-workflow/seats.json（默认 ~/.config/agent-workflow/seats.json）和仓库 seats/agents/workTypes。
-逐字段优先级：参数 > 环境 > 仓库 > 用户 > 内置；空环境值按未设置处理；review 列表在此入口不展开。
+逐字段优先级：参数 > 环境 > 仓库 > 用户 > 内置；空环境值按未设置处理；review 列表在此入口不展开，用 tickets.ts run --seat review 启动整批。
 --settings <JSON> 为 tickets dispatch 内部传递已解析设置及来源，普通调用使用上述参数。
 按名称屏蔽 run-spec、setup-run-spec，其余技能照常可见。
 Claude 使用 stream-json；只读为 plan 加 Read/Glob/Grep/Bash/Skill，可写为 acceptEdits，完全为 bypassPermissions。

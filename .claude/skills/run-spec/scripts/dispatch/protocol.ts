@@ -71,6 +71,7 @@ export function recordPaths(root: string, requested: string, header: string, dry
   for (let n = 1; ; n++) {
     const name = n === 1 ? requested : `${requested}-${n}`;
     const progress = join(runs, `${name}.progress.log`);
+    if ([".md", ".log", ".events.jsonl", ".json"].some(suffix => existsSync(join(runs, `${name}${suffix}`)))) continue;
     if (dryRun) { if (existsSync(progress)) continue; }
     else {
       try { writeFileSync(progress, header, { flag: 'wx' }); }
