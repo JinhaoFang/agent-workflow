@@ -6,6 +6,7 @@
   "symlinkDirectories": [".agents"],
   "acceptanceRoot": "out/qa",
   "codexSandbox": "danger-full-access",
+  "workTypes": { "前端": "汇报模板等 HTML 页面" },
   "dispatchScript": ".claude/skills/codex-dispatch/codex-task.mjs",
   "prCheckCommand": ["pnpm", "ci:local", "{pr}"]
 }

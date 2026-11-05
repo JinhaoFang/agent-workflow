@@ -31,6 +31,8 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { codexVersion } from "./dispatchdock.ts";
+import { adapters } from "./dispatch/adapters.ts";
+import { describeSeat, frameworkSettings, resolveSeat, seatNames, SeatConfigError } from "./dispatch/settings.ts";
 import {
   CheckFailure,
   OptionalConfigError,
@@ -208,23 +210,6 @@ const doctor = (values: Values): void => {
     );
     return process.versions.node;
   });
-  check(
-    "Codex CLI 可用",
-    "安装 Codex CLI 并加入 PATH，或在 DispatchDock 的 config.json 配置 agents.codex.path 为可执行程序或 Node 入口的绝对路径。",
-    codexVersion,
-  );
-  check(
-    "claude CLI 可用",
-    "安装 Claude Code CLI，并确保 claude 在 PATH 上可执行。",
-    () => {
-      const result = spawnSync("claude", ["--version"], { encoding: "utf8" });
-      requireCheck(
-        !result.error && result.status === 0 && !!result.stdout?.trim(),
-        "无法运行 claude --version，请检查 claude 是否存在且可执行。",
-      );
-      return result.stdout.trim();
-    },
-  );
   check("gh 版本", "安装或升级 GitHub CLI 到 2.83.0 或更新版本。", () => {
     const result = ghResult(["--version"]);
     const match = /gh version (\d+)\.(\d+)\.(\d+)/.exec(result.stdout ?? "");
@@ -388,7 +373,7 @@ const doctor = (values: Values): void => {
       try {
         config = dispatchConfig(root);
       } catch (error) {
-        if (error instanceof OptionalConfigError) throw error;
+        if (error instanceof OptionalConfigError || error instanceof SeatConfigError) throw error;
         if (error instanceof SyntaxError)
           throw new CheckFailure("执行配置不是有效的 JSON。");
         if (error instanceof Error && /缺少|必须是/.test(error.message))
@@ -397,6 +382,49 @@ const doctor = (values: Values): void => {
       }
     },
   );
+  if (config) {
+    const seats = config.seatConfiguration;
+    const used = new Set<string>();
+    console.log(`用户席位配置：${seats.userFile}；${seats.userExists ? "已读取" : "文件不存在，使用仓库和内置默认"}`);
+    console.log(`工作类型词表：${JSON.stringify(seats.workTypes)}；来源：仓库 run-spec.json.workTypes`);
+    for (const [name, description] of Object.entries(seats.workTypes)) {
+      if (!Object.values(seats.user.seats ?? {}).some(profiles => Object.hasOwn(profiles, name)))
+        console.log(`提示：工作类型「${name}」（${description}）在词表内，但用户未配档；各席位按实际配置回落到 default。`);
+    }
+    for (const seat of seatNames) {
+      for (const workType of ["default", ...Object.keys(seats.workTypes)]) {
+        check(`席位配置 ${seat}.${workType}`, "修正 seats 分档、agents 框架配置或环境变量后重试。", () => {
+          const entries = resolveSeat(seats, seat, workType, {}, workType === "default" ? "内置默认" : "仓库 workTypes");
+          for (const [index, settings] of entries.entries()) {
+            used.add(settings.agent);
+            console.log(`${seat}.${workType}${entries.length > 1 ? `[${index}]` : ""}：${describeSeat(settings)}`);
+            const framework = frameworkSettings(seats, settings.agent);
+            console.log(`框架配置 ${settings.agent}：${JSON.stringify(framework)}`);
+            const adapter = adapters[settings.agent];
+            if (!adapter) {
+              console.log(`提示：框架 ${settings.agent} 尚未接入适配器，当前不可用；权限映射损失未知${settings.permission === "read-only" ? "，无法确认强制只读" : ""}。`);
+            } else {
+              const mapping = adapter.permissions[settings.permission];
+              console.log(`权限映射 ${settings.agent}/${settings.permission}：参数 ${JSON.stringify(mapping.args)}；损失：${mapping.loss ?? "无"}`);
+              if (mapping.loss && settings.permission === "read-only") console.log(`提示：只读席位 ${seat} 的强制只读存在限制：${mapping.loss}`);
+            }
+          }
+        });
+      }
+    }
+    for (const agent of used) {
+      const settings = frameworkSettings(seats, agent);
+      check(agent === "codex" ? "Codex CLI 可用" : agent === "claude" ? "claude CLI 可用" : `席位框架安装 ${agent}`, `安装 ${agent === "claude" ? "Claude Code CLI" : agent} 并加入 PATH，或配置 agents.${agent}.path。`, () => {
+        if (agent === "codex") return codexVersion(settings.path, settings.sources.path);
+        const path = settings.path ?? agent;
+        const result = spawnSync(/\.(?:js|mjs|cjs)$/i.test(path) ? process.execPath : path, [...(/\.(?:js|mjs|cjs)$/i.test(path) ? [path] : []), "--version"], { encoding: "utf8", timeout: 10000, shell: false });
+        requireCheck(!result.error && result.status === 0 && !!result.stdout.trim(), `框架 ${agent} 未安装或无法运行 ${path} --version`);
+        return `${result.stdout.trim()}；路径：${path}；来源：${settings.sources.path}${adapters[agent] ? "" : "；适配器尚未接入，派发不可用"}`;
+      });
+    }
+    check("兼容配置 codexSandbox/codexConcurrency", "权限建议迁到 seats.engineering.default.permission，并发迁到 agents.codex.concurrency。", () =>
+      `codexSandbox=${config!.codexSandbox}（来源：仓库旧项，仅作工程 Codex 的兼容默认）；codexConcurrency=${config!.codexConcurrency}（来源：${frameworkSettings(seats, "codex").sources.concurrency}）；建议改用 seats/agents，新席位字段优先。`);
+  }
   for (const key of [
     "codexConcurrency",
     "prCheckCommand",
@@ -433,7 +461,7 @@ const doctor = (values: Values): void => {
   check(
     "过时配置 dispatchScript",
     "删除执行配置中的 dispatchScript；run-spec 已自带派发层。",
-    () => config?.dispatchScript === undefined ? "未配置，无需处理" : "已忽略 dispatchScript，可以删除；派发使用 run-spec 内置入口。",
+    () => config?.dispatchScript === undefined ? "未配置，无需处理" : "已忽略 dispatchScript，可以删除；来源：仓库 run-spec.json.dispatchScript；派发使用 run-spec 内置入口。",
   );
   const directories: [string, string, boolean][] = [
     ["派发记录目录", ".codex-runs", false],
@@ -539,8 +567,13 @@ export const doctorCommand: Command = {
   execute: doctor,
   help: `${entry} doctor
 只读自检，逐项输出通过、不通过和修法，不改仓库、不改 GitHub。
+列出 seats 五个席位的 default 及 workTypes 各档实际值、逐字段来源、回落原因和 review 列表。
+用户文件 $XDG_CONFIG_HOME/agent-workflow/seats.json（默认 ~/.config/agent-workflow/seats.json）不存在时使用默认；格式错误退出 2。
+优先级：参数 > 环境变量 > 仓库 > 用户 > 内置；框架路径和并发放 agents，报告各框架安装情况。
+权限映射及损失直接取适配器 permissions；只读有损失时提示，未接适配器如实报告不可用。
+词表内用户未配档只提示；codexSandbox/codexConcurrency 继续兼容并建议迁移。
 检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18、claude CLI 可用；
-Codex CLI 先查 DispatchDock 配置 agents.codex.path，再查 PATH，并运行 --version；失败列出查找位置；
+Codex CLI 先查席位 agents.codex.path，兼容旧 DispatchDock 配置，再查 PATH，并运行 --version；失败列出查找位置；
 GitHub 的 role:engineering、role:design、ready-for-human 标签、只允许 merge commit、合并后自动删除分支；
 Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签说明；
 run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；

@@ -228,6 +228,8 @@ process.stdout.write(JSON.stringify(response.value));
       installExit?: number;
       commentError?: boolean;
       cwd?: string;
+      body?: string;
+      env?: NodeJS.ProcessEnv;
     } = {},
   ) => {
     rmSync(join(temporary, "gh-calls.jsonl"), { force: true });
@@ -243,9 +245,10 @@ process.stdout.write(JSON.stringify(response.value));
     const expected = responses(
       options.state,
       options.engineering,
-      Boolean(note) && !args.includes("--dry-run"),
+      (Boolean(note) || args.some(arg => ["--work-type", "--agent", "--model", "--effort"].includes(arg))) && !args.includes("--dry-run"),
       options.commentError,
     );
+    Object.assign(expected[1].value, { body: options.body ?? "" });
     writeFileSync(join(temporary, "responses.json"), JSON.stringify(expected));
     const result = spawnSync(
       process.execPath,
@@ -258,10 +261,12 @@ process.stdout.write(JSON.stringify(response.value));
           ...process.env,
           PATH: `${temporary}${delimiter}${process.env.PATH}`,
           CODEX_DISPATCH_HOME: join(temporary, "dispatch-home"),
+          XDG_CONFIG_HOME: join(temporary, "xdg"),
           DISPATCH_FIXTURE_ROOT: temporary,
           CODEX_DISPATCH_TEST_AGENT: join(root, "fake-dispatch.cjs"),
           DISPATCH_FIXTURE_EXIT: String(options.exit ?? 0),
           INSTALL_FIXTURE_EXIT: String(options.installExit ?? 0),
+          ...options.env,
         },
       },
     );
@@ -313,6 +318,7 @@ process.stdout.write(JSON.stringify(response.value));
           ...process.env,
           PATH: `${temporary}${delimiter}${process.env.PATH}`,
           CODEX_DISPATCH_HOME: join(temporary, "dispatch-home"),
+          XDG_CONFIG_HOME: join(temporary, "xdg"),
           DISPATCH_FIXTURE_ROOT: temporary,
           CODEX_DISPATCH_TEST_AGENT: join(root, "fake-dispatch.cjs"),
           DISPATCH_FIXTURE_EXIT: "0",
@@ -323,6 +329,102 @@ process.stdout.write(JSON.stringify(response.value));
     },
   };
 };
+
+test("seat dispatch CLI resolves builtin/user/repository/environment/command layers and records effective sources", () => {
+  const f = fixture();
+  try {
+    const settings = (result: ReturnType<typeof f.run>) => {
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const args: string[] = JSON.parse(result.stdout.split("\n").find(line => line.startsWith("派发参数："))!.slice("派发参数：".length));
+      return JSON.parse(args[args.indexOf("--settings") + 1]);
+    };
+    const builtin = settings(f.run(["--dry-run"]));
+    assert.equal(builtin.agent, "codex");
+    assert.equal(builtin.model, null);
+    assert.equal(builtin.permission, "full");
+    assert.match(builtin.sources.permission, /codexSandbox/);
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { engineering: { default: { model: "user-model", effort: "high", permission: "read-only" } } }, agents: { codex: { concurrency: 3 } } }));
+    const user = f.run(["--dry-run"]);
+    assert.equal(settings(user).model, "user-model");
+    assert.match(settings(user).sources.model, /用户 .*seats.json/);
+    assert.match(user.stdout, /并发上限：3/);
+    writeFileSync(f.configFile, JSON.stringify({ ...f.config, seats: { engineering: { default: { model: "repo-model" } } }, agents: { codex: { concurrency: 4 } } }));
+    const repository = f.run(["--dry-run"]);
+    assert.equal(settings(repository).model, "repo-model");
+    assert.equal(settings(repository).effort, "high");
+    assert.match(settings(repository).sources.model, /仓库 run-spec.json/);
+    assert.match(repository.stdout, /并发上限：4/);
+    const env = { CODEX_MODEL: "env-model", CODEX_EFFORT: "low", RUN_SPEC_CODEX_CONCURRENCY: "5" };
+    const environment = f.run(["--dry-run"], { env });
+    assert.equal(settings(environment).model, "env-model");
+    assert.match(settings(environment).sources.model, /环境变量 CODEX_MODEL/);
+    assert.match(environment.stdout, /并发上限：5/);
+    const command = f.run(["--dry-run", "--agent", "codex", "--model", "command-model", "--effort", "medium"], { env });
+    assert.equal(settings(command).model, "command-model");
+    assert.equal(settings(command).effort, "medium");
+    assert.match(settings(command).sources.model, /命令参数 --model/);
+    assert.match(command.stdout, /评论预览：[\s\S]*本次派发参数覆盖/);
+    assert.ok(!existsSync(f.worktree));
+    const actual = f.run(["--model", "command-model", "--effort", "medium"], { env });
+    assert.equal(actual.status, 0, actual.stdout + actual.stderr);
+    const summary = JSON.parse(readFileSync(join(f.worktree, ".codex-runs/gh-21.json"), "utf8"));
+    assert.equal(summary.model, "command-model");
+    assert.equal(summary.effort, "medium");
+    assert.equal(summary.permission, "read-only");
+    assert.match(summary.sources.model, /命令参数 --model/);
+    assert.match(actual.comments[0].body, /本次派发参数覆盖/);
+    const registry = readFileSync(join(f.temporary, "dispatch-home/runs.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line));
+    assert.deepEqual(registry[0].sources, summary.sources);
+    assert.deepEqual(registry.at(-1).sources, summary.sources);
+  } finally { f.cleanup(); }
+});
+
+test("seat dispatch selects frontend pi, supports work type overrides, diagnoses fallback and rejects unknown types", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { engineering: { default: { agent: "codex" }, 前端: { agent: "pi", model: "zai-coding-cn/glm-5.3-flash" } } } }));
+    writeFileSync(f.configFile, JSON.stringify({ ...f.config, workTypes: { 前端: "汇报模板等 HTML 页面", 后端: "脚本" } }));
+    const frontend = f.run(["--dry-run"], { body: "## 任务\n\n工作类型：前端\n\n页面" });
+    assert.equal(frontend.status, 0, frontend.stdout + frontend.stderr);
+    assert.match(frontend.stdout, /工作类型：前端；框架：pi；模型：zai-coding-cn\/glm-5.3-flash/);
+    assert.match(frontend.stdout, /框架 pi 尚未接入适配器，当前不可用/);
+    assert.match(frontend.stdout, /工单正文 工作类型/);
+    const directory = process.env.TICKET_25_EVIDENCE;
+    if (directory) {
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, "dispatch-frontend-dry-run.log"), frontend.stdout + frontend.stderr);
+    }
+    const overridden = f.run(["--dry-run", "--work-type", "前端"], { body: "工作类型：后端" });
+    assert.equal(overridden.status, 0, overridden.stdout + overridden.stderr);
+    assert.match(overridden.stdout, /工作类型：前端；框架：pi/);
+    assert.match(overridden.stdout, /命令参数 --work-type/);
+    for (const [args, body] of [[[], "工作类型：后端"], [["--work-type", "后端"], "工作类型：前端"]] as const) {
+      const fallback = f.run(["--dry-run", ...args], { body });
+      assert.equal(fallback.status, 0, fallback.stdout + fallback.stderr);
+      assert.match(fallback.stdout, /工作类型「后端」.*回落到 default/);
+      assert.match(fallback.stdout, /工作类型：后端；框架：codex/);
+    }
+    for (const [args, body] of [[[], "工作类型：拼错"], [["--work-type", "拼错"], ""], [[], "工作类型："], [[], "工作类型：前端\n工作类型：后端"]] as const) {
+      const invalid = f.run(["--dry-run", ...args], { body });
+      assert.equal(invalid.status, 2, invalid.stdout + invalid.stderr);
+      assert.match(invalid.stderr, /^出错：.*工作类型/);
+    }
+    const unavailable = f.run([], { body: "工作类型：前端" });
+    assert.equal(unavailable.status, 2, unavailable.stdout + unavailable.stderr);
+    assert.match(unavailable.stderr, /pi 尚未接入适配器/);
+    assert.ok(!existsSync(f.worktree));
+    const actualFallback = f.run([], { body: "工作类型：后端" });
+    assert.equal(actualFallback.status, 0, actualFallback.stdout + actualFallback.stderr);
+    const summary = JSON.parse(readFileSync(join(f.worktree, ".codex-runs/gh-21.json"), "utf8"));
+    assert.equal(summary.workType, "后端");
+    assert.match(summary.fallbackReason, /回落到 default/);
+    if (directory) writeFileSync(join(directory, "dispatch-fallback-summary.json"), JSON.stringify(summary, null, 2));
+  } finally { f.cleanup(); }
+});
 
 test("layered dispatch prompts restrict development to related tests/static checks and route full checks through main verify", () => {
   for (const configured of [false, true]) {

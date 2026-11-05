@@ -82,7 +82,7 @@ export function recordPaths(root: string, requested: string, header: string, dry
 
 export function parseArgs(args: string[]) {
   const opts: Record<string, string> = {}, positional: string[] = [];
-  const names = ['role', 'name', 'host', 'model', 'effort', 'tier', 'sandbox', 'watch-window', 'seat'];
+  const names = ['role', 'name', 'host', 'model', 'effort', 'tier', 'sandbox', 'watch-window', 'seat', 'agent', 'work-type', 'permission', 'settings'];
   for (let k = 0; k < args.length; k++) {
     const a = args[k];
     if (a === '--') { positional.push(...args.slice(k + 1)); break; }

@@ -48,7 +48,7 @@ else {
   fs.writeFileSync(path.join(process.env.CODEX_HOME,'sessions','rollout-sample-thread.jsonl'), JSON.stringify({type:'session_meta',payload:{id:'sample-thread',cwd:process.cwd()}})+'\\n'+JSON.stringify({type:'turn_context',payload:{model:'actual-model',effort:'high'}})+'\\n');
 }
 `);
-  const env = { ...process.env, CODEX_DISPATCH_HOME: home, CODEX_HOME: codexHome, CODEX_DISPATCH_TEST_AGENT: fake, CODEX_MODEL: "", CODEX_EFFORT: "", CODEX_TIER: "", CODEX_SANDBOX: "" };
+  const env = { ...process.env, XDG_CONFIG_HOME: join(temporary, "xdg"), CODEX_DISPATCH_HOME: home, CODEX_HOME: codexHome, CODEX_DISPATCH_TEST_AGENT: fake, CODEX_MODEL: "", CODEX_EFFORT: "", CODEX_TIER: "", CODEX_SANDBOX: "" };
   const run = (scenario = "success", args: string[] = sample.task) => spawnSync(process.execPath, [entry, ...args], { cwd: root, env: { ...env, CASE: scenario }, encoding: "utf8", timeout: 10000 });
   return { root, home, env, run, summary: () => JSON.parse(readFileSync(join(root, ".codex-runs/sample.json"), "utf8")), cleanup: () => rmSync(temporary, { recursive: true, force: true }) };
 };

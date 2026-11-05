@@ -26,41 +26,54 @@
  * 外部信号只登记 interrupted，不伪造 end；仍存活的 agent 继续占名额。
  */
 import { spawn } from "node:child_process";
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { relative, resolve, join } from "node:path";
 import { createInterface } from "node:readline";
 import { dispatchHome } from "../dispatchdock.ts";
 import type { Adapter, Event, SeatSettings } from "./adapter.ts";
+import { agentNames, describeSeat, loadSeatConfiguration, resolveSeat, seatNames } from "./settings.ts";
+import { adapterFor } from "./adapters.ts";
 import { clip, formatProgress, parseArgs, progressFooter, progressHeader, recordPaths, registryWriter, taskDetails } from "./protocol.ts";
 
-export const settingsFor = (opts: Record<string, string>): SeatSettings => {
-  let legacy: Record<string, string | null> = {};
-  try {
-    const value = JSON.parse(readFileSync(join(dispatchHome(), "config.json"), "utf8"));
-    if (value.v === 1) legacy = value.agents?.codex ?? {};
-  } catch (error) {
-    if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+export const settingsFor = (opts: Record<string, string>, root = process.cwd()): SeatSettings => {
+  if (opts.settings !== undefined) {
+    let value;
+    try { value = JSON.parse(opts.settings); } catch { throw new Error("内部参数 --settings 必须是有效的席位 JSON 对象"); }
+    if (!value || !seatNames.includes(value.seat) || !agentNames.includes(value.agent) || typeof value.workType !== "string" || !value.workType || !["read-only", "workspace-write", "full"].includes(value.permission) || !["model", "effort", "path", "tier"].every(key => value[key] === null || typeof value[key] === "string"))
+      throw new Error("内部参数 --settings 缺少有效的席位、工作类型、框架、模型、强度、权限或路径");
+    return value as SeatSettings;
   }
-  const seat = opts.seat ?? "engineering";
-  if (!["engineering", "review", "research"].includes(seat)) throw new Error(`本入口尚不支持席位：${seat}`);
-  const sandbox = opts.sandbox ?? (seat === "engineering" ? process.env.CODEX_SANDBOX ?? legacy.sandbox ?? "workspace-write" : "read-only");
-  if (!["read-only", "workspace-write", "danger-full-access"].includes(sandbox)) throw new Error(`无效的 Codex 权限：${sandbox}`);
-  const value = (key: string) => opts[key] ?? (process.env[`CODEX_${key.toUpperCase()}`] || legacy[key] || null);
-  return { seat, workType: "default", agent: "codex", model: value("model"), effort: value("effort"), tier: value("tier"), path: legacy.path ?? null, permission: sandbox === "danger-full-access" ? "full" : sandbox as SeatSettings["permission"] };
+  const permission = opts.permission ?? (opts.sandbox === "danger-full-access" ? "full" : opts.sandbox);
+  const settings = resolveSeat(loadSeatConfiguration(root), opts.seat, opts["work-type"], { ...opts, ...(permission ? { permission } : {}) });
+  if (settings.length !== 1) throw new Error("本入口只启动一个席位配置；review 列表由审查命令逐项启动");
+  return settings[0];
 };
 
-export const run = async (adapter: Adapter, args: string[], root = process.cwd()): Promise<number> => {
+export const run = async (args: string[], root = process.cwd()): Promise<number> => {
   const parsed = parseArgs(args);
   const details = taskDetails(root, parsed);
   const dryRun = Boolean(process.env.CODEX_DRY_RUN);
+  const settings = settingsFor(parsed.opts, root);
+  if (dryRun) {
+    console.log(describeSeat(settings));
+    if (!adapterAvailable(settings.agent)) console.log(`提示：框架 ${settings.agent} 尚未接入适配器，当前不可用`);
+  }
+  const adapter = dryRun ? null : adapterFor(settings.agent);
   const started = Date.now();
-  const paths = recordPaths(root, details.name, progressHeader(details.title, details.role?.name, started, adapter.label), dryRun);
+  const paths = recordPaths(root, details.name, progressHeader(details.title, details.role?.name, started, adapter?.label ?? settings.agent), dryRun);
   if (dryRun) {
     console.log(`记录名：${paths.name}\n----\n${details.prompt}`);
     return 0;
   }
   console.log(`记录名：${paths.name}\n进度：${paths.progress}`);
-  const settings = settingsFor(parsed.opts);
+  return runPrepared(adapter!, settings, parsed, details, paths, started, root);
+};
+
+const adapterAvailable = (agent: string): boolean => {
+  try { adapterFor(agent); return true; } catch { return false; }
+};
+
+const runPrepared = async (adapter: Adapter, settings: SeatSettings, parsed: ReturnType<typeof parseArgs>, details: ReturnType<typeof taskDetails>, paths: ReturnType<typeof recordPaths>, started: number, root: string): Promise<number> => {
   const registry = registryWriter(dispatchHome());
   writeFileSync(paths.raw, "");
   writeFileSync(paths.events, "");
@@ -72,7 +85,7 @@ export const run = async (adapter: Adapter, args: string[], root = process.cwd()
   };
   const id = `${paths.name}-${started}-${process.pid}`;
   const detection = await adapter.detect({ env: process.env, settings });
-  const metadata = { seat: settings.seat, workType: settings.workType, agent: adapter.id, framework: adapter.id, model: settings.model, effort: settings.effort, permission: settings.permission };
+  const metadata = { seat: settings.seat, workType: settings.workType, agent: adapter.id, framework: adapter.id, model: settings.model, effort: settings.effort, permission: settings.permission, sources: settings.sources, fallbackReason: settings.fallbackReason };
   registry({ event: "start", id, repo: root, name: paths.name, spec: details.spec ? relative(root, resolve(root, details.spec)).replaceAll("\\", "/") : null,
     title: details.title, role: details.role?.name ?? null, pid: process.pid, started,
     progress: paths.progress, report: paths.report, raw: paths.raw, ...metadata,

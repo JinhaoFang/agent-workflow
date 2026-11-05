@@ -29,11 +29,14 @@
  * probe; comments compare exact bodies across all pages before a second write.
  * Failed probes preserve the original diagnostic and prevent unsafe rewrites.
  * Optional staticCheckCommand/staticOnlyPaths enable path-based verification layers.
+ * seatConfiguration keeps immutable raw layers for seats/agents/workTypes;
+ * XDG user settings, legacy defaults and per-field sources live in dispatch/settings.ts.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { frameworkSettings, loadSeatConfiguration, type SeatConfiguration } from "./dispatch/settings.ts";
 
 export type Issue = {
   id: number;
@@ -201,6 +204,7 @@ export const matchesRecord = (file: string, prefix: string): boolean => {
 };
 
 export type DispatchConfig = {
+  seatConfiguration: SeatConfiguration;
   verificationCommand: string[];
   staticCheckCommand: string[] | null;
   staticOnlyPaths: string[];
@@ -298,6 +302,7 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     throw new Error(
       "配置 codexSandbox 必须是 read-only、workspace-write 或 danger-full-access",
     );
+  const seatConfiguration = loadSeatConfiguration(root, config);
   const optionalSources = {
     codexConcurrency: Object.hasOwn(config, "codexConcurrency")
       ? "配置"
@@ -408,6 +413,11 @@ export const dispatchConfig = (root: string): DispatchConfig => {
       );
   } else config.staticOnlyPaths = [];
   config.optionalSources = optionalSources;
+  config.seatConfiguration = seatConfiguration;
+  const framework = frameworkSettings(seatConfiguration, "codex");
+  config.codexConcurrency = framework.concurrency;
+  if (framework.sources.concurrency.startsWith("用户") || framework.sources.concurrency.includes(".agents."))
+    optionalSources.codexConcurrency = framework.sources.concurrency;
   return config;
 };
 

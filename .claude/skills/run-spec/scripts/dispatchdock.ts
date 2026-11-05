@@ -204,7 +204,7 @@ export const dispatchSlot = async (
   }
 };
 
-export const codexVersion = (): string => {
+export const codexVersion = (overridePath?: string | null, overrideSource?: string): string => {
   const file = join(dispatchHome(), "config.json");
   let configured: unknown;
   try {
@@ -217,7 +217,8 @@ export const codexVersion = (): string => {
     )
       throw error;
   }
-  const locations = [`${file} 的 agents.codex.path`, "PATH"];
+  if (overridePath !== undefined) configured = overridePath;
+  const locations = ["用户/仓库 agents.codex.path", `${file} 的 agents.codex.path`, "PATH"];
   const missing = () =>
     new CheckFailure(
       `找不到可用的 Codex CLI；已查找：${locations.join("、")}。`,
@@ -265,5 +266,5 @@ export const codexVersion = (): string => {
   });
   if (result.error || result.status !== 0 || !result.stdout.trim())
     throw missing();
-  return `${result.stdout.trim()}；路径 ${candidate}；来源 ${configured ? file : "PATH"}`;
+  return `${result.stdout.trim()}；路径 ${candidate}；来源 ${overrideSource ?? (configured ? file : "PATH")}`;
 };
