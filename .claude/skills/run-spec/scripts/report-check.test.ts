@@ -2,6 +2,7 @@
  * report-check 的 CLI 测试：真实临时 git 仓库、入库 HTML 样本、实际 Chromium。
  * 从命令行核对四项结果、退出码、固定 360 的量法、分段 PNG 和临时目录清理；
  * 长页覆盖按序分段、每段不高于视口、手机展开折叠和延迟重排、清理后保留全部截图。
+ * 延迟溢出样本覆盖视口切换后 150 毫秒才出现的窄屏失败；分段 PNG 共用一处断言。
  * 另测时间线溢出/缺失、路径优先级、Playwright 缓存/PATH 查找、参数和启动失败。
  * 不访问 GitHub；隔离 HOME、缓存和 PATH 证明缺少 Chromium 时明确以 2 退出。
  * 浏览器测试仅在自动查找明确报告“找不到 Chromium”时跳过，输出具体原因；
@@ -59,6 +60,29 @@ const repository = () => {
 
 const results = (stdout: string): { name: string; passed: boolean }[] =>
   [...stdout.matchAll(/^\[(通过|失败)\] ([^：]+)：/gm)].map((match) => ({ name: match[2], passed: match[1] === "通过" }));
+
+const assertScreenshots = (
+  stdout: string, directory: string,
+  groups: readonly (readonly [group: string, width: number, heights: readonly (number | undefined)[]])[],
+): void => {
+  const expected: string[] = [];
+  for (const [group, width, heights] of groups) {
+    assert.ok(stdout.includes(`截图组 ${group}：${heights.length} 张，目录：${directory}`), stdout);
+    for (const [index, height] of heights.entries()) {
+      const name = `${group}-${String(index + 1).padStart(2, "0")}.png`;
+      expected.push(name);
+      const path = join(directory, name);
+      assert.ok(stdout.includes(`截图：${path}`), stdout);
+      const png = readFileSync(path);
+      assert.equal(png.subarray(1, 4).toString(), "PNG");
+      assert.equal(png.readUInt32BE(16), width);
+      const actualHeight = png.readUInt32BE(20);
+      assert.ok(actualHeight > 0 && actualHeight <= 800);
+      if (height !== undefined) assert.equal(actualHeight, height);
+    }
+  }
+  assert.deepEqual(readdirSync(directory).sort(), expected.sort(), "只保留连续编号的分段截图，不生成整页长图");
+};
 
 test("report-check 帮助、参数、缺失文件和缺失 Chromium 的退出码", () => {
   const repo = repository();
@@ -149,7 +173,7 @@ test("report-check 启动失败以 2 退出且删除临时用户目录", () => {
 });
 
 for (const [name, failure] of [
-  ["ok", undefined], ["overflow", "窄屏不横向滚动"],
+  ["ok", undefined], ["overflow", "窄屏不横向滚动"], ["delayed-overflow", "窄屏不横向滚动"],
   ["console", "控制台零报错"], ["global", "无新增全局名"],
 ] as const) {
   test(`report-check 样本 ${name} 只在对应检查失败，截图保留`, { skip }, () => {
@@ -177,31 +201,18 @@ for (const [name, failure] of [
         assert.match(result.stdout, /汇报样本的未捕获异常/);
       }
       if (name === "global") assert.match(result.stdout, /新增=1.*\["reportCheckLeak"\]/);
-      if (name === "overflow") {
+      if (name === "overflow" || name === "delayed-overflow") {
         const sizes = /scrollWidth=(\d+)，设定宽度=360，innerWidth=(\d+)，已展开折叠=1\/1/.exec(result.stdout);
         assert.ok(sizes, result.stdout);
         assert.ok(Number(sizes[1]) > 360);
         assert.equal(sizes[1], sizes[2], "旧 innerWidth 量法在这个样本上会错误通过");
       }
       const directory = name === "ok" ? join(repo.root, "out", "report-check", "汇报 #1 空格") : output;
-      const expected: string[] = [];
-      for (const [group, width] of [["light-1280", 1280], ["dark-1280", 1280], ["mobile-360", 360]] as const) {
-        const count = name === "overflow" && group === "mobile-360" ? 2 : 1;
-        assert.ok(result.stdout.includes(`截图组 ${group}：${count} 张，目录：${directory}`));
-        for (let index = 1; index <= count; index++) {
-          const file = `${group}-${String(index).padStart(2, "0")}.png`;
-          expected.push(file);
-          const path = join(directory, file);
-          assert.ok(result.stdout.includes(`截图：${path}`));
-          const png = readFileSync(path);
-          assert.equal(png.subarray(1, 4).toString(), "PNG");
-          assert.equal(png.readUInt32BE(16), width);
-          const height = png.readUInt32BE(20);
-          assert.ok(height > 0 && height <= 800);
-          if (index === 1) assert.equal(height, 800);
-        }
-      }
-      assert.deepEqual(readdirSync(directory).sort(), expected.sort());
+      assertScreenshots(result.stdout, directory, [
+        ["light-1280", 1280, [800]],
+        ["dark-1280", 1280, [800]],
+        ["mobile-360", 360, name === "overflow" || name === "delayed-overflow" ? [800, undefined] : [800]],
+      ]);
       assert.deepEqual(readdirSync(repo.temporary), [], "检查完成后临时用户目录已删除");
     } finally {
       rmSync(repo.root, { recursive: true, force: true });
@@ -222,26 +233,11 @@ test("report-check 长页按视口分段，手机展开折叠并等延迟重排�
     assert.ok(results(result.stdout).every((item) => item.passed), result.stdout);
     assert.match(result.stdout, /已展开折叠=1\/1/);
     assert.deepEqual(readdirSync(repo.temporary), [], "截图读取前确认临时用户目录已删除");
-    const expected: string[] = [];
-    for (const [group, width, heights] of [
+    assertScreenshots(result.stdout, directory, [
       ["light-1280", 1280, [800, 800, 132]],
       ["dark-1280", 1280, [800, 800, 132]],
       ["mobile-360", 360, [800, 800, 800, 800, 800, 132]],
-    ] as const) {
-      assert.ok(result.stdout.includes(`截图组 ${group}：${heights.length} 张，目录：${directory}`), result.stdout);
-      for (const [index, height] of heights.entries()) {
-        const name = `${group}-${String(index + 1).padStart(2, "0")}.png`;
-        expected.push(name);
-        const path = join(directory, name);
-        assert.ok(result.stdout.includes(`截图：${path}`), result.stdout);
-        const png = readFileSync(path);
-        assert.equal(png.subarray(1, 4).toString(), "PNG");
-        assert.equal(png.readUInt32BE(16), width);
-        assert.equal(png.readUInt32BE(20), height);
-        assert.ok(height > 0 && height <= 800);
-      }
-    }
-    assert.deepEqual(readdirSync(directory).sort(), expected.sort(), "只保留连续编号的分段截图，不生成整页长图");
+    ]);
   } finally {
     rmSync(repo.root, { recursive: true, force: true });
   }

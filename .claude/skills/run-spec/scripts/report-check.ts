@@ -3,7 +3,8 @@
  * 只用 Node 内置 WebSocket 和 CDP；依次查参数、RUN_SPEC_CHROMIUM、Playwright 缓存、PATH。
  * 用 file:// 空白页比较全局名，收集各配色/尺寸的控制台错误和未捕获异常；
  * 手机展开全部 details，以固定 360 比 scrollWidth；桌面检查模板的时间线容器。
- * 截图前等待模板切换宽度后的延迟重排；浅色、深色、手机按 800 像素高度分段编号。
+ * 视口、配色或折叠变化后，等待至少 250 毫秒及连续三帧尺寸稳定，再测量并截图；
+ * 浅色、深色、手机按 800 像素高度分段编号。
  * 不输出整页长图；结束时关闭自建浏览器并删除临时用户目录，保留截图。
  * 四项通过退出 0，检查失败退出 1，参数、环境或 CDP 运行错误退出 2；无需仓库配置。
  */
@@ -268,7 +269,23 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
     };
     const measure = (): Promise<Measurements> => evaluate(`(async () => {
       await document.fonts.ready;
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await new Promise(resolve => setTimeout(resolve, 250));
+      await new Promise(resolve => {
+        let previous = '';
+        let stableFrames = 0;
+        const sample = () => {
+          const root = document.documentElement;
+          const current = JSON.stringify([
+            root.scrollWidth, root.scrollHeight,
+            [...document.querySelectorAll(${JSON.stringify(timelineSelector)})].map(element => [element.clientWidth, element.scrollWidth])
+          ]);
+          stableFrames = current === previous ? stableFrames + 1 : 1;
+          previous = current;
+          if (stableFrames >= 3) resolve();
+          else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
       return {
         globals: Object.keys(window), scrollWidth: document.documentElement.scrollWidth,
         innerWidth, details: document.querySelectorAll('details').length,
@@ -279,7 +296,6 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
       };
     })()`);
     const screenshot = async (group: string, width: number): Promise<void> => {
-      await evaluate("new Promise(resolve => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(resolve)), 250))");
       const metrics = await cdp.send<{ cssContentSize: { height: number } }>("Page.getLayoutMetrics", {}, session);
       const height = Math.max(800, Math.ceil(metrics.cssContentSize.height));
       const count = Math.ceil(height / 800);
@@ -357,8 +373,8 @@ Windows %LOCALAPPDATA%/ms-playwright；先查 chromium_headless_shell-*，再查
 和 file:// 空白页的 Object.keys(window) 比无新增全局名；
 360 像素、展开全部 <details> 后 document.documentElement.scrollWidth <= 360（不与 innerWidth 比）；
 1280×800 下时间线 ${timelineSelector} 的 scrollWidth <= clientWidth（区域缺失也失败）。
-检查浅色和深色桌面以及浅色手机；等待页面加载、字体和两帧布局后测量。
-截图前另等 250 毫秒及两帧布局，覆盖模板切换宽度后的延迟重排。
+检查浅色和深色桌面以及浅色手机；等待页面加载、字体完成。
+视口、配色切换或展开折叠后，至少等 250 毫秒，再确认页面和时间线尺寸连续三帧不变后测量并截图。
 按视口高度 800 像素分段截图：浅色 1280×800、深色 1280×800、手机 360×800（已展开全部折叠）。
 每组从上到下编号：light-1280-01.png、dark-1280-01.png、mobile-360-01.png 等，末段高度不超过 800。
 短页面保留一张视口截图；不输出整页长图。逐张输出绝对路径，并列出每组张数和目录，截图要亲自看。

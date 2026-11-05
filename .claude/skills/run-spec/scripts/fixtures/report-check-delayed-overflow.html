@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- 延迟溢出样本：切到手机视口 150 毫秒后，展开的 details 内容宽增至 600；只有窄屏检查应失败。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>延迟手机溢出样本</title>
+<style>
+body { margin: 0; font: 16px/1.6 system-ui, sans-serif; }
+[data-slot="timeline"] { height: 40px; background: #3987e5; }
+details > div { height: 40px; background: #d95926; }
+</style>
+</head>
+<body>
+<h1>延迟重排后溢出</h1>
+<div data-slot="timeline" aria-label="时间线"></div>
+<details><summary>查看延迟宽内容</summary><div>切到手机视口后延迟变宽。</div></details>
+<script>
+{
+  addEventListener("resize", () => {
+    if (innerWidth === 360) setTimeout(() => { document.querySelector("details > div").style.width = "600px"; }, 150);
+  });
+}
+</script>
+</body>
+</html>
