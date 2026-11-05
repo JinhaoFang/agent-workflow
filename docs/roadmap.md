@@ -21,11 +21,11 @@
 | 切换顺序 | video-studio → design-system → PathJX 依次改为从本仓库安装，每步合并前问用户；PathJX 产品线那台机器由用户重装（用户 10-31） | `README.md`「从 v3.1 升级到 v4」 |
 | CI | GitHub Actions 的设定不动；私有仓库启动不了，用本机 CI 代替（用户 10-31） | `docs/agents/run-spec.md` |
 | 派发前独立审查 | 是否启动由用户选择，不按任务或 spec 类型自动作为开工门槛（用户 11-05） | `run-spec` 第 2 步、角色模板 |
-| 核查后修复 | C01/C02、D01/D03—D06、E01/E04/E05、F01/G01 和观察 105 一起准备 workflow-v5；D02 按用户选择；消费仓库自有文字分别修，tag 只发布一次（用户 11-05） | spec #16，`docs/research/run-spec-migration.md` 第 106—114 条 |
+| 核查后修复 | C01/C02、D01/D03—D06、E01/E04/E05、F01/G01 和观察 105 一起准备 workflow-v5；D02 按用户选择；消费仓库自有文字分别修，tag 只发布一次；合并后 tag 暂缓，和下一项优化一起发（用户 11-05） | spec #16，`docs/research/run-spec-migration.md` 第 106—114 条 |
 
 ## 下一步
 
-**统一发布与安装**：全流程核查修复已准备为 `workflow-v5`（spec #16、PR #21），下一步由用户审阅方法层与三个消费仓库的自有文档 PR，批准后只发一次 tag。三个仓库和产品线机器直接按这个新 tag 重装；产品线机器由用户操作，不额外安排中间版本安装。正式 tag 安装核验和升级按 `README.md` 进行。测试分层的真实效果仍等 PathJX 下一个业务 spec 的评分表，按 `docs/research/run-spec-migration.md`「用过以后再评估」补上结果。
+**统一发布与安装**：核查修复已合入 `main`（spec #16、PR #21），tag 暂缓。下一项优化是参考 pstack，让每个角色可以配置用哪个 agent 框架和模型；做完后和核查修复一起只发一次 `workflow-v5`，三个仓库和产品线机器各重装一次，按 `README.md` 进行。测试分层的真实效果仍等 PathJX 下一个业务 spec 的评分表，按 `docs/research/run-spec-migration.md`「用过以后再评估」补上结果。
 
 ## 待定
 

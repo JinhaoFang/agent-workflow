@@ -7,7 +7,7 @@
 
 ## 安装
 
-本分支准备 `workflow-v5`，安装命令在该 tag 获批发布后生效；发布前的稳定版本仍是 `workflow-v4`。
+`main` 上正在准备 `workflow-v5`，tag 发布前下面的命令还不能用，稳定版本仍是 `workflow-v4`。
 
 在目标仓库的根目录运行：
 
