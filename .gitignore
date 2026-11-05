@@ -12,4 +12,5 @@ references
 .claude/skills/*
 !.claude/skills/run-spec/
 !.claude/skills/setup-run-spec/
+!.claude/skills/verification/
 out
