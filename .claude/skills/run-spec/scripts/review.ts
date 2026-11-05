@@ -2,6 +2,8 @@
  * Review comment command: review <spec> --record <name> --conclusion-file <file>.
  * Resolve thread.started in the main checkout's DispatchDock .log, then index
  * CODEX_HOME/sessions (default ~/.codex/sessions) by the first session_meta.id.
+ * Read index metadata in bounded chunks through the first newline; read full
+ * bodies only for selected sessions. Report scan limits apart from missing data.
  * Follow parent_thread_id, including source.subagent.thread_spawn, recursively.
  * Read each session's final cumulative token_count, never sum snapshots or use
  * inherited session_id/session_meta. Root duration uses the dispatch footer;
@@ -12,9 +14,12 @@
  */
 import { spawnSync } from "node:child_process";
 import {
+  closeSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
+  readSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -89,6 +94,25 @@ const read = (file: string, reasons: string[], label: string): string => {
   }
 };
 
+const firstLine = (file: string): string => {
+  const descriptor = openSync(file, "r");
+  try {
+    const buffer = Buffer.alloc(4096);
+    const chunks: Buffer[] = [];
+    for (;;) {
+      const length = readSync(descriptor, buffer, 0, buffer.length, null);
+      if (!length) break;
+      const chunk = buffer.subarray(0, length);
+      const newline = chunk.indexOf(10);
+      chunks.push(Buffer.from(newline < 0 ? chunk : chunk.subarray(0, newline)));
+      if (newline >= 0) break;
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    closeSync(descriptor);
+  }
+};
+
 const sessionIndex = (
   directory: string,
   reasons: string[],
@@ -107,11 +131,9 @@ const sessionIndex = (
       if (file.isDirectory()) walk(location);
       else if (file.isFile() && file.name.endsWith(".jsonl")) {
         try {
-          const event = JSON.parse(
-            readFileSync(location, "utf8").split("\n", 1)[0],
-          );
-          const meta = event.payload;
-          if (event.type !== "session_meta" || typeof meta?.id !== "string") {
+          const event = JSON.parse(firstLine(location));
+          const meta = event?.payload;
+          if (event?.type !== "session_meta" || typeof meta?.id !== "string") {
             reasons.push(`会话元数据格式不完整：${location}`);
             continue;
           }
@@ -269,9 +291,10 @@ const review = (values: Values, numbers: number[]): void => {
   );
   const minutes = footer ? Number(footer[1]) : undefined;
   if (minutes === undefined) reasons.push("派发进度缺少结束时长");
+  const scanReasons: string[] = [];
   const sessions = sessionIndex(
     join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "sessions"),
-    reasons,
+    scanReasons,
   );
   const selected: Session[] = [];
   if (id && sessions.has(id)) selected.push(sessions.get(id)!);
@@ -324,7 +347,7 @@ const review = (values: Values, numbers: number[]): void => {
       else reasons.push("token 合计超出安全整数范围");
     }
   }
-  lines.push(line(reasons.length ? "合计（已知部分；不完整）" : "合计", total));
+  lines.push(line(reasons.length ? "合计（已知部分；不完整）" : scanReasons.length ? "合计（已知部分；扫描受限）" : "合计", total));
   if (selected.length > 1)
     lines.push(
       "\n时长来源：审查本身取派发进度；子代理未单独派发，取各自会话的 task_complete.duration_ms。合计时长为各任务累计用时，包含并行重叠。",
@@ -332,6 +355,10 @@ const review = (values: Values, numbers: number[]): void => {
   if (reasons.length)
     lines.push(
       `\n不完整：\n${[...new Set(reasons)].map((reason) => `- ${reason}`).join("\n")}`,
+    );
+  if (scanReasons.length)
+    lines.push(
+      `\n扫描限制（无法判断这些记录是否属于本次审查，可能遗漏关联会话；已关联会话的已知用量保留）：\n${[...new Set(scanReasons)].map((reason) => `- ${reason}`).join("\n")}`,
     );
   const body = `${conclusion}${conclusion.endsWith("\n") ? "\n" : "\n\n"}## 用量\n${lines.join("\n")}\n`;
   if (values["dry-run"]) {
@@ -371,7 +398,9 @@ export const reviewCommand: Command = {
 派发记录读取主工作区的 .codex-runs；审查时长取进度文件，token 取本机会话。
 子代理未单独派发，时长取各自会话的已完成任务；合计为累计用时。
 会话目录默认 ~/.codex/sessions，可用 Codex 的 CODEX_HOME 环境变量更改根目录。
-缺失或格式变化标明「不完整」及原因，仍评论；不会关闭 spec。
+索引分块仅读首行元数据，关联审查及后代后才读取对应会话全文。
+相关数据缺失、损坏或重复标明「不完整」及原因，仍评论；不会关闭 spec。
+无法判断归属的元数据或目录读取异常单列「扫描限制」，合计标明已知部分、扫描受限；保留已关联用量，不保证没有遗漏会话。
 --session 可在派发记录已清理时指定幸存会话，缺失的派发数据仍标明不完整。
 --dry-run 只打印完整评论内容，不调用 gh，不写 GitHub。
 评论通过临时 UTF-8 文件传给 gh --body-file，运行结束后删除。`,
