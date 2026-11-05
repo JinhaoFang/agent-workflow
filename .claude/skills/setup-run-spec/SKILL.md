@@ -17,7 +17,7 @@ disable-model-invocation: true
 再查自检命令管不到的，和它的结果一起整理成一张事实表：
 
 - **Matt 的技能**：装了哪些。装了 `implement-spec` 的，建议移除：它是另一套执行 spec 的流程（Claude 子代理、不分执行角色），和 `run-spec` 并存时两边的约定会混用。
-- **派发**：`run-spec` 自带派发层，不需要 DispatchDock。装了它的 `codex-dispatch` 的可以卸掉，配置里的 `dispatchScript` 删掉。装了 `dual-role-workflow` 的，建议卸掉：它的描述按审美分工写，每次会话都会加载；分工规则以 [roles.md](roles.md) 为准。
+- **派发**：`run-spec` 自带派发层，不需要 DispatchDock。装了它的 `codex-dispatch` 的可以卸掉。装了 `dual-role-workflow` 的，建议卸掉：它的描述按审美分工写，每次会话都会加载；分工规则以 [roles.md](roles.md) 为准。
 - **规则文档**：`docs/roles/` 下有没有设计负责人和工程负责人两份角色文档。
 - **worktree 要用的目录**：哪些不进 git 的目录派出去的 agent 要读（参考资料、第三方技能）。
 - **基线**：包管理器、锁文件和验证命令；用跑派发的那个系统用户实际跑一遍验证命令，记下用时；最近几次 CI 有没有间歇性失败。
@@ -102,7 +102,7 @@ disable-model-invocation: true
    npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
    ```
 
-   `-a claude-code` 总要带，脚本路径以它为准；设计负责人用 Codex 或 pi 时再加 `-a codex`。派出去的 agent 由派发层按名称屏蔽这两个技能。更新完运行自检。安装会改 `skills-lock.json` 里这两项的哈希，要提交；不提交的话主工作区不干净，`land` 会拒绝合并。
+   `-a claude-code` 总要带（脚本路径以它为准），只用 Claude Code 的可去掉 `-a codex`；派发层会对执行者屏蔽这两个技能。更新完运行自检。安装会改 `skills-lock.json` 里这两项的哈希，要提交；不提交的话主工作区不干净，`land` 会拒绝合并。
 
 完成标准：自检全部通过，冒烟测试五项都有证据。
 

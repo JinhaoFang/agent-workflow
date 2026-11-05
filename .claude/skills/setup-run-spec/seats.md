@@ -22,7 +22,7 @@
 }
 ```
 
-五个席位是 `engineering`、`review`、`spec-review`、`research`、`watch`。每个席位写 `default` 加工作类型命名档，每档字段为 `agent`（`codex`、`claude`、`pi`）、`model`、`effort`、`permission`（`read-only`、`workspace-write`、`full`）。模型与强度可为 `null`，表示交给框架默认；模型名用各框架自己的写法。`review` 还可写非空列表，`doctor` 逐项展示；用 `tickets.ts run --seat review` 启动整批，`review --record <批次前缀>` 合计各份用量和模型。辅助派发用 `run --seat research --spec <S>` 自动关联评分表，参数见 `run --help`。
+五个席位是 `engineering`、`review`、`spec-review`、`research`、`watch`。每个席位写 `default` 加工作类型命名档，每档字段为 `agent`（`codex`、`claude`、`pi`）、`model`、`effort`、`permission`（`read-only`、`workspace-write`、`full`）。模型与强度可为 `null`，表示交给框架默认；仓库没写 `codexSandbox` 时，`engineering` 必须在某一层配 `permission`，否则派发以 2 退出；模型名用各框架自己的写法。`review` 还可写非空列表，`doctor` 逐项展示；用 `tickets.ts run --seat review` 启动整批，`review --record <批次前缀>` 合计各份用量和模型。辅助派发用 `run --seat research --spec <S>` 自动关联评分表，参数见 `run --help`。
 
 pi 的模型写 `提供商/模型`，强度传 `--thinking`；权限损失、技能隔离和会话位置见[接入说明](../run-spec/scripts/dispatch/README.md)。
 

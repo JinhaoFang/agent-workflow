@@ -13,8 +13,8 @@ description: 执行 GitHub 上的 spec 和工单：选出可做的工单，role:
 |---|---|
 | `frontier` | 列出可做、被阻塞、已关闭的子工单 |
 | `link` | 把工单挂到 spec 下，建阻塞关系 |
-| `review-spec` | 请一个不共享上下文的只读会话（`spec-review` 席位）审查 spec 和工单；`--post` 把原文评论到 spec |
-| `dispatch` | 建 worktree、接软链接、装依赖并记下安装产物，再按 `engineering` 席位派发；到该框架的并发上限自动排队 |
+| `review-spec` | 请一个不共享上下文的只读会话审查 spec 和工单；`--post` 把原文评论到 spec |
+| `dispatch` | 建 worktree、接软链接、装依赖并记下安装产物，再按席位派发；到该框架的并发上限自动排队 |
 | `run` | 按席位启动辅助派发和审查；带 `--spec` 时计入评分表 |
 | `slots` | 列出正在跑的派发和空余名额 |
 | `verify` | 跑验证，按改动路径选静态检查或完整验证，每次记进验证台账 |
