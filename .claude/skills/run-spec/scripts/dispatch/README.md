@@ -33,4 +33,16 @@
 
 Codex 以进程非零退出、`turn.failed`、顶层 `error` 或非配置警告的 item `error` 判失败。缺用量不等于失败，用量记 `null`；完整 `turn.completed` 用量按轮相加。实际模型/强度优先从原始事件或匹配 cwd/thread 的本机 Codex 会话中读取。技能开关依据 [Codex 官方技能文档](https://developers.openai.com/codex/skills)：`skills.config` 支持每项以 `name` 或绝对 `path` 作为唯一选择器，`enabled=false` 禁用。
 
+Claude 使用 `claude -p --output-format stream-json --verbose`，任务经 stdin 传入，席位模型与强度分别传 `--model/--effort`；可执行路径沿用 `agents.claude.path`，支持原生程序或 Node 入口。启动关闭 MCP、会话持久化、hooks 和自动记忆，`--permission-prompts none` 自动拒绝无人回答的权限提示。按 [Claude 官方技能设置](https://code.claude.com/docs/en/skills#override-skill-visibility-from-settings) 传 `skillOverrides:{"run-spec":"off","setup-run-spec":"off"}`，同时隐藏名称并拒绝显式调用，其余技能保留；该设置适用于本技能的项目目录安装，不适用于插件技能。
+
+| Claude 权限 | 参数 | 损失 |
+|---|---|---|
+| `read-only` | `--permission-mode plan --tools Read,Glob,Grep,Bash,Skill`，设置 `useAutoModeDuringPlan:false` | 保留只读 Bash（如固定点到 HEAD 的 `git diff`）；依赖框架的命令判断，没有操作系统只读沙箱，不开放写文件、退出 plan 或子代理工具 |
+| `workspace-write` | `--permission-mode acceptEdits` | 自动批准文件编辑；其他操作仍可能拒绝，没有仅限工作区的操作系统沙箱 |
+| `full` | `--permission-mode bypassPermissions` | 跳过权限确认，没有操作系统沙箱；宿主或托管策略仍可限制 |
+
+Claude 的共享 `message.id` 文本分片按顺序拼接，工具开始和返回按 `tool_use.id/tool_use_id` 关联；`parent_tool_use_id` 非空的文本不进入汇报。最终主线程 `result` 必须为 `subtype:success/is_error:false`，同时进程退出 0，才算成功；缺最终结果或被信号打断都失败。用量只取最后一条主线程结果，不累加 assistant 分片中的重复占位用量：优先汇总 `modelUsage`（含子代理），缺失时读取 `usage`（仅主循环），两者均缺失则记 `null`。总输入为普通输入加缓存创建加缓存读取，`cached` 只计缓存读取，输出已含思考用量。实际模型优先取最后一条主线程 assistant 的响应模型，退回结果中唯一模型；不把启动选择当实际值。普通事件不提供实际强度，`actualEffort` 记 `null`。用量语义见 [Claude 官方用量文档](https://code.claude.com/docs/en/agent-sdk/cost-tracking)。
+
+`../fixtures/claude-success.jsonl` 截自工单 #26 的 Claude Code 2.1.314 真实只读派发：保留消息分片、工具关联、最终结果和用量；移除时间、签名、会话标识和辅助字段，替换消息/工具 ID、根路径，并缩短源码读取结果。`../claude-dispatch.test.ts` 从 CLI 用假可执行文件回放，失败、子代理文本、重复事件、中断及缺失用量由同一样本受控变换。
+
 同名 `.json` 与全局 end 记录保存席位、工作类型、框架、配置模型/强度、权限、成功与否、进程/派发退出码、统一用量、实际模型/强度。其余四种记录不变。验收、审查、评分表优先读此汇总；新记录用量缺失保持未知，旧记录继续用原日志/会话读取方式。清理和保护仍按原记录名规则，涵盖新增 `.json` 和已有旧文件。
