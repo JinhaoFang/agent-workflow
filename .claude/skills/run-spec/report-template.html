@@ -17,7 +17,7 @@ spec 汇报模板（workflow-v5 候选）：单文件，浏览器直接打开，
   color-scheme: light;
   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10); --wash: rgba(11,11,11,.04);
-  --claude: #8054bd; --pi: #008265;
+  --claude: #8054bd; --pi: #0b7f9c;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
   --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --goodtext: #006300;
 }
@@ -26,7 +26,7 @@ spec 汇报模板（workflow-v5 候选）：单文件，浏览器直接打开，
     color-scheme: dark;
     --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10); --wash: rgba(255,255,255,.05);
-    --claude: #b18cde; --pi: #40bc99;
+    --claude: #b18cde; --pi: #4cbfdc;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --goodtext: #0ca30c;
   }
 }
@@ -148,7 +148,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     <div class="chart" data-slot="usage-bars"></div>
     <p class="muted" data-slot="usage-note"></p>
     <h3>逐次派发</h3>
-    <p class="muted">每条是一次派发，条长按分钟使用同一刻度，颜色沿用 Codex 泳道。未知时不画时长，显示原因；悬停或聚焦可查看完整字段。</p>
+    <p class="muted">每条是一次派发，条长按分钟使用同一刻度，颜色按框架。未知时不画时长，显示原因；悬停或聚焦可查看完整字段。</p>
     <div class="dispatch-chart" data-slot="dispatch-bars" role="group" aria-label="逐次派发的分钟与用量"></div>
     <details><summary>派发表格（查找）</summary><div data-slot="dispatch-table"></div></details>
     <details><summary>验证明细</summary><div data-slot="verify-table"></div></details>
@@ -1362,7 +1362,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     ].filter(Boolean).join("\n");
     const track = el("div", { class: `dispatch-track${minutes === null ? " dispatch-unknown" : ""}`, "aria-hidden": "true" });
     if (minutes !== null) track.append(el("div", { class: "dispatch-fill", style: `width:${(100 * minutes) / longestDispatch}%` }));
-    const meta = el("div", { class: "dispatch-meta" }, `${frameworkName(framework(d))} · ${category ?? "类别未记录"}${d.seat ? ` · ${seatName(d.seat)}` : ""}${d.workType && d.workType !== "default" ? ` · ${d.workType}` : ""}`);
+    const meta = el("div", { class: "dispatch-meta" }, `${frameworkName(framework(d))} · ${category ?? "类别未记录"}${d.seat && seatName(d.seat) !== category ? ` · ${seatName(d.seat)}` : ""}${d.workType && d.workType !== "default" ? ` · ${d.workType}` : ""}`);
     if (exit !== null && exit !== undefined && exit !== 0) meta.append(" · ", el("span", { class: "dispatch-exit", text: `退出 ${exit}` }));
     else if (exit === null || exit === undefined) meta.append(" · 退出码未记录");
     meta.append(input === null ? " · 输入未记录" : ` · 输入 ${fmtTok(input)}`);
@@ -1464,7 +1464,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
   const groupedUsage = val(S && S.usage.dispatches);
   const USAGE = [
     ...(S && S.version >= 2 ? groupedUsage ? groupedUsage.map((g) => [`${seatName(g.seat)}/${frameworkName(g.framework)}`, g.usage, frameworkColor(g.framework)]) : [["派发用量", S.usage.dispatches, "var(--muted)"]] : [["Codex 派发", S && S.usage.codexDispatch, frameworkColor("codex")], ["Codex 审查", S && S.usage.codexReview, frameworkColor("codex")]]),
-    ...[["mainSession", "主会话"], ["independentReview", "独立审查"], ["subagents", "子代理"]].map(([key, name]) => [name, S && S.usage[key], "var(--s1)"]),
+    ...[["mainSession", "主会话"], ["independentReview", "独立审查"], ["subagents", "子代理"]].map(([key, name]) => [name, S && S.usage[key], "var(--muted)"]),
   ];
   const drawCharts = () => {
     drawGoals();

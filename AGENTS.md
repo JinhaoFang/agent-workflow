@@ -1,13 +1,13 @@
 # agent-workflow
 
-开发流程的方法层：设计负责人（Claude Code）和工程负责人（Codex）分工执行 spec 的两个技能 `run-spec`、`setup-run-spec`，以及方法的观察记录、评估和各版本汇报。别的仓库从本仓库的版本 tag 安装这两个技能，安装和版本见 `README.md`。本仓库 2026-10-31 从 `JinhaoFang/video-studio` 抽出，之前的 issue 和 PR 都在那里。文档地图见 `docs/README.md`。
+开发流程的方法层：设计负责人和工程负责人分工执行 spec 的两个技能 `run-spec`、`setup-run-spec`，以及方法的观察记录、评估和各版本汇报。别的仓库从本仓库的版本 tag 安装这两个技能，安装和版本见 `README.md`。本仓库 2026-10-31 从 `JinhaoFang/video-studio` 抽出，之前的 issue 和 PR 都在那里。文档地图见 `docs/README.md`。
 
 ## 角色
 
 | 角色 | 担任者 | 负责 | 角色文档 |
 |---|---|---|---|
-| 设计负责人 | 和用户对话的 Claude Code | 方法层的方向与取舍；思路、技能说明和模板的定稿；spec 与工单；派发、验收；规则文档与路线图 | `docs/roles/design.md` |
-| 工程负责人 | Codex，由设计负责人用 `codex-dispatch` 派发 | 能写清要求、能客观验收的执行：技能脚本和测试、护栏、按定稿改说明文字 | `docs/roles/engineering.md` |
+| 设计负责人 | 和用户对话的主会话（Claude Code、Codex、pi 均可） | 方法层的方向与取舍；思路、技能说明和模板的定稿；spec 与工单；派发、验收；规则文档与路线图 | `docs/roles/design.md` |
+| 工程负责人 | 由设计负责人派发的 agent，框架和模型按席位配置 | 能写清要求、能客观验收的执行：技能脚本和测试、护栏、按定稿改说明文字 | `docs/roles/engineering.md` |
 
 开工时你会被告知自己的角色，先读对应的角色文档再动手。角色只认这个告知，和你是哪个模型无关；没被告知时先问用户。
 
