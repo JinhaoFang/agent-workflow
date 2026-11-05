@@ -704,6 +704,59 @@ for (const retained of [false, true]) {
   });
 }
 
+test("移址 worktree 的唯一辅助证据在任何删除前拦截，一致主副本后按原范围清理", () => {
+  const f = fixture();
+  try {
+    const moved = join(f.temporary, "moved ticket worktree");
+    f.git(["worktree", "move", f.worktree, moved]);
+    const record = join(moved, ".codex-runs", "auxiliary.md");
+    const saved = join(f.records, "auxiliary.md");
+    const kept = `${f.root}.worktrees/.kept/5/saved.txt`;
+    const unrelated = join(f.temporary, "unrelated worktree");
+    f.git(["worktree", "add", "-b", "ticket/50", unrelated]);
+    f.write(record, "唯一原始汇报");
+    f.write(kept, "保留现场");
+    assert.equal(f.git(["status", "--porcelain"], moved), "");
+    const posted = f.run(["scorecard", "2", "--record", "auxiliary", "--post"]);
+    assert.equal(posted.status, 0, posted.stderr);
+    const trees = f.git(["worktree", "list", "--porcelain"]);
+    const branches = f.git(["for-each-ref", "--format=%(refname)", "refs/heads"]);
+    const remote = f.git(["ls-remote", "--heads", "origin"]);
+    for (const args of [[], ["--no-scorecard"], ["--dry-run"]]) {
+      const blocked = f.run(["cleanup", "2", ...args]);
+      assert.equal(blocked.status, 1, blocked.stderr);
+      assert.match(blocked.stderr, /辅助记录保护/);
+      assert.ok(blocked.stderr.includes(record));
+      assert.doesNotMatch(blocked.stdout, /已删除/);
+      assert.equal(readFileSync(record, "utf8"), "唯一原始汇报");
+      assert.equal(readFileSync(kept, "utf8"), "保留现场");
+      assert.equal(existsSync(f.artifacts), true);
+      assert.equal(existsSync(join(f.records, "gh-5.md")), true);
+      assert.equal(f.git(["worktree", "list", "--porcelain"]), trees);
+      assert.equal(f.git(["for-each-ref", "--format=%(refname)", "refs/heads"]), branches);
+      assert.equal(f.git(["ls-remote", "--heads", "origin"]), remote);
+    }
+    f.write(saved, "不同内容");
+    const mismatched = f.run(["cleanup", "2"]);
+    assert.equal(mismatched.status, 1, mismatched.stderr);
+    assert.match(mismatched.stderr, /辅助记录保护/);
+    f.write(saved, "唯一原始汇报");
+    assert.equal(f.run(["scorecard", "2", "--post"]).status, 0);
+    const released = f.run(["cleanup", "2"]);
+    assert.equal(released.status, 0, released.stderr);
+    assert.equal(existsSync(moved), false);
+    assert.equal(existsSync(kept), false);
+    assert.equal(existsSync(f.artifacts), false);
+    assert.equal(existsSync(join(f.records, "gh-5.md")), false);
+    assert.doesNotMatch(f.git(["branch", "--list"]), /ticket\/5\s/);
+    assert.equal(f.git(["ls-remote", "--heads", "origin", "refs/heads/ticket/5"]), "");
+    assert.equal(existsSync(unrelated), true);
+    assert.equal(existsSync(join(f.records, "gh-50.md")), true);
+    assert.equal(existsSync(join(f.records, "scorecard-records.json")), true);
+    assert.equal(readFileSync(saved, "utf8"), "唯一原始汇报");
+  } finally { f.cleanup(); }
+});
+
 test("显式辅助名即使命中既有日志清理前缀也保留原始文件", () => {
   const f = fixture();
   try {

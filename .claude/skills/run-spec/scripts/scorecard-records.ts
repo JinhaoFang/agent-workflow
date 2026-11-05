@@ -5,7 +5,8 @@
  * 一个累计 token_count。公共台账不删除、不改写；截点包含记录文件修改时间，
  * 使尚在运行、补写汇报和没有结构化时间的旧记录也能触发 cleanup 拦截。
  * 显式归属可采集外部 runner 生命周期；同名多次运行只报告歧义，不猜归属。
- * cleanup 可独立核对辅助证据的主工作区完整副本，防止删除仅存的原始记录。
+ * cleanup 按实际待删除 worktree 和 .kept 清单核对辅助证据的主工作区完整副本，
+ * 防止删除仅存的原始记录，不重新推测 worktree 路径。
  */
 import { closeSync, existsSync, openSync, readFileSync, readdirSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -173,23 +174,21 @@ export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>,
   return { ledger, allLedger, recordBindings: [...explicit].sort(), dispatches: [...dispatches.values()].sort((a, b) => (a.start ?? a.name).localeCompare(b.start ?? b.name)), cutoffAt: cutoffAt as string | null };
 };
 
-export const assertAuxiliaryEvidencePreserved = (root: string, spec: number, tickets: Set<number>): void => {
+export const assertAuxiliaryEvidencePreserved = (root: string, spec: number, tickets: Set<number>, deletionRoots: string[]): void => {
   const auxiliary = new Set(readRecordBindings(root, spec, tickets).map((binding) => binding.name)
     .filter((name) => !matchesRecord(name, `review-${spec}`) && ![...tickets].some((ticket) => matchesRecord(name, `gh-${ticket}`))));
   if (!auxiliary.size) return;
-  for (const ticket of tickets) {
-    for (const checkout of [`${root}.worktrees/${ticket}`, `${root}.worktrees/.kept/${ticket}`]) {
-      const directory = join(checkout, ".codex-runs");
-      if (!existsSync(directory)) continue;
-      for (const file of readdirSync(directory, { withFileTypes: true })) {
-        if (!file.isFile()) continue;
-        const name = recordName(file.name);
-        if (!auxiliary.has(name) || ![".log", ".progress.log", ".events.jsonl", ".md", ".json"].includes(file.name.slice(name.length))) continue;
-        const path = join(directory, file.name);
-        const saved = join(root, ".codex-runs", file.name);
-        if (!existsSync(saved) || !readFileSync(saved).equals(readFileSync(path)))
-          throw new CheckFailure(`辅助记录保护：${path} 没有内容一致的主工作区副本；请先保存到 ${saved} 并核对，原始记录所在 worktree 或 .kept 目录必须保留。`);
-      }
+  for (const checkout of deletionRoots) {
+    const directory = join(checkout, ".codex-runs");
+    if (!existsSync(directory)) continue;
+    for (const file of readdirSync(directory, { withFileTypes: true })) {
+      if (!file.isFile()) continue;
+      const name = recordName(file.name);
+      if (!auxiliary.has(name) || ![".log", ".progress.log", ".events.jsonl", ".md", ".json"].includes(file.name.slice(name.length))) continue;
+      const path = join(directory, file.name);
+      const saved = join(root, ".codex-runs", file.name);
+      if (!existsSync(saved) || !readFileSync(saved).equals(readFileSync(path)))
+        throw new CheckFailure(`辅助记录保护：${path} 没有内容一致的主工作区副本；请先保存到 ${saved} 并核对，原始记录所在 worktree 或 .kept 目录必须保留。`);
     }
   }
 };

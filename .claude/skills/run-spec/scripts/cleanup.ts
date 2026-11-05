@@ -171,7 +171,7 @@ const cleanup = (values: Values, numbers: number[]): void => {
     !deletableRemote.length
   )
     console.log("没有可删除的内容。");
-  assertAuxiliaryEvidencePreserved(root, spec, tickets);
+  assertAuxiliaryEvidencePreserved(root, spec, tickets, [...removable, ...kept]);
   if (values["no-scorecard"]) console.log("已跳过评分表检查（--no-scorecard）。");
   else checkScorecard(root, spec, tickets, endpoint(spec));
   const remoteFailures: string[] = [];
@@ -230,7 +230,8 @@ export const cleanupCommand: Command = {
 删除任何内容之前检查 spec 上的评分表评论；没有有效评论或本 spec 的台账、派发记录
 在评分表截点之后有更新时，以 1 退出且不删除任何内容，并提示 scorecard <spec> --post。
 评分表还须覆盖当前全部显式 --record 关联集合；新关联旧文件也须重新发布评分表。
-关联文件和辅助记录不纳入删除范围；worktree 或 .kept 中辅助证据没有内容一致的主工作区副本时，
+关联文件和辅助记录不纳入删除范围；按实际待删除 worktree（含移址路径）及 .kept 清单检查辅助证据；
+没有内容一致的主工作区副本时，
 清理以 1 退出且不删除任何内容，此保护不因 --no-scorecard 而跳过。
 按 branch=spec/<号>-… 和直接子工单 ticket/<号> 归属台账；其他 spec 的新记录不拦截。
 --no-scorecard 显式跳过评分表检查，适用于 gh 出错或用户不要评分表。
