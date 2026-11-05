@@ -11,6 +11,8 @@
  * Ledger cases check complete rows, branch attribution and null fallbacks,
  * nonfatal write failures, concurrent append, dry runs and queue durations
  * against observable child events; TICKET_3_EVIDENCE saves samples.
+ * Linux proc-read regressions preload filesystem faults into CLI subprocesses
+ * to cover disappearing processes and propagation of unrelated read errors.
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -316,6 +318,40 @@ else process.exitCode = 91;
     run,
     start,
     cleanup: () => rmSync(temporary, { recursive: true, force: true }),
+  };
+};
+
+const procReadFailure = (
+  f: ReturnType<typeof fixture>,
+  pid: number,
+  code: string,
+  enumerate = false,
+) => {
+  const preload = join(f.temporary, "proc-read-failure.mjs");
+  const calls = join(f.temporary, "proc-read-failures.jsonl");
+  writeFileSync(
+    preload,
+    `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const readFile = fs.readFileSync;
+const readdir = fs.readdirSync;
+fs.readdirSync = (path, ...args) => {
+  const entries = readdir(path, ...args);
+  return ${enumerate} && path === "/proc" ? [${JSON.stringify(String(pid))}, ...entries] : entries;
+};
+fs.readFileSync = (path, ...args) => {
+  if (path === ${JSON.stringify(`/proc/${pid}/stat`)}) {
+    fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({path, code:${JSON.stringify(code)}}) + "\\n");
+    throw Object.assign(new Error(${JSON.stringify(`${code}: proc stat read`)}), {code:${JSON.stringify(code)}});
+  }
+  return readFile(path, ...args);
+};
+syncBuiltinESMExports();
+`,
+  );
+  return {
+    env: { NODE_OPTIONS: `--import=${JSON.stringify(preload)}` },
+    reads: () => readFileSync(calls, "utf8").trim().split("\n").map((line) => JSON.parse(line)),
   };
 };
 
@@ -1205,6 +1241,78 @@ test("verify, land and PR check help explain group recovery and validated nested
     f.cleanup();
   }
 });
+
+for (const code of ["ESRCH", "ENOENT"]) {
+  test(`exclusive verification skips ${code} proc entries and releases the job lock`, { skip: process.platform !== "linux" }, () => {
+    const f = fixture();
+    try {
+      f.configure({ exclusiveVerification: true });
+      const fault = procReadFailure(f, Number.MAX_SAFE_INTEGER, code, true);
+      const result = f.run("verify", [], f.root, fault.env);
+      evidence(`proc-scan-${code}`, { status: result.status, stdout: result.stdout, stderr: result.stderr, reads: fault.reads(), lockReleased: !existsSync(f.lock) });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.equal(result.stderr, "");
+      assert.doesNotMatch(result.stdout, /Error: .*proc stat read/);
+      assert.ok(fault.reads().length > 0);
+      assert.deepEqual(f.events().map((event) => [event.event, event.locked]), [["start", true], ["end", true]]);
+      assert.ok(!existsSync(f.lock));
+    } finally {
+      f.cleanup();
+    }
+  });
+}
+
+test("verification group scan propagates unrelated proc read errors", { skip: process.platform !== "linux", timeout: 10000 }, async (t) => {
+  const f = fixture();
+  try {
+    const fault = procReadFailure(f, Number.MAX_SAFE_INTEGER, "EACCES", true);
+    const worker = new URL("./verification-lock.ts", import.meta.url).href;
+    const child = spawn(process.execPath, [
+      "--input-type=module", "-e",
+      `import { verificationWorker } from ${JSON.stringify(worker)}; await verificationWorker();`,
+      f.lock, process.execPath, "-e", "",
+    ], { cwd: f.root, env: { ...f.env, ...fault.env }, detached: true, stdio: ["ignore", "pipe", "pipe"], signal: t.signal });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (data) => { stdout += data; });
+    child.stderr.on("data", (data) => { stderr += data; });
+    const status = await new Promise<number | null>((resolveDone, reject) => {
+      child.once("error", reject);
+      child.once("close", resolveDone);
+    });
+    const result = { status, stdout, stderr };
+    evidence("proc-scan-EACCES", { status: result.status, stdout: result.stdout, stderr: result.stderr, reads: fault.reads(), lockReleased: !existsSync(f.lock) });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /Error: EACCES: proc stat read/);
+    assert.ok(fault.reads().length > 0);
+    assert.ok(existsSync(f.lock));
+  } finally {
+    f.cleanup();
+  }
+});
+
+for (const code of ["ESRCH", "ENOENT", "EACCES"]) {
+  test(`verification owner identity handles ${code} proc reads`, { skip: process.platform !== "linux" }, () => {
+    const f = fixture();
+    try {
+      f.configure({ exclusiveVerification: true });
+      mkdirSync(f.lock);
+      writeFileSync(join(f.lock, `${process.pid}-previous.${Buffer.from("previous process start").toString("base64url")}`), "");
+      const fault = procReadFailure(f, process.pid, code);
+      const result = f.run("verify", [], f.root, fault.env);
+      evidence(`proc-identity-${code}`, { status: result.status, stdout: result.stdout, stderr: result.stderr, reads: fault.reads(), lockReleased: !existsSync(f.lock) });
+      const missing = code !== "EACCES";
+      assert.equal(result.status, missing ? 0 : 2, result.stdout + result.stderr);
+      assert.ok(fault.reads().length > 0);
+      assert.equal(existsSync(f.lock), !missing);
+      assert.equal(f.events().length, missing ? 2 : 0);
+      if (missing) assert.equal(result.stderr, "");
+      else assert.match(result.stdout + result.stderr, /出错：/);
+    } finally {
+      f.cleanup();
+    }
+  });
+}
 
 test("exclusive verification preserves launch/signal failures and releases the job lock", () => {
   const f = fixture();
