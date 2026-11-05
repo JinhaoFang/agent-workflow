@@ -3,7 +3,8 @@
  * 只用 Node 内置 WebSocket 和 CDP；依次查参数、RUN_SPEC_CHROMIUM、Playwright 缓存、PATH。
  * 用 file:// 空白页比较全局名，收集各配色/尺寸的控制台错误和未捕获异常；
  * 手机展开全部 details，以固定 360 比 scrollWidth；桌面检查模板的时间线容器。
- * 保留浅色、深色、手机三张完整页面截图；结束时关闭自建浏览器并删除临时用户目录。
+ * 截图前等待模板切换宽度后的延迟重排；浅色、深色、手机按 800 像素高度分段编号。
+ * 不输出整页长图；结束时关闭自建浏览器并删除临时用户目录，保留截图。
  * 四项通过退出 0，检查失败退出 1，参数、环境或 CDP 运行错误退出 2；无需仓库配置。
  */
 import { spawn, type ChildProcess } from "node:child_process";
@@ -277,15 +278,22 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
         }))
       };
     })()`);
-    const screenshot = async (name: string, width: number): Promise<void> => {
+    const screenshot = async (group: string, width: number): Promise<void> => {
+      await evaluate("new Promise(resolve => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(resolve)), 250))");
       const metrics = await cdp.send<{ cssContentSize: { height: number } }>("Page.getLayoutMetrics", {}, session);
-      const result = await cdp.send<{ data: string }>("Page.captureScreenshot", {
-        format: "png", captureBeyondViewport: true,
-        clip: { x: 0, y: 0, width, height: Math.max(800, Math.ceil(metrics.cssContentSize.height)), scale: 1 },
-      }, session);
-      const output = join(out, name);
-      writeFileSync(output, Buffer.from(result.data, "base64"));
-      console.log(`截图：${output}`);
+      const height = Math.max(800, Math.ceil(metrics.cssContentSize.height));
+      const count = Math.ceil(height / 800);
+      for (let index = 0; index < count; index++) {
+        const y = index * 800;
+        const result = await cdp.send<{ data: string }>("Page.captureScreenshot", {
+          format: "png", captureBeyondViewport: true,
+          clip: { x: 0, y, width, height: Math.min(800, height - y), scale: 1 },
+        }, session);
+        const output = join(out, `${group}-${String(index + 1).padStart(2, "0")}.png`);
+        writeFileSync(output, Buffer.from(result.data, "base64"));
+        console.log(`截图：${output}`);
+      }
+      console.log(`截图组 ${group}：${count} 张，目录：${out}`);
     };
     console.log(`汇报：${file}\nChromium：${program}`);
     await viewport(1280, false);
@@ -293,14 +301,14 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
     const baseline = new Set((await measure()).globals);
     await navigate(pathToFileURL(file).href);
     const light = await measure();
-    await screenshot("light-1280.png", 1280);
+    await screenshot("light-1280", 1280);
     await viewport(1280, true);
     const dark = await measure();
-    await screenshot("dark-1280.png", 1280);
+    await screenshot("dark-1280", 1280);
     await viewport(360, false);
     await evaluate("(() => { for (const element of document.querySelectorAll('details')) element.open = true; })()");
     const mobile = await measure();
-    await screenshot("mobile-360.png", 360);
+    await screenshot("mobile-360", 360);
     const added = [...new Set([...light.globals, ...dark.globals, ...mobile.globals])].filter((key) => !baseline.has(key)).sort();
     const timeline = [...light.timeline, ...dark.timeline];
     const checks = [
@@ -350,7 +358,10 @@ Windows %LOCALAPPDATA%/ms-playwright；先查 chromium_headless_shell-*，再查
 360 像素、展开全部 <details> 后 document.documentElement.scrollWidth <= 360（不与 innerWidth 比）；
 1280×800 下时间线 ${timelineSelector} 的 scrollWidth <= clientWidth（区域缺失也失败）。
 检查浅色和深色桌面以及浅色手机；等待页面加载、字体和两帧布局后测量。
-输出 light-1280.png、dark-1280.png、mobile-360.png 三张完整页面截图，截图要亲自看。
+截图前另等 250 毫秒及两帧布局，覆盖模板切换宽度后的延迟重排。
+按视口高度 800 像素分段截图：浅色 1280×800、深色 1280×800、手机 360×800（已展开全部折叠）。
+每组从上到下编号：light-1280-01.png、dark-1280-01.png、mobile-360-01.png 等，末段高度不超过 800。
+短页面保留一张视口截图；不输出整页长图。逐张输出绝对路径，并列出每组张数和目录，截图要亲自看。
 --out 默认 out/report-check/<文件名（不含扩展名）>/；输出绝对路径。
 结束时只关闭自建浏览器、删除临时用户目录，保留截图。
 --dry-run 只显示文件、浏览器和截图目录；--help 以 0 退出。
