@@ -54,8 +54,11 @@ type Event = {
   parent: number;
   time: number;
   marker?: string;
+  invocationMarker?: string;
 };
 type LedgerEntry = {
+  invocationId?: string;
+  parentInvocationId?: string | null;
   branch: string | null;
   startedAt: string;
   finishedAt: string;
@@ -74,10 +77,14 @@ const ledger = (root: string): LedgerEntry[] => {
   assert.ok(content.endsWith("\n"));
   return content.trimEnd().split("\n").map((line) => {
     const entry = JSON.parse(line);
-    assert.deepEqual(Object.keys(entry).sort(), [
+    assert.deepEqual(Object.keys(entry).filter((key) => !["invocationId", "parentInvocationId"].includes(key)).sort(), [
       "branch", "caller", "exitCode", "finishedAt", "layer", "queuedMinutes", "startedAt",
       "stopReason", "target", "verification",
     ]);
+    if (entry.invocationId !== undefined) {
+      assert.match(entry.invocationId, /^[\da-f-]{36}$/);
+      assert.ok(entry.parentInvocationId === null || typeof entry.parentInvocationId === "string");
+    }
     assert.ok(entry.branch === null || typeof entry.branch === "string");
     assert.equal(new Date(entry.startedAt).toISOString(), entry.startedAt);
     assert.equal(new Date(entry.finishedAt).toISOString(), entry.finishedAt);
@@ -162,7 +169,7 @@ const fixture = () => {
     runner,
     `const fs = require("node:fs");
 const phase = process.argv[2];
-const record = {phase, label:process.env.TEST_LABEL || phase, cwd:process.cwd(), env:Object.fromEntries(${JSON.stringify(keys)}.map(key => [key, process.env[key]])), args:process.argv.slice(3), pid:process.pid, parent:process.ppid, marker:process.env.RUN_SPEC_VERIFICATION_LOCK};
+const record = {phase, label:process.env.TEST_LABEL || phase, cwd:process.cwd(), env:Object.fromEntries(${JSON.stringify(keys)}.map(key => [key, process.env[key]])), args:process.argv.slice(3), pid:process.pid, parent:process.ppid, marker:process.env.RUN_SPEC_VERIFICATION_LOCK, invocationMarker:process.env.RUN_SPEC_VERIFICATION_INVOCATION};
 const event = name => fs.appendFileSync(process.env.TEST_CALLS, JSON.stringify({...record,event:name,time:Date.now(),locked:fs.existsSync(${JSON.stringify(lock)})}) + "\\n");
 event("start");
 const end = () => { event("end"); process.exitCode = !process.env.TEST_EXIT_PHASE || process.env.TEST_EXIT_PHASE === phase ? Number(process.env.TEST_EXIT || 0) : 0; };
@@ -215,6 +222,7 @@ else process.exitCode = 91;
     PATH: `${temporary}${delimiter}${process.env.PATH}`,
     CODEX_DISPATCH_HOME: join(temporary, "dispatch-home"),
     TEST_CALLS: calls,
+    RUN_SPEC_VERIFICATION_INVOCATION: undefined,
     TICKET_97_ROOT: undefined,
     TICKET_97_LITERAL: undefined,
     TICKET_97_OVERRIDE: "process {mainRoot}",
@@ -330,6 +338,8 @@ test("verification ledger records main/ticket checks, default/custom PR checks a
       assert.equal(entries.length, index + 1);
       const entry = entries.at(-1)!;
       assert.equal(entry.caller, command);
+      assert.ok(entry.invocationId);
+      assert.equal(entry.parentInvocationId, null);
       assert.equal(entry.branch, kind === "main" ? "spec/17-test" : kind === "ticket" ? "ticket/21" : "spec/17-pr-head");
       assert.deepEqual(
         entry.target,
@@ -447,7 +457,7 @@ test("dry runs never create or append the ledger, and all three help texts expla
         assert.equal(existsSync(file) ? readFileSync(file, "utf8") : null, before);
         const help = f.run(command, ["--help"], tmpdir());
         assert.equal(help.status, 0, help.stderr);
-        for (const field of ["branch", "startedAt", "finishedAt", "queuedMinutes", "layer", "target", "caller", "exitCode", "stopReason", "verification"])
+        for (const field of ["invocationId", "parentInvocationId", "branch", "startedAt", "finishedAt", "queuedMinutes", "layer", "target", "caller", "exitCode", "stopReason", "verification"])
           assert.ok(help.stdout.includes(field), field);
         assert.match(help.stdout, /主工作区 \.codex-runs\/verification\.jsonl/);
         assert.match(help.stdout, /评分表.*branch.*spec/);
@@ -482,6 +492,8 @@ test("simultaneous unlocked verification processes append complete JSON lines wi
     assert.ok(readFileSync(file, "utf8").startsWith(previous));
     const entries = ledger(f.root);
     assert.equal(entries.length, 9);
+    assert.equal(new Set(entries.map((entry) => entry.invocationId)).size, 9);
+    assert.ok(entries.every((entry) => entry.parentInvocationId === null));
     assert.ok(entries.every((entry) => entry.queuedMinutes === 0 && entry.exitCode === 0));
     ledgerEvidence("concurrent-append", f.root);
   } finally {
@@ -512,6 +524,8 @@ test(
       const entries = ledger(f.root);
       assert.equal(entries.length, 1);
       assert.equal(entries[0].verification, null);
+      assert.ok(entries[0].invocationId);
+      assert.equal(entries[0].parentInvocationId, null);
       assert.equal(entries[0].exitCode, 2);
       assert.ok(entries[0].queuedMinutes >= 1 / 60);
       assert.ok(!f.events().some((event) => event.label === "cancelled"));
@@ -713,9 +727,11 @@ test("land verification and custom pr-check share the verify lock, while land in
     const gate = join(f.temporary, "release");
     const children: ReturnType<typeof f.start>[] = [];
     try {
+      const wrapper = join(f.temporary, "queued-wrapper.cjs");
+      writeFileSync(wrapper, `const result = require("node:child_process").spawnSync(process.execPath, ${JSON.stringify([cli, "verify"])}, {stdio:"inherit"}); process.exitCode = result.status ?? 2;`);
       f.configure({
         exclusiveVerification: true,
-        prCheckCommand: [process.execPath, f.runner, "pr"],
+        prCheckCommand: [process.execPath, wrapper],
       });
       f.commitConfig();
       if (command === "land") {
@@ -753,6 +769,13 @@ test("land verification and custom pr-check share the verify lock, while land in
       );
       assert.ok(events.every((event) => event.locked));
       assertQueue(f.root, f.events(), command);
+      if (command === "pr-check") {
+        const outer = ledger(f.root).find((entry) => entry.caller === "pr-check")!;
+        const inner = ledger(f.root).find((entry) => entry.parentInvocationId === outer.invocationId)!;
+        assert.ok(inner.verification);
+        assert.equal(inner.queuedMinutes, 0);
+        assert.ok(outer.queuedMinutes >= 1 / 60);
+      }
       ledgerEvidence(`queue-${command}`, f.root);
       evidence(`queue-${command}`, { results, events: f.events() });
     } finally {
@@ -919,7 +942,7 @@ test(
 );
 
 test("custom PR checks can call tickets verify without deadlocking and preserve exit codes", async () => {
-  for (const status of [0, 7]) {
+  for (const [status, enabled] of [[0, false], [7, false], [0, true], [7, true]] as const) {
     const f = fixture();
     const nested = join(f.temporary, "nested.cjs");
     const gate = join(f.temporary, "release");
@@ -933,7 +956,7 @@ process.exitCode = result.status ?? 92;
 `,
       );
       f.configure({
-        exclusiveVerification: true,
+        exclusiveVerification: enabled,
         prCheckCommand: [process.execPath, nested],
       });
       writeFileSync(gate, "");
@@ -953,7 +976,18 @@ process.exitCode = result.status ?? 92;
         f.events().map((event) => event.event),
         ["start", "end"],
       );
-      assert.ok(f.events().every((event) => event.locked));
+      assert.ok(f.events().every((event) => event.locked === enabled));
+      const entries = ledger(f.root);
+      assert.equal(entries.length, 2);
+      const [inner, outer] = entries;
+      assert.ok(inner.invocationId && outer.invocationId);
+      assert.notEqual(inner.invocationId, outer.invocationId);
+      assert.equal(inner.parentInvocationId, outer.invocationId);
+      assert.equal(outer.parentInvocationId, null);
+      assert.equal(inner.verification?.exitCode, status);
+      assert.equal(outer.verification?.exitCode, status);
+      assert.equal(JSON.parse(f.events()[0].invocationMarker!).invocationId, inner.invocationId);
+      ledgerEvidence(`nested-pr-check-${status}-${enabled}`, f.root);
       assert.ok(!existsSync(f.lock));
     } finally {
       f.cleanup();
@@ -1055,6 +1089,15 @@ process.exitCode = result.status ?? 92;
           ["start", "end"],
         );
         assert.ok(events.every((event) => event.locked));
+        const [inner, outer] = ledger(f.root);
+        assert.equal(inner.caller, "verify");
+        assert.equal(outer.caller, command);
+        assert.ok(inner.invocationId && outer.invocationId);
+        assert.notEqual(inner.invocationId, outer.invocationId);
+        assert.equal(inner.parentInvocationId, outer.invocationId);
+        assert.equal(outer.parentInvocationId, null);
+        if (command === "land")
+          assert.equal(f.events().find((event) => event.phase === "install")!.invocationMarker, undefined);
         assert.ok(!existsSync(f.lock));
         evidence(`nested-${command}-${status}`, {
           status: result.status,
@@ -1260,3 +1303,114 @@ test(
     }
   },
 );
+
+test("nested invocation identities retain sequential leaves, multiple wrapper levels and old ledger bytes with either lock setting", () => {
+  for (const enabled of [false, true]) {
+    const f = fixture();
+    try {
+      assert.equal(f.run("verify").status, 0);
+      const file = join(f.root, ".codex-runs/verification.jsonl");
+      const old = ledger(f.root)[0];
+      delete old.invocationId;
+      delete old.parentInvocationId;
+      const previous = JSON.stringify(old) + "\n";
+      writeFileSync(file, previous);
+      const wrapper = join(f.temporary, "multiple-wrapper.cjs");
+      writeFileSync(wrapper, `const {spawnSync} = require("node:child_process");
+const calls = process.env.TEST_LEVEL ? [["verify"], ["verify"]] : [["pr-check", "93"], ["verify"]];
+for (const args of calls) {
+ const result = spawnSync(process.execPath, [${JSON.stringify(cli)}, ...args], {stdio:"inherit", timeout:10000, env:{...process.env,TEST_LEVEL:"1"}});
+ if (result.status !== 0) { process.exitCode = result.status ?? 2; break; }
+}
+`);
+      f.configure({ exclusiveVerification: enabled, prCheckCommand: [process.execPath, wrapper] });
+      const result = f.run("pr-check", ["93"]);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(readFileSync(file, "utf8").startsWith(previous));
+      const entries = ledger(f.root);
+      assert.equal(entries.length, 6);
+      const [, first, second, middle, third, outer] = entries;
+      assert.equal(new Set(entries.slice(1).map((entry) => entry.invocationId)).size, 5);
+      assert.deepEqual(entries.slice(1).map((entry) => entry.caller), ["verify", "verify", "pr-check", "verify", "pr-check"]);
+      assert.equal(first.parentInvocationId, middle.invocationId);
+      assert.equal(second.parentInvocationId, middle.invocationId);
+      assert.equal(middle.parentInvocationId, outer.invocationId);
+      assert.equal(third.parentInvocationId, outer.invocationId);
+      assert.equal(outer.parentInvocationId, null);
+      assert.ok(entries.every((entry) => entry.verification?.exitCode === 0));
+      assert.equal(f.events().filter((event) => event.event === "start").length, 4);
+      ledgerEvidence(`multiple-nested-${enabled}`, f.root);
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
+test("failed nested preflight and launch attempts remain child nodes with either lock setting", () => {
+  for (const enabled of [false, true]) {
+    for (const scenario of ["worktree", "verify-config", "pr-config", "launch"]) {
+      const f = fixture();
+      try {
+        const wrapper = join(f.temporary, "failing-wrapper.cjs");
+        const configFile = join(f.root, "docs/agents/run-spec.json");
+        const setup = scenario === "launch"
+          ? `const config=JSON.parse(fs.readFileSync(${JSON.stringify(configFile)},"utf8")); config.verificationCommand=[${JSON.stringify(join(f.temporary, "missing-program"))}]; fs.writeFileSync(${JSON.stringify(configFile)},JSON.stringify(config));`
+          : scenario.endsWith("config")
+            ? `fs.writeFileSync(${JSON.stringify(configFile)}, "{");`
+            : "";
+        const args = scenario === "worktree" ? ["verify", "21"] : scenario === "pr-config" ? ["pr-check", "94"] : ["verify"];
+        writeFileSync(wrapper, `const fs=require("node:fs"); ${setup}
+const result=require("node:child_process").spawnSync(process.execPath, ${JSON.stringify([cli, ...args])}, {stdio:"inherit", timeout:10000}); process.exitCode=result.status ?? 2;
+`);
+        f.configure({ exclusiveVerification: enabled, prCheckCommand: [process.execPath, wrapper] });
+        const result = f.run("pr-check", ["93"]);
+        const status = scenario === "worktree" ? 1 : 2;
+        assert.equal(result.status, status, result.stdout + result.stderr);
+        const [inner, outer] = ledger(f.root);
+        assert.equal(ledger(f.root).length, 2);
+        assert.equal(inner.parentInvocationId, outer.invocationId);
+        assert.equal(outer.parentInvocationId, null);
+        assert.equal(inner.verification, null);
+        assert.equal(inner.exitCode, status);
+        assert.equal(outer.verification?.exitCode, status);
+        assert.equal(f.events().length, 0);
+        assert.ok(!existsSync(f.lock));
+        ledgerEvidence(`failed-nested-${scenario}-${enabled}`, f.root);
+      } finally {
+        f.cleanup();
+      }
+    }
+  }
+});
+
+test("invocation inheritance rejects foreign repositories and malformed markers without changing the parent environment", () => {
+  const f = fixture();
+  const foreign = fixture();
+  try {
+    const wrapper = join(f.temporary, "foreign-wrapper.cjs");
+    const snapshots = join(f.temporary, "markers.json");
+    writeFileSync(wrapper, `const before=process.env.RUN_SPEC_VERIFICATION_INVOCATION;
+const result=require("node:child_process").spawnSync(process.execPath, ${JSON.stringify([cli, "verify"])}, {cwd:${JSON.stringify(foreign.root)}, stdio:"inherit"});
+require("node:fs").writeFileSync(${JSON.stringify(snapshots)},JSON.stringify([before, process.env.RUN_SPEC_VERIFICATION_INVOCATION])); process.exitCode=result.status ?? 2;
+`);
+    f.configure({ prCheckCommand: [process.execPath, wrapper] });
+    assert.equal(f.run("pr-check", ["93"]).status, 0);
+    const outer = ledger(f.root)[0];
+    const inner = ledger(foreign.root)[0];
+    assert.equal(outer.parentInvocationId, null);
+    assert.equal(inner.parentInvocationId, null);
+    assert.notEqual(inner.invocationId, outer.invocationId);
+    const markers = JSON.parse(readFileSync(snapshots, "utf8"));
+    assert.equal(markers[0], markers[1]);
+    assert.equal(JSON.parse(markers[0]).invocationId, outer.invocationId);
+    for (const marker of ["{", "null", JSON.stringify({ root:f.root, invocationId:"invalid" }), JSON.stringify({ root:foreign.root, invocationId:inner.invocationId })]) {
+      const result = f.run("verify", [], f.root, { RUN_SPEC_VERIFICATION_INVOCATION:marker });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.equal(ledger(f.root).at(-1)!.parentInvocationId, null);
+    }
+    ledgerEvidence("invocation-isolation", f.root);
+  } finally {
+    f.cleanup();
+    foreign.cleanup();
+  }
+});

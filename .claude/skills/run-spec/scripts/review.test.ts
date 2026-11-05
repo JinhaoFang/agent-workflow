@@ -3,6 +3,9 @@
  * fixtures and isolated CODEX_HOME sessions, including inherited metadata and
  * nested agents. A queued fake gh captures argument arrays and comment files;
  * dry-run/help/error cases must never contact GitHub. Run with pnpm verify.
+ * Sparse oversized history tails and newline-free files prove bounded indexing;
+ * metadata at the byte budget remains readable. Malformed
+ * metadata remains a scan limit, while selected corruption remains incomplete.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -12,6 +15,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -147,6 +151,7 @@ const run = (
   input = files(),
   queue = responses,
   worktree = false,
+  prepare?: (directory: string) => void,
 ) => {
   const directory = mkdtempSync(join(tmpdir(), "studio review "));
   const checkout = join(directory, "ticket tree");
@@ -198,6 +203,7 @@ process.stdout.write(response.output ?? JSON.stringify(response.value ?? {}));
 `,
       { mode: 0o755 },
     );
+    prepare?.(directory);
     const result = spawnSync(process.execPath, [cli, ...args], {
       cwd,
       encoding: "utf8",
@@ -258,6 +264,105 @@ test("review dry-run prints only the same comment and makes no gh calls", () => 
   assert.equal(preview.status, 0, preview.stderr);
   assert.equal(preview.stdout, posted.calls[2].body);
   assert.deepEqual(preview.calls, []);
+});
+
+test("review indexes only the first line of oversized unrelated history", () => {
+  const input = files();
+  input["codex home/sessions/huge.jsonl"] = meta("huge") + "\n{\"truncated\":";
+  const result = run([...argumentsForReview, "--dry-run"], input, [], false, (directory) => {
+    truncateSync(join(directory, "codex home/sessions/huge.jsonl"), 1024 ** 3);
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /合计：用时 3.5 分钟，输入 3,300（其中缓存 2,000），输出 170 tokens/);
+  assert.doesNotMatch(result.stdout, /扫描限制|不完整|huge/);
+  assert.deepEqual(result.calls, []);
+});
+
+test("review bounds newline-free oversized metadata and preserves known usage", () => {
+  const input = files();
+  input["codex home/sessions/huge-no-newline.jsonl"] = '{"padding":"';
+  const result = run([...argumentsForReview, "--dry-run"], input, [], false, (directory) => {
+    truncateSync(join(directory, "codex home/sessions/huge-no-newline.jsonl"), 16 * 1024 ** 3);
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /合计（已知部分；扫描受限）：用时 3.5 分钟，输入 3,300（其中缓存 2,000），输出 170 tokens/);
+  assert.match(result.stdout, /会话元数据无法读取：.*huge-no-newline.jsonl/);
+  assert.doesNotMatch(result.stdout, /^不完整：/m);
+  assert.deepEqual(result.calls, []);
+});
+
+test("review accepts metadata at the byte budget and reports oversized valid metadata", () => {
+  const base = event("session_meta", { id: "boundary", padding: "界" });
+  const padded = base.replace("界", "界" + "x".repeat(8 * 1024 ** 2 - Buffer.byteLength(base)));
+  for (const suffix of ["", "\n", " "]) {
+    const input = { ...files(), "codex home/sessions/boundary.jsonl": padded + suffix };
+    const result = run([...argumentsForReview, "--dry-run"], input, []);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /用时 3.5 分钟，输入 3,300（其中缓存 2,000），输出 170 tokens/);
+    if (suffix === " ") {
+      assert.match(result.stdout, /扫描限制/);
+      assert.match(result.stdout, /会话元数据无法读取：.*boundary.jsonl/);
+    } else {
+      assert.doesNotMatch(result.stdout, /扫描限制/);
+    }
+    assert.doesNotMatch(result.stdout, /^不完整：/m);
+    assert.deepEqual(result.calls, []);
+  }
+});
+
+test("review first-line indexing handles chunk boundaries, CRLF and metadata without newline", () => {
+  const input = files();
+  const padded = event("session_meta", {
+    padding: "界".repeat(4096),
+    id: "child",
+    parent_thread_id: "root",
+    timestamp: "2026-10-12T09:00:00.000Z",
+    agent_path: "/root/跨块子代理",
+  });
+  input["codex home/sessions/2026/10/12/child.jsonl"] =
+    padded + "\r\n" + tokens(2000, 1000, 100) + "\r\n" + complete("child", 60000);
+  input["codex home/sessions/no-newline.jsonl"] = meta("unrelated-eof");
+  const result = run([...argumentsForReview, "--dry-run"], input, []);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /子代理 \/root\/跨块子代理/);
+  assert.match(result.stdout, /合计：用时 3.5 分钟，输入 3,300/);
+  assert.doesNotMatch(result.stdout, /扫描限制|不完整/);
+});
+
+test("review separates unassignable metadata from selected missing or damaged records", () => {
+  for (const content of ["{broken\n", "", "null\n", event("session_meta", {})]) {
+    const input = { ...files(), "codex home/sessions/bad.jsonl": content };
+    const result = run([...argumentsForReview, "--dry-run"], input, []);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /合计（已知部分；扫描受限）：用时 3.5 分钟，输入 3,300/);
+    assert.match(result.stdout, /扫描限制（无法判断这些记录是否属于本次审查/);
+    assert.match(result.stdout, /会话元数据.*bad.jsonl/);
+    assert.doesNotMatch(result.stdout, /^不完整：/m);
+    assert.deepEqual(result.calls, []);
+  }
+  for (const content of ["{broken\n", meta("root") + "\n{broken\n"]) {
+    const input = files();
+    input["codex home/sessions/2026/10/12/root.jsonl"] = content;
+    const result = run([...argumentsForReview, "--dry-run"], input, []);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /合计（已知部分；不完整）/);
+    assert.match(result.stdout, /找不到审查会话 root|会话 root 含无法解析的 JSON/);
+  }
+});
+
+test("review keeps missing descendants visible alongside global scan limits", () => {
+  const input = files();
+  input["codex home/sessions/2026/10/12/child.jsonl"] = "{broken\n";
+  input["codex home/sessions/2026/10/12/root.jsonl"] += event("event_msg", {
+    type: "item_completed",
+    thread_id: "root",
+    item: { type: "SubAgentActivity", agent_thread_id: "child" },
+  }) + "\n";
+  const result = run([...argumentsForReview, "--dry-run"], input, []);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /找不到子代理会话 child/);
+  assert.match(result.stdout, /扫描限制/);
+  assert.match(result.stdout, /合计（已知部分；不完整）：用时 1.5 分钟，输入 1,000/);
 });
 
 test("review missing dispatch or session records still posts with precise partial reasons", () => {

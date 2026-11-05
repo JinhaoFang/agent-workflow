@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-spec 汇报模板（workflow-v4）：单文件，浏览器直接打开，可断网使用。用法和每节的数据见同目录 report.md。
+spec 汇报模板（workflow-v5 候选）：单文件，浏览器直接打开，可断网使用。用法和每节的数据见同目录 report.md。
 只替换文件末尾 data-slot="data" 的 JSON：{"report": 设计负责人填写的部分, "scorecard": tickets.ts scorecard --out 的原样输出}。
 节次按六点：做了什么和效果、目标与证明、要你做的、证据、代价与时间、风险与遗留；流程发现和数据口径折叠在最后。
 时间线、时间去向、验证卡片和用量都只读 scorecard；缺数显示"未记录"和 reason，不按零画。超过 45 分钟的空档压成竖纹。
@@ -77,11 +77,24 @@ th { color: var(--muted); font-weight: 500; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15); max-width: 280px; white-space: pre-line; }
 .empty { color: var(--muted); font-size: 14px; }
+.dispatch-chart { margin: 10px 0 18px; }
+.dispatch-item { padding: 10px 0; border-top: 1px solid var(--grid); min-width: 0; }
+.dispatch-item:first-child { border-top: 0; }
+.dispatch-heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin-bottom: 5px; }
+.dispatch-heading b { overflow-wrap: anywhere; }
+.dispatch-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 310px); gap: 12px; align-items: center; }
+.dispatch-track { height: 10px; background: var(--wash); border-radius: 3px; overflow: hidden; }
+.dispatch-fill { height: 100%; background: var(--dispatch-color); border-radius: 3px; }
+.dispatch-unknown { background: transparent; border: 1px dashed var(--axis); }
+.dispatch-meta { font-size: 12px; color: var(--ink2); overflow-wrap: anywhere; }
+.dispatch-reason { font-size: 12px; color: var(--ink2); margin-top: 4px; overflow-wrap: anywhere; }
+.dispatch-exit { color: var(--critical); font-weight: 600; }
 footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
 @media (max-width: 640px) {
   main { padding: 16px 12px 48px; }
   section { padding: 14px 12px; }
   .row { grid-template-columns: 1fr; }
+  .dispatch-line { grid-template-columns: minmax(0, 1fr); gap: 5px; }
   h1 { font-size: 20px; }
 }
 </style>
@@ -132,7 +145,10 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     <p class="muted">输入含缓存读取；条长是输入 token。</p>
     <div class="chart" data-slot="usage-bars"></div>
     <p class="muted" data-slot="usage-note"></p>
-    <details><summary>派发明细</summary><div data-slot="dispatch-table"></div></details>
+    <h3>逐次派发</h3>
+    <p class="muted">每条是一次派发，条长按分钟使用同一刻度，颜色沿用 Codex 泳道。未知时不画时长，显示原因；悬停或聚焦可查看完整字段。</p>
+    <div class="dispatch-chart" data-slot="dispatch-bars" role="group" aria-label="逐次派发的分钟与用量"></div>
+    <details><summary>派发表格（查找）</summary><div data-slot="dispatch-table"></div></details>
     <details><summary>验证明细</summary><div data-slot="verify-table"></div></details>
   </section>
 
@@ -1221,16 +1237,19 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     return box;
   };
   const tip = $("tip");
-  document.addEventListener("pointermove", (event) => {
-    const target = event.target.closest && event.target.closest("[data-tip]");
+  const showTip = (target, x, y) => {
     if (!target) { tip.hidden = true; return; }
     tip.textContent = target.getAttribute("data-tip");
     tip.hidden = false;
-    const x = Math.min(event.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
-    const y = Math.min(event.clientY + 12, window.innerHeight - tip.offsetHeight - 8);
-    tip.style.left = `${x}px`;
-    tip.style.top = `${y}px`;
+    tip.style.left = `${Math.max(8, Math.min(x + 12, window.innerWidth - tip.offsetWidth - 8))}px`;
+    tip.style.top = `${Math.max(8, Math.min(y + 12, window.innerHeight - tip.offsetHeight - 8))}px`;
+  };
+  document.addEventListener("pointermove", (event) => showTip(event.target.closest && event.target.closest("[data-tip]"), event.clientX, event.clientY));
+  document.addEventListener("focusin", (event) => {
+    const target = event.target.closest && event.target.closest("[data-tip]");
+    if (target) { const box = target.getBoundingClientRect(); showTip(target, box.left, box.top); }
   });
+  document.addEventListener("focusout", () => { tip.hidden = true; });
 
   document.title = `spec #${R.spec} 汇报：${R.title}`;
   $("meta").textContent = [R.date, `spec #${R.spec}`, R.pr ? `PR #${R.pr.number}（${R.pr.state}）` : null].filter(Boolean).join(" · ");
@@ -1320,6 +1339,34 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     ["waitingUser", "等用户", "var(--s5)"],
   ];
   put("lane-legend", LANES.map(([, name, c]) => el("span", { style: `--c:${c}`, text: name })));
+  const dispatchChart = $("dispatch-bars");
+  dispatchChart.style.setProperty("--dispatch-color", LANES[0][2]);
+  const dispatchMinutes = (d) => {
+    const value = val(d.minutes);
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  };
+  const longestDispatch = Math.max(1, ...dispatches.map((d) => dispatchMinutes(d) ?? 0));
+  put("dispatch-bars", dispatches.length ? dispatches.map((d) => {
+    const minutes = dispatchMinutes(d), usage = val(d.usage), category = val(d.category), exit = val(d.exitCode);
+    const input = usage && typeof usage.inputTokens === "number" ? usage.inputTokens : null;
+    const details = [
+      d.record || "记录名未记录", d.ticket ? `工单 #${d.ticket}` : "无工单号",
+      `类别：${category ?? "未记录"}`, `开始：${fmtTime(val(d.start))}`, `结束：${fmtTime(val(d.end))}`,
+      minutes === null ? `时长未记录：${why(d.minutes)}` : `时长：${fmtMin(minutes)}`,
+      `退出码：${exit ?? "未记录"}`, input === null ? `输入未记录：${why(d.usage)}` : `输入：${fmtNum(input)} token`,
+      usage ? `缓存输入：${fmtTok(usage.cachedInputTokens)}；输出：${fmtTok(usage.outputTokens)}` : null,
+    ].filter(Boolean).join("\n");
+    const track = el("div", { class: `dispatch-track${minutes === null ? " dispatch-unknown" : ""}`, "aria-hidden": "true" });
+    if (minutes !== null) track.append(el("div", { class: "dispatch-fill", style: `width:${(100 * minutes) / longestDispatch}%` }));
+    const meta = el("div", { class: "dispatch-meta" }, category ?? "类别未记录");
+    if (exit !== null && exit !== undefined && exit !== 0) meta.append(" · ", el("span", { class: "dispatch-exit", text: `退出 ${exit}` }));
+    else if (exit === null || exit === undefined) meta.append(" · 退出码未记录");
+    meta.append(input === null ? " · 输入未记录" : ` · 输入 ${fmtTok(input)}`);
+    return el("div", { class: "dispatch-item", tabindex: "0", role: "group", "aria-label": details, "data-tip": details },
+      el("div", { class: "dispatch-heading" }, el("b", { text: d.record || "记录名未记录" }), el("span", { text: minutes === null ? "时长未记录" : fmtMin(minutes) })),
+      el("div", { class: "dispatch-line" }, track, meta),
+      minutes === null ? el("div", { class: "dispatch-reason", text: `未记录：${why(d.minutes)}` }) : null);
+  }) : el("p", { class: "empty", text: "没有派发记录。" }));
   const timeline = () => {
     if (!S) return el("p", { class: "empty", text: "没有评分表数据。" });
     const lanes = LANES.map(([key, name, color]) => ({ key, name, color, field: S.time[key], spans: ((val(S.time[key]) || {}).spans || []).map((s) => [Date.parse(s.start), Date.parse(s.end)]) }));

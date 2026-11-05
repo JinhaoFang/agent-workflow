@@ -2,7 +2,7 @@
  * Cleanup command: export cleanupCommand for CLI registration. List spec-owned
  * main records, QA, worktrees, local/origin ticket branches and exact <ticket>.json
  * land journals in the common git directory before deletion. Dirty/current/
- * mismatched trees and their branches are retained, with exit 1. Ticket refs
+ * mismatched trees and their local/origin branches are retained, with exit 1. Ticket refs
  * may be unmerged and are deleted with -D; worktree removal is never forced.
  * Query origin directly for exact child refs, without fetching. Remote deletion
  * failures name the branch, allow other cleanup to proceed and exit with 1.
@@ -14,11 +14,14 @@
  * and interrupted input snapshot directories, retaining other/default names.
  * Before deleting anything require a posted scorecard covering owned records;
  * dry-run still prints the plan and check result; --no-scorecard bypasses it.
+ * Explicit auxiliary bindings never expand deletion; require identical main
+ * copies before deleting any worktree or retained directory holding evidence.
  */
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { printKeptDirectory } from "./ignored-artifacts.ts";
 import { checkScorecard } from "./scorecard.ts";
+import { assertAuxiliaryEvidencePreserved, readRecordBindings } from "./scorecard-records.ts";
 import {
   entry,
   CheckFailure,
@@ -27,6 +30,7 @@ import {
   github,
   issueNumber,
   matchesRecord,
+  recordName,
   type Command,
   type Values,
 } from "./shared.ts";
@@ -53,11 +57,14 @@ const cleanup = (values: Values, numbers: number[]): void => {
       issueNumber(String(child.number)),
     ),
   );
+  const auxiliary = new Set(readRecordBindings(root, spec, tickets).map((binding) => binding.name).filter((name) =>
+    !matchesRecord(name, `review-${spec}`) && ![...tickets].some((ticket) => matchesRecord(name, `gh-${ticket}`))));
   const records = join(root, ".codex-runs");
   const files = existsSync(records)
     ? readdirSync(records, { withFileTypes: true })
         .filter((file) => {
           const name = file.name;
+          if (auxiliary.has(recordName(name))) return false;
           return (
             matchesRecord(name, `review-${spec}`) ||
             (file.isFile() &&
@@ -146,6 +153,7 @@ const cleanup = (values: Values, numbers: number[]): void => {
     } else removable.push(tree.path);
   }
   const deletable = branches.filter((branch) => !retained.has(branch));
+  const deletableRemote = remoteBranches.filter((branch) => !retained.has(branch));
   console.log(
     `清理清单：spec #${spec}${values["dry-run"] ? "（仅预览）" : ""}`,
   );
@@ -153,16 +161,17 @@ const cleanup = (values: Values, numbers: number[]): void => {
   for (const directory of kept) printKeptDirectory(directory);
   for (const tree of removable) console.log(`删除 worktree：${tree}`);
   for (const branch of deletable) console.log(`删除分支：${branch}`);
-  for (const branch of remoteBranches)
+  for (const branch of deletableRemote)
     console.log(`删除远端分支：origin/${branch}`);
   for (const message of skipped) console.log(message);
   if (
     !files.length &&
     !removable.length &&
     !deletable.length &&
-    !remoteBranches.length
+    !deletableRemote.length
   )
     console.log("没有可删除的内容。");
+  assertAuxiliaryEvidencePreserved(root, spec, tickets, [...removable, ...kept]);
   if (values["no-scorecard"]) console.log("已跳过评分表检查（--no-scorecard）。");
   else checkScorecard(root, spec, tickets, endpoint(spec));
   const remoteFailures: string[] = [];
@@ -181,7 +190,7 @@ const cleanup = (values: Values, numbers: number[]): void => {
       rmSync(file, { recursive: true, force: true });
       console.log(`已删除文件或目录：${file}`);
     }
-    for (const branch of remoteBranches) {
+    for (const branch of deletableRemote) {
       try {
         git(root, ["push", "origin", "--delete", branch]);
         console.log(`已删除远端分支：origin/${branch}`);
@@ -216,9 +225,14 @@ export const cleanupCommand: Command = {
 验证日志只匹配 .log 文件，main 和其他 spec 工单的验证日志保留。
 巡检日志只清理 watch-<spec号>.log、watch-<spec号>-*.log 和子工单号的同类日志；其他 spec 和默认名字保留。
 同时清理 review-spec-<spec号>-<序号>.md、配对的 .json，以及 review-spec-<spec号>-<随机后缀>/ 输入快照目录。
-不干净的 worktree 跳过并保留对应分支，以 1 退出；不强行删除 worktree。
+主工作区、当前工作区、分支不符、路径不存在或不干净的 worktree 跳过，
+对应本地与 origin 远端分支同时保留，预览与执行使用同一保留集合，以 1 退出；不强行删除 worktree。
 删除任何内容之前检查 spec 上的评分表评论；没有有效评论或本 spec 的台账、派发记录
 在评分表截点之后有更新时，以 1 退出且不删除任何内容，并提示 scorecard <spec> --post。
+评分表还须覆盖当前全部显式 --record 关联集合；新关联旧文件也须重新发布评分表。
+关联文件和辅助记录不纳入删除范围；按实际待删除 worktree（含移址路径）及 .kept 清单检查辅助证据；
+没有内容一致的主工作区副本时，
+清理以 1 退出且不删除任何内容，此保护不因 --no-scorecard 而跳过。
 按 branch=spec/<号>-… 和直接子工单 ticket/<号> 归属台账；其他 spec 的新记录不拦截。
 --no-scorecard 显式跳过评分表检查，适用于 gh 出错或用户不要评分表。
 --dry-run 只读取 GitHub、git 和文件，列出清单及评分表拦截结论，不删除任何内容。`,

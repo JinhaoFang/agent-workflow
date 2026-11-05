@@ -22,16 +22,6 @@ import {
 
 const prCheck = async (values: Values, numbers: number[]): Promise<void> => {
   const checkout = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
-  const config = dispatchConfig(checkout);
-  const [program, ...args] = config.prCheckCommand.map((part) =>
-    part.replaceAll("{pr}", String(numbers[0])),
-  );
-  if (values["dry-run"]) {
-    console.log(
-      `PR 检查命令（${checkout}）：${JSON.stringify([program, ...args])}`,
-    );
-    return;
-  }
   const root = git(checkout, ["worktree", "list", "--porcelain"])
     .split("\n")[0]
     .slice(9);
@@ -39,8 +29,18 @@ const prCheck = async (values: Values, numbers: number[]): Promise<void> => {
     root,
     "pr-check",
     { kind: "pr", number: numbers[0] },
-    false,
+    Boolean(values["dry-run"]),
     async (attempt) => {
+      const config = dispatchConfig(checkout);
+      const [program, ...args] = config.prCheckCommand.map((part) =>
+        part.replaceAll("{pr}", String(numbers[0])),
+      );
+      if (values["dry-run"]) {
+        console.log(
+          `PR 检查命令（${checkout}）：${JSON.stringify([program, ...args])}`,
+        );
+        return;
+      }
       const result = await attempt.run(
         checkout,
         config.exclusiveVerification &&

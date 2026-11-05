@@ -297,12 +297,15 @@ test("verify help, invalid arguments, config errors and dry-run never execute ve
       preview.stdout.includes(JSON.stringify(f.config.verificationCommand)),
     );
     assert.equal(preview.call, null);
+    assert.ok(!existsSync(f.records));
     writeFileSync(join(f.root, "docs/agents/run-spec.json"), "{}");
     const invalid = f.run();
     assert.equal(invalid.status, 2, invalid.stderr);
     assert.match(invalid.stderr, /^出错：配置缺少 verificationCommand/);
     assert.equal(invalid.call, null);
-    assert.ok(!existsSync(f.records));
+    const failed = JSON.parse(readFileSync(join(f.records, "verification.jsonl"), "utf8"));
+    assert.equal(failed.exitCode, 2);
+    assert.equal(failed.verification, null);
   } finally {
     f.cleanup();
   }
