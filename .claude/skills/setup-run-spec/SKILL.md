@@ -102,7 +102,7 @@ disable-model-invocation: true
    npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
    ```
 
-   `-a` 按设计负责人会用的框架选：Claude Code 读 `.claude/skills/`，Codex 和 pi 读 `.agents/skills/`。派出去的 agent 由派发层按名称屏蔽这两个技能，装进 `.agents/skills/` 不会让执行者看到。更新完运行自检。安装会改 `skills-lock.json` 里这两项的哈希，要提交；不提交的话主工作区不干净，`land` 会拒绝合并。
+   `-a claude-code` 总要带，脚本路径以它为准；设计负责人用 Codex 或 pi 时再加 `-a codex`。派出去的 agent 由派发层按名称屏蔽这两个技能。更新完运行自检。安装会改 `skills-lock.json` 里这两项的哈希，要提交；不提交的话主工作区不干净，`land` 会拒绝合并。
 
 完成标准：自检全部通过，冒烟测试五项都有证据。
 

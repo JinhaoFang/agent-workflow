@@ -15,7 +15,7 @@ description: 执行 GitHub 上的 spec 和工单：选出可做的工单，role:
 | `link` | 把工单挂到 spec 下，建阻塞关系 |
 | `review-spec` | 请一个不共享上下文的只读会话（`spec-review` 席位）审查 spec 和工单；`--post` 把原文评论到 spec |
 | `dispatch` | 建 worktree、接软链接、装依赖并记下安装产物，再按 `engineering` 席位派发；到该框架的并发上限自动排队 |
-| `run` | 辅助派发和审查批次的入口，按席位启动；带 `--spec` 时计入该 spec 的评分表 |
+| `run` | 按席位启动辅助派发和审查；带 `--spec` 时计入评分表 |
 | `slots` | 列出正在跑的派发和空余名额 |
 | `verify` | 跑验证，按改动路径选静态检查或完整验证，每次记进验证台账 |
 | `land` | rebase、按改动路径验证（改了代码的跑完整验证）、快进合并、推送；复制派发记录和验收产物，删掉可丢弃的被忽略文件，其余移到保留目录 |
@@ -56,7 +56,7 @@ description: 执行 GitHub 上的 spec 和工单：选出可做的工单，role:
 
 ## 4. 派发工程工单
 
-每张工程工单在自己的 worktree 里做，主工作区留给设计工单和合并。在主工作区用 Bash 后台运行（`run_in_background: true`）：
+每张工程工单在自己的 worktree 里做，主工作区留给设计工单和合并。在主工作区后台运行：
 
 ```bash
 node .claude/skills/run-spec/scripts/tickets.ts dispatch <T> [--note <补充说明> | --note-file <文件>] [--allow-push]
@@ -64,11 +64,11 @@ node .claude/skills/run-spec/scripts/tickets.ts dispatch <T> [--note <补充说�
 
 - 其余参数（例如中断后在原 worktree 续做）看 `dispatch --help`。
 - 要靠整体判断验收的工单（效果、结构、行文），派发前确认工单写明了定稿在哪，验收逐项对照。
-- 框架和模型按席位配置选，工单写了 `工作类型：<名称>` 的用对应档；临时要换用 `--help` 里的覆盖参数，理由写进补充说明（思路 2）。
+- 框架和模型按席位配置，工单的 `工作类型：<名称>` 选对应档；临时改用 `--help` 里的覆盖参数，理由写进补充说明（思路 2）。
 - 派发指令由脚本生成：配了测试分层时，要求执行者开发中只跑相关测试和静态检查，完整验证留给 `land`；配了 `verificationEnv`、`exclusiveVerification` 的，按配置带上环境变量、排队验证。
 - 补充说明写工单里没有、这一次派发才有的情况：并行的工单会改同一处时，写"只加自己那一项"，最好再指定各自加在哪里；返工时写上一轮验收的问题；派发时临时做的决定。脚本先把它评论到工单上再派发。
 - 验收要 CI 运行链接的工单加 `--allow-push`：执行者只推本工单分支、不开 PR，`cleanup` 收尾时删掉远端分支。
-- 后台输出的开头有实际记录名和进度文件，连同粗略用时告诉用户。后台命令结束时你会收到通知，不用轮询，等待期间可以验收、合并别的工单。
+- 后台输出的开头有实际记录名和进度文件，连同粗略用时告诉用户。等待期间验收、合并别的工单，不必一直盯着进度。
 - 派发失败时先报告原因、核对实际状态，在既有授权内处理参数、环境或续做问题；范围、费用、权限或难回头的决定改变时请用户决定。环境或配置错误用 `tickets.ts doctor` 和配置指向的本机说明定位；其他已知坑见 `dispatch --help`。
 
 完成标准：后台命令已结束，进度文件末尾有 `=== <框架> 结束：exit=…` 这一行。
@@ -76,7 +76,7 @@ node .claude/skills/run-spec/scripts/tickets.ts dispatch <T> [--note <补充说�
 ## 5. 验收并写回
 
 1. 读 worktree 里的汇报 `.codex-runs/<记录名>.md` 和 `git log spec/<S>-<英文短名>..HEAD --stat`；确认 worktree 干净，改动没有越过工单的「边界」。
-2. 逐条核对工单的验收标准（思路 1）。验收产物要亲自看：图片用 Read 看，命令自己重跑。验证不在这里另跑，由下一步的 `land` 跑（思路 5）。
+2. 逐条核对工单的验收标准（思路 1）。验收产物要亲自看：图片直接打开看，命令自己重跑。验证不在这里另跑，由下一步的 `land` 跑（思路 5）。
 3. 汇报里的每一条 `TODO(design)` 和推断清单都要给出处理：接受，或者做决定、写进后续工单，或者自己动手改。
 4. 通过就合并：`tickets.ts land <T>`，每步一行结果。停下时按提示处理后重跑同一条命令：rebase 冲突就在 worktree 里解决、`git add`；验证失败就当作需返工。保留目录里列出的文件，要用的拷回主工作区。需返工的不合并，直接写评论。
 5. 写验收评论：四个字段分别写进文件，运行 `tickets.ts accept <T> --result 通过|需返工 --commits-file <文件> --verification-file <文件> --design-file <文件> --remaining-file <文件>`。「提交」写 `land` 之后的提交号，「验证」写 `land` 的验证结果。通过就评论并关闭；需返工只评论，然后带补充说明回到第 4 步。
@@ -85,7 +85,7 @@ node .claude/skills/run-spec/scripts/tickets.ts dispatch <T> [--note <补充说�
 
 ## 6. 按批审查
 
-审查由 `review` 席位做（可配几个模型各审一份），你只取舍。一批 = 同一轮派出、都已合并的工单；批小或名额紧时几批合审，最后一批并进第 7 步的收尾审查（思路 2）。固定点 `B` 是这一批第一张合并前集成分支的提交（收尾时用 `main`）。审查不经过 `dispatch` 的排队，先用 `slots` 看名额，没有就等。在主工作区后台运行：
+审查由 `review` 席位做（可配几个模型各审一份），你只取舍。一批 = 同一轮派出、都已合并的工单；批小或名额紧时几批合审，最后一批并进第 7 步的收尾审查（思路 2）。固定点 `B` 是这一批第一张合并前集成分支的提交（收尾时用 `main`）。在主工作区后台运行：
 
 ```bash
 node .claude/skills/run-spec/scripts/tickets.ts run "用 code-review 技能审查固定点 B 到 HEAD 的改动，spec 是 #S，各提交的 Refs 指向对应工单。只读：不改文件、不提交，最后输出审查报告。" --seat review --spec <S> --name review-<S>-<批次>
@@ -105,7 +105,7 @@ node .claude/skills/run-spec/scripts/tickets.ts run "用 code-review 技能审�
 1. **目标核对**（思路 1）：把 spec 问题陈述里的现状按同一口径重测，量大就用 `run --seat research` 只读去做。没达到的开返工工单，或者写进 PR 正文和汇报；问题陈述没有可度量现状的，写明用什么判断目标达成。
 2. 按第 6 步以 `main` 为固定点审一次整个分支，要修的返工做完。
 3. `gh pr create --base main` 开 PR，正文按 `pr` 技能的格式写，包含 `Closes #S` 和接受不修的审查意见。用 `tickets.ts pr-check <PR号>` 等检查跑完：这是 spec 收尾的那次全套验证（思路 5）。失败就查原因，本 spec 引入的按返工处理，既有的写进 PR 正文和汇报。
-4. 运行 `tickets.ts scorecard <S> --session <会话记录>… --post --out <文件>`，把评分表发到 spec。`run --spec` 派的辅助工作自动计入，其余辅助派发加 `--record <记录名>`。会话记录给本 spec 用过的全部主会话，包括写 spec 的会话（Claude Code、Codex、pi 都认）。
+4. 运行 `tickets.ts scorecard <S> --session <会话记录>… --post --out <文件>`，把评分表发到 spec。`run --spec` 派的辅助工作自动计入，其余辅助派发加 `--record <记录名>`。会话记录给本 spec 用过的全部主会话，包括写 spec 的会话，三种框架的都认。
 5. 按 [report.md](report.md) 写 HTML 汇报（思路 4），过程数据只用评分表，存进配置说明里写的汇报目录。仓库有路线图这类新会话入口时，按思路 3 只更新它的「已定」和「待定」，和汇报同一个提交。推送到同一分支，把文件路径告诉用户。
 6. 运行 `tickets.ts cleanup <S>`。评分表之后又有本 spec 的验证或派发时它会拦下，重跑第 4 步的命令更新评论即可。清单按思路 4 先按类别汇总再给用户看；保留目录里还要用的先拷回主工作区；不干净的 worktree 会被跳过，看过里面的改动再处理，然后重跑。
 

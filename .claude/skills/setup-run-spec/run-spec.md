@@ -24,10 +24,8 @@ npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill se
 | `symlinkDirectories` | `<值>` | 不进 git、但派出去的 agent 要读的目录。`dispatch` 把它们从主工作区软链接进 worktree，派发指令要求只读使用。本仓库是<说明>。 |
 | `acceptanceRoot` | `<值>` | 验收产物根目录。每张工单写到下面的 `spec-<S>/<T>/`；`land` 把它复制回主工作区，`cleanup` 整个删掉 `spec-<S>/`。其余被忽略的工单产物移到 `<仓库目录>.worktrees/.kept/<T>/`，`cleanup` 列出后删除。 |
 | `codexSandbox` | `<值>` | 旧权限兼容项，适用席位和映射见 [seats.md](seats.md)。<用户选它的理由> |
-| `codexConcurrency` | 不写（默认 `2`） | 可选，旧项。Codex 的并发上限，新写法见 `agents`。 |
 | `workTypes` | `<名称到一句说明的对象或不写（默认 {}）>` | 仓库的工作类型词表。工单正文单独一行 `工作类型：<名称>` 选席位的对应档，规则见 [seats.md](seats.md)。 |
-| `seats` | 不写 | 仓库确有硬要求时覆盖个人的席位配置，格式见 [seats.md](seats.md)。 |
-| `agents` | 不写 | 框架的可执行路径和并发上限，覆盖个人配置，格式见 [seats.md](seats.md)。 |
+| `seats`、`agents` | 不写 | 仓库确有硬要求时覆盖个人的席位、框架路径和并发上限；格式和旧项 `codexConcurrency` 见 [seats.md](seats.md)。 |
 | `prCheckCommand` | 不写（默认 `["gh", "pr", "checks", "{pr}", "--watch"]`） | 可选。`pr-check` 运行的 PR 检查命令，每个参数里的 `{pr}` 换成 PR 号；CI 不能用时改成本机 CI，例如 `["make", "ci-local", "PR={pr}"]`。 |
 | `verificationEnv` | `<值或不写（默认 {}）>` | 可选。验证要用的环境变量；值里的 `{mainRoot}` 换成主工作区路径，进程里已有的同名变量优先。验证、合并、PR 检查和派发都带上它，实际值写进派发记录，不放密钥。<为什么要这些变量> |
 | `exclusiveVerification` | `<true 或不写（默认 false）>` | 可选。开启后完整验证全仓库排队，一次只跑一个，执行者也通过主工作区的 `tickets.ts verify <T>` 排队。验证吃满 CPU、内存或独占端口、数据库时开。 |
