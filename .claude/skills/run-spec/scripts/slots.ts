@@ -26,7 +26,7 @@ export const slotsCommand: Command = {
     const configured = new Set([
       ...Object.keys(seats.user.agents ?? {}),
       ...Object.keys(seats.repository.agents ?? {}),
-      ...agentNames.filter(agent => process.env[`RUN_SPEC_${agent.toUpperCase()}_CONCURRENCY`]),
+      ...agentNames().filter(agent => process.env[`RUN_SPEC_${agent.toUpperCase()}_CONCURRENCY`]),
       ...running.map(run => run.framework),
     ]);
     for (const seat of seatNames) {
@@ -35,7 +35,7 @@ export const slotsCommand: Command = {
         for (const settings of resolveSeat(seats, seat, workType))
           configured.add(settings.agent);
     }
-    const frameworks = agentNames.filter(agent => configured.has(agent));
+    const frameworks = agentNames().filter(agent => configured.has(agent));
     const limits = new Map(frameworks.map(agent => [agent, frameworkSettings(seats, agent).concurrency]));
     for (const agent of frameworks) {
       if (frameworks.length !== 1 || agent !== "codex")

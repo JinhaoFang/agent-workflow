@@ -204,6 +204,48 @@ console.log("codex-cli 0.1.0 (fixture)");
   };
 };
 
+test("doctor 未配置 codexSandbox 时报告仓库或用户工程权限，缺少时退出 2", () => {
+  const f = fixture();
+  try {
+    const { codexSandbox, ...config } = f.config;
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    const userFile = join(userDirectory, "seats.json");
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });
+    const capture = (name: string, result: ReturnType<typeof f.run>) => {
+      if (!process.env.RUN_SPEC_TEST_EVIDENCE) return;
+      mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
+      writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, name), result.stdout + result.stderr + `\n退出码：${result.status}\n`);
+    };
+    for (const agent of ["codex", "claude", "pi"]) {
+      for (const source of ["仓库", "用户"]) {
+        const seats = { engineering: { default: { agent, permission: "read-only" } } };
+        f.write("docs/agents/run-spec.json", JSON.stringify({ ...config, ...(source === "仓库" ? { seats } : {}) }));
+        writeFileSync(userFile, JSON.stringify(source === "用户" ? { seats } : {}));
+        const result = f.run(["doctor"], { env: { CODEX_SANDBOX: "" } });
+        assert.equal(result.status, 0, result.stdout + result.stderr);
+        assert.ok(result.stdout.includes(`engineering.default：框架：${agent}；模型：框架默认；强度：框架默认；权限：read-only；来源：框架=${source}、权限=${source}`), result.stdout);
+        assert.match(result.stdout, /codexSandbox=未配置，工程权限取席位配置/);
+        capture(`doctor-no-sandbox-${agent}-${source === "仓库" ? "repository" : "user"}.log`, result);
+      }
+    }
+    writeFileSync(userFile, "{}");
+    f.write("docs/agents/run-spec.json", JSON.stringify(config));
+    const missing = f.run(["doctor"], { env: { CODEX_SANDBOX: "" } });
+    assert.equal(missing.status, 2, missing.stdout + missing.stderr);
+    assert.match(missing.stderr, /席位配置 engineering.default；工程席位缺少权限/);
+    for (const location of ["docs/agents/run-spec.json", userFile, "seats.engineering.default.permission", "codexSandbox"])
+      assert.ok(missing.stderr.includes(location), missing.stderr);
+    capture("doctor-no-sandbox-missing.log", missing);
+    for (const [sandbox, permission] of [["read-only", "read-only"], ["workspace-write", "workspace-write"], ["danger-full-access", "full"]]) {
+      f.write("docs/agents/run-spec.json", JSON.stringify({ ...config, codexSandbox: sandbox }));
+      const legacy = f.run(["doctor"], { env: { CODEX_SANDBOX: "" } });
+      assert.equal(legacy.status, 0, legacy.stdout + legacy.stderr);
+      assert.ok(legacy.stdout.includes(`权限：${permission}；来源：权限=仓库`), legacy.stdout);
+    }
+  } finally { f.cleanup(); }
+});
+
 test("seat doctor reports default, user pi profiles, repository overrides and review lists with sources", () => {
   const f = fixture();
   try {
@@ -888,7 +930,7 @@ test("doctor reports absent configuration, every missing field, invalid JSON and
   try {
     rmSync(join(f.root, "docs/agents/run-spec.json"));
     fails(f.run(), "执行配置完整", /必填项/);
-    for (const key of Object.keys(f.config).filter(key => key !== "dispatchScript")) {
+    for (const key of Object.keys(f.config).filter(key => !["dispatchScript", "codexSandbox"].includes(key))) {
       const config: Record<string, unknown> = { ...f.config };
       delete config[key];
       f.write("docs/agents/run-spec.json", JSON.stringify(config));

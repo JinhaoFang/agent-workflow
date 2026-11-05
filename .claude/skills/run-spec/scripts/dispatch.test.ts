@@ -330,6 +330,39 @@ process.stdout.write(JSON.stringify(response.value));
   };
 };
 
+test("dispatch 未配置 codexSandbox 时接受仓库或用户工程权限，缺少时指出配置位置并退出 2", () => {
+  const f = fixture();
+  try {
+    const { codexSandbox, ...config } = f.config;
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    const userFile = join(userDirectory, "seats.json");
+    mkdirSync(userDirectory, { recursive: true });
+    for (const agent of ["codex", "claude", "pi"]) {
+      for (const source of ["仓库", "用户"]) {
+        const seats = { engineering: { default: { agent, permission: "read-only" } } };
+        writeFileSync(f.configFile, JSON.stringify({ ...config, ...(source === "仓库" ? { seats } : {}) }));
+        writeFileSync(userFile, JSON.stringify(source === "用户" ? { seats } : {}));
+        const result = f.run(["--dry-run"], { env: { CODEX_SANDBOX: "" } });
+        assert.equal(result.status, 0, result.stdout + result.stderr);
+        assert.ok(result.stdout.includes(`框架：${agent}；模型：框架默认；强度：框架默认；权限：read-only`), result.stdout);
+        evidence(`dispatch-no-sandbox-${agent}-${source === "仓库" ? "repository" : "user"}.log`, result.stdout + result.stderr);
+      }
+    }
+    writeFileSync(f.configFile, JSON.stringify(config));
+    writeFileSync(userFile, "{}");
+    const legacyDirectory = join(f.temporary, "dispatch-home");
+    mkdirSync(legacyDirectory, { recursive: true });
+    writeFileSync(join(legacyDirectory, "config.json"), JSON.stringify({ v: 1, agents: { codex: { sandbox: "danger-full-access" } } }));
+    const missing = f.run(["--dry-run"], { env: { CODEX_SANDBOX: "" } });
+    assert.equal(missing.status, 2, missing.stdout + missing.stderr);
+    assert.match(missing.stderr, /出错：工程席位缺少权限/);
+    for (const location of ["docs/agents/run-spec.json", userFile, "seats.engineering.default.permission", "codexSandbox"])
+      assert.ok(missing.stderr.includes(location), missing.stderr);
+    assert.ok(!existsSync(f.worktree));
+    evidence("dispatch-no-sandbox-missing.log", missing.stdout + missing.stderr);
+  } finally { f.cleanup(); }
+});
+
 test("seat dispatch CLI resolves builtin/user/repository/environment/command layers and records effective sources", () => {
   const f = fixture();
   try {
@@ -922,7 +955,7 @@ test("dispatch reports missing config and every missing field as usage/runtime e
     assert.equal(result.status, 2);
     assert.match(result.stderr, /^出错：缺少本仓库配置：/);
     assert.equal(result.calls.length, 0);
-    for (const key of Object.keys(f.config).filter(key => key !== "dispatchScript")) {
+    for (const key of Object.keys(f.config).filter(key => !["dispatchScript", "codexSandbox"].includes(key))) {
       const config: Record<string, unknown> = { ...f.config };
       delete config[key];
       writeFileSync(f.configFile, JSON.stringify(config));
@@ -938,6 +971,7 @@ test("dispatch reports missing config and every missing field as usage/runtime e
       { ...f.config, symlinkDirectories: ["../outside"] },
       { ...f.config, acceptanceRoot: "../outside" },
       { ...f.config, codexSandbox: "invalid" },
+      { ...f.config, codexSandbox: null },
     ]) {
       writeFileSync(f.configFile, JSON.stringify(config));
       result = f.run();
@@ -1492,6 +1526,24 @@ test("dispatch retries account concurrency failures through the queue and finall
   } finally {
     await f.cleanup();
   }
+});
+
+test("dispatch 使用新登记适配器的自定义限流样本重排队", async () => {
+  const f = queueFixture();
+  try {
+    const preload = join(f.temporary, "custom-adapter.mjs");
+    const module = new URL("./dispatch/adapters.ts", import.meta.url).href;
+    writeFileSync(preload, `import { adapters } from ${JSON.stringify(module)}; adapters.fixture = { ...adapters.codex, id: "fixture", label: "测试框架", isConcurrencyLimit: output => output.includes("fixture capacity") };`);
+    const fake = join(f.root, "fake-dispatch.cjs");
+    writeFileSync(fake, readFileSync(fake, "utf8").replace("Concurrency limit exceeded for account", "fixture capacity"));
+    writeFileSync(f.configFile, JSON.stringify({ ...f.config, seats: { engineering: { default: { agent: "fixture", permission: "read-only" } } } }));
+    const job = f.launch(21, { LIMIT_FAILURES: "1", NODE_OPTIONS: `--import=${JSON.stringify(preload)}` });
+    assert.equal(await job.done, 0, job.output.stdout + job.output.stderr);
+    assert.match(job.output.stdout, /测试框架 返回并发超限，等待账号名额/);
+    assert.match(job.output.stdout + job.output.stderr, /fixture capacity/);
+    assert.equal(readFileSync(join(f.home, "attempt-gh-21"), "utf8"), "2");
+    evidence("queue-custom-adapter.log", job.output.stdout + job.output.stderr);
+  } finally { await f.cleanup(); }
 });
 
 test("dispatch prints at most six queue lines during thirty simulated minutes", async () => {

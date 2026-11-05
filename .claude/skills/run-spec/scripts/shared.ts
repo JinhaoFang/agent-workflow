@@ -7,7 +7,8 @@
  * linked directories normalize lexically against the checkout root and dedupe
  * before any command receives them. Empty/root, absolute and parent paths fail
  * with the configured entry index and value; symlink targets are not resolved.
- * codexSandbox selects Codex permissions; dispatchScript is obsolete and ignored.
+ * Optional codexSandbox selects engineering Codex permissions; otherwise seats
+ * must supply engineering permissions. dispatchScript is obsolete and ignored.
  * The dispatcher ships with run-spec. Missing/invalid required config exits with 2.
  * Optional codexConcurrency and prCheckCommand use defaults and report sources;
  * RUN_SPEC_CODEX_CONCURRENCY overrides the validated configured concurrency.
@@ -213,7 +214,7 @@ export type DispatchConfig = {
   installCommand: string[];
   symlinkDirectories: string[];
   acceptanceRoot: string;
-  codexSandbox: string;
+  codexSandbox?: string;
   dispatchScript?: unknown;
   codexConcurrency: number;
   prCheckCommand: string[];
@@ -263,7 +264,6 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     "installCommand",
     "symlinkDirectories",
     "acceptanceRoot",
-    "codexSandbox",
   ]) {
     if (!Object.hasOwn(config, key))
       throw new Error(`配置缺少 ${key}：${file}`);
@@ -297,6 +297,7 @@ export const dispatchConfig = (root: string): DispatchConfig => {
   if (!localPath(config.acceptanceRoot))
     throw new Error("配置 acceptanceRoot 必须是仓库内相对目录");
   if (
+    Object.hasOwn(config, "codexSandbox") &&
     !["read-only", "workspace-write", "danger-full-access"].includes(
       config.codexSandbox,
     )
@@ -449,8 +450,9 @@ export const runClaude = (options: {
   model?: string;
   effort?: string;
   launcher?: { executable: string; args: string[] };
+  command?: { executable: string; args: string[]; stdin: string };
 }): ClaudeResult => {
-  const args = [
+  const args = options.command?.args ?? [
     ...(options.launcher?.args ?? []),
     "-p",
     "--output-format",
@@ -462,9 +464,9 @@ export const runClaude = (options: {
     ...(options.model ? ["--model", options.model] : []),
     ...(options.effort ? ["--effort", options.effort] : []),
   ];
-  const result = spawnSync(options.launcher?.executable ?? "claude", args, {
+  const result = spawnSync(options.command?.executable ?? options.launcher?.executable ?? "claude", args, {
     cwd: options.cwd,
-    input: options.prompt,
+    input: options.command?.stdin ?? options.prompt,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });

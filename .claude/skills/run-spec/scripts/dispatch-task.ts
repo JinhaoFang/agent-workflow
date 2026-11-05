@@ -4,13 +4,15 @@
  * 调试可用 CODEX_DRY_RUN 只读预览；正常运行记录在调用目录 .codex-runs。
  */
 import { run } from "./dispatch/run.ts";
+import { agentNames } from "./dispatch/adapters.ts";
 
 const help = `用法：node .claude/skills/run-spec/scripts/dispatch-task.ts <任务文件|任务文字> [补充说明]
   [--role <角色文档名>] [--name <记录名>] [--seat <engineering|review|spec-review|research|watch>]
-  [--work-type <工作类型>] [--agent <codex|claude|pi>] [--permission <read-only|workspace-write|full>]
+  [--work-type <工作类型>] [--agent <${agentNames().join("|")}>] [--permission <read-only|workspace-write|full>]
   [--model <模型>] [--effort <强度>] [--tier <档位>] [--sandbox <read-only|workspace-write|danger-full-access>]
 模型和强度未指定时沿用所选框架默认；过渡期兼容 CODEX_MODEL/CODEX_EFFORT/CODEX_TIER 和旧 config.json。
 席位读取 XDG_CONFIG_HOME/agent-workflow/seats.json（默认 ~/.config/agent-workflow/seats.json）和仓库 seats/agents/workTypes。
+codexSandbox 可省略；未配置时工程权限须由仓库或用户 seats.engineering.default.permission 提供，缺少时退出 2 并指出配置位置；显式权限参数及 CODEX_SANDBOX 覆盖继续生效。
 逐字段优先级：参数 > 环境 > 仓库 > 用户 > 内置；空环境值按未设置处理；review 列表在此入口不展开，用 tickets.ts run --seat review 启动整批。
 --settings <JSON> 为 tickets dispatch 内部传递已解析设置及来源，普通调用使用上述参数。
 按名称屏蔽 run-spec、setup-run-spec，其余技能照常可见。

@@ -370,7 +370,7 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
           stream.on("data", (chunk: Buffer) => {
             output.write(chunk);
             tail = (tail + chunk.toString()).slice(-65536);
-            if (tail.includes("Concurrency limit exceeded")) limited = true;
+            if (adapterFor(settings.agent).isConcurrencyLimit(tail)) limited = true;
           });
         };
         pipe(child.stdout!, process.stdout);
@@ -412,7 +412,7 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
         process.exitCode = result.code ?? 2;
         return;
       }
-      queued("执行者返回 Concurrency limit exceeded，等待账号名额");
+      queued(`${adapterFor(settings.agent).label} 返回并发超限，等待账号名额`);
       await delay(5000);
       release = await dispatchSlot(framework.concurrency, worktree, queued, settings.agent);
     }

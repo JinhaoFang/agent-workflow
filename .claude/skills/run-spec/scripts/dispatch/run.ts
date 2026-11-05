@@ -40,7 +40,7 @@ export const settingsFor = (opts: Record<string, string>, root = process.cwd()):
   if (opts.settings !== undefined) {
     let value;
     try { value = JSON.parse(opts.settings); } catch { throw new Error("内部参数 --settings 必须是有效的席位 JSON 对象"); }
-    if (!value || !seatNames.includes(value.seat) || !agentNames.includes(value.agent) || typeof value.workType !== "string" || !value.workType || !["read-only", "workspace-write", "full"].includes(value.permission) || !["model", "effort", "path", "tier"].every(key => value[key] === null || typeof value[key] === "string"))
+    if (!value || !seatNames.includes(value.seat) || !agentNames().includes(value.agent) || typeof value.workType !== "string" || !value.workType || !["read-only", "workspace-write", "full"].includes(value.permission) || !["model", "effort", "path", "tier"].every(key => value[key] === null || typeof value[key] === "string"))
       throw new Error("内部参数 --settings 缺少有效的席位、工作类型、框架、模型、强度、权限或路径");
     return value as SeatSettings;
   }

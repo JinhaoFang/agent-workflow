@@ -89,6 +89,7 @@ function actualEffort(events: Event[], root: string, recordsRoot = root): string
 
 export const pi: Adapter = {
   id: "pi", label: "pi", writesReport: false,
+  isConcurrencyLimit: () => false,
   detect({ env, settings }) {
     try {
       const launcher = resolveLauncher(env, settings.path);

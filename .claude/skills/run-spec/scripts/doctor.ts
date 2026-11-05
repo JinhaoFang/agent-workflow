@@ -428,7 +428,7 @@ const doctor = async (values: Values): Promise<void> => {
       });
     console.log("技能隔离说明：review-spec、watch 通过工具裁剪隔离，不另加技能隔离开关。");
     check("兼容配置 codexSandbox/codexConcurrency", "权限建议迁到 seats.engineering.default.permission，并发迁到 agents.codex.concurrency。", () =>
-      `codexSandbox=${config!.codexSandbox}（来源：仓库旧项，仅作工程 Codex 的兼容默认）；codexConcurrency=${config!.codexConcurrency}（来源：${frameworkSettings(seats, "codex").sources.concurrency}）；建议改用 seats/agents，新席位字段优先。`);
+      `codexSandbox=${config!.codexSandbox ?? "未配置，工程权限取席位配置"}（来源：仓库旧项，仅作工程 Codex 的兼容默认）；codexConcurrency=${config!.codexConcurrency}（来源：${frameworkSettings(seats, "codex").sources.concurrency}）；建议改用 seats/agents，新席位字段优先。`);
   }
   for (const key of [
     "codexConcurrency",
@@ -578,6 +578,7 @@ export const doctorCommand: Command = {
 优先级：参数 > 环境变量 > 仓库 > 用户 > 内置；空环境值视为未设置；框架路径和并发放 agents，报告各框架安装情况。
 权限映射损失直接取适配器 permissions，合并涉及席位提示；未接适配器也合并提示不可用。
 词表内用户未配档只提示；codexSandbox/codexConcurrency 继续兼容并建议迁移。
+codexSandbox 可省略；未配置时须在仓库或用户 seats.engineering.default.permission 配置工程权限，缺少时退出 2 并指出配置位置。
 检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18、各席位使用的框架 CLI 可用；
 框架安装探测复用各适配器 detect，与派发共用启动器解析，支持 .cmd/.bat 包装和 Node 入口；
 Codex 路径按席位配置兼容旧 DispatchDock 配置，再查 PATH；版本未知时仍按适配器结果判断可用；

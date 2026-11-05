@@ -75,12 +75,13 @@ for (const event of events) console.log(JSON.stringify(event));
 const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
-if (args.includes('--version')) { console.log('fixture pi'); process.exit(0); }
+if (args.includes('--version')) { console.log('fixture pi'); process.exit(process.env.FAIL_PI_VERSION ? 3 : 0); }
 const prompt = fs.readFileSync(0, 'utf8');
 fs.appendFileSync(path.join(process.env.RUN_FIXTURE, 'agents.jsonl'), JSON.stringify({agent:'pi',args,prompt,cwd:process.cwd()}) + '\\n');
 if (args.includes('rpc')) process.exit(91);
 const text = args.includes('--no-tools') ? 'DONE: 作业完成' : '必须改：无';
-for (const event of [{type:'session',id:'fixture-pi'}, {type:'message_end',message:{role:'assistant',provider:'fixture',model:'pi',stopReason:'stop',content:[{type:'text',text}],usage:{input:20,cacheRead:5,cacheWrite:0,output:7}}}, {type:'agent_settled',aborted:false}]) console.log(JSON.stringify(event));
+for (const event of [{type:'session',id:'fixture-pi'}, {type:'message_end',message:{role:'assistant',provider:'fixture',model:'pi',stopReason:'stop',content:[{type:'text',text}],usage:process.env.MISSING_PI_USAGE ? undefined : {input:20,cacheRead:5,cacheWrite:0,output:7}}}, {type:'agent_settled',aborted:false}]) console.log(JSON.stringify(event));
+if (process.env.FAIL_PI) { console.error('fixture failure'); process.exitCode = 7; }
 `);
   const env = { ...process.env, XDG_CONFIG_HOME: xdg, CODEX_HOME: join(base, "codex"), CODEX_DISPATCH_HOME: join(xdg, "codex-dispatch"), RUN_FIXTURE: base, PATH: `${bin}${delimiter}${process.env.PATH}` };
   for (const key of ["CODEX_MODEL", "CODEX_EFFORT", "CODEX_SANDBOX", "CODEX_DRY_RUN", "CODEX_DISPATCH_TEST_AGENT"]) delete (env as NodeJS.ProcessEnv)[key];
@@ -263,6 +264,41 @@ test("spec-review and watch use pi file-only/empty tools without skill discovery
     assert.equal(summary.usage.input_tokens, 20);
     assert.equal(summary.usage.cache_read_input_tokens, 5);
     assert.ok(!readdirSync(f.tree).some(name => name.endsWith("pi-sessions")));
+  } finally { f.cleanup(); }
+});
+
+test("受限调用的安装、失败、缺用量与拒绝提示取适配器名称和能力", () => {
+  const f = fixture();
+  try {
+    const preload = join(f.base, "adapter-label.mjs");
+    const module = new URL("./dispatch/adapters.ts", import.meta.url).href;
+    writeFileSync(preload, `import { adapters } from ${JSON.stringify(module)}; adapters.fixture = { ...adapters.pi, id: "fixture", label: "测试框架" }; adapters.claude.label = "本地 Claude"; adapters.codex.label = "本地 Codex";`);
+    const env = { NODE_OPTIONS: `--import=${JSON.stringify(preload)}` };
+    const capture = (name: string, output: string) => {
+      if (!process.env.RUN_SPEC_TEST_EVIDENCE) return;
+      mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
+      writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, name), output);
+    };
+    f.seats({ seats: { "spec-review": { default: { agent: "fixture" } } }, agents: { fixture: { path: join(f.bin, "pi") } } });
+    writeFileSync(join(f.tree, "spec.md"), "审查材料");
+    mkdirSync(join(f.tree, "drafts"));
+    writeFileSync(join(f.tree, "drafts/ticket.md"), "子工单材料");
+    const args = ["review-spec", "22", "--spec-file", "spec.md", "--drafts", "drafts"];
+    const missing = f.run(args, { ...env, FAIL_PI_VERSION: "1" });
+    assert.equal(missing.status, 2, missing.stdout + missing.stderr);
+    assert.match(missing.stderr, /找不到可用的 测试框架 CLI/);
+    const failed = f.run(args, { ...env, FAIL_PI: "1" });
+    assert.equal(failed.status, 2, failed.stdout + failed.stderr);
+    assert.match(failed.stderr, /测试框架 调用失败：fixture failure/);
+    const noUsage = f.run(args, { ...env, MISSING_PI_USAGE: "1" });
+    assert.equal(noUsage.status, 0, noUsage.stdout + noUsage.stderr);
+    const metadata = readFileSync(join(f.root, ".codex-runs/review-spec-22-1.json"), "utf8");
+    assert.equal(JSON.parse(metadata).usageUnavailableReason, "测试框架 未返回完整用量。");
+    f.seats({ seats: { "spec-review": { default: { agent: "codex" } } } });
+    const rejected = f.run(args, env);
+    assert.equal(rejected.status, 2, rejected.stdout + rejected.stderr);
+    assert.match(rejected.stderr, /本地 Codex 适配器不能保证.*拒绝启动；请使用 本地 Claude 或 pi 或 测试框架/);
+    capture("restricted-seat-labels.log", missing.stderr + failed.stderr + metadata + rejected.stderr);
   } finally { f.cleanup(); }
 });
 

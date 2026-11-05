@@ -3,6 +3,7 @@
  * 用户文件可缺省，存在但无效时拒绝运行；工作类型词表只取仓库配置。
  * 供派发入口和 doctor 使用，不写文件；来源、回落原因随设置进入派发记录。
  * 旧 DispatchDock 的模型、强度、路径仍作为兼容默认；codexSandbox 只管工程 Codex。
+ * 缺省 codexSandbox 时，工程权限必须由席位或显式覆盖提供，不回落到旧沙箱或内置写权限。
  * 空环境值视为未设置，回落到下一层，不登记为环境来源。
  */
 import { readFileSync } from "node:fs";
@@ -10,16 +11,18 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { dispatchHome } from "../dispatchdock.ts";
 import type { SeatSettings, Permission } from "./adapter.ts";
+import { agentNames } from "./adapters.ts";
+
+export { agentNames } from "./adapters.ts";
 
 export const seatNames = ["engineering", "review", "spec-review", "research", "watch"] as const;
-export const agentNames = ["codex", "claude", "pi"] as const;
 export class SeatConfigError extends Error {}
 type Profile = { agent?: string; model?: string | null; effort?: string | null; permission?: Permission };
 type Layer = {
   seats?: Record<string, Record<string, Profile | Profile[]>>;
   agents?: Record<string, { concurrency?: number; path?: string | null }>;
   workTypes?: Record<string, string>;
-  codexSandbox?: string;
+  codexSandbox?: "read-only" | "workspace-write" | "danger-full-access";
   codexConcurrency?: number;
 };
 export type SeatConfiguration = {
@@ -59,7 +62,7 @@ const validate = (value: unknown, source: string, user: boolean): Layer => {
         if ((Array.isArray(profile) && seat !== "review") || !items.length) fail(`seats.${seat}.${name}`, "非空配置对象，只有 review 支持非空列表");
         for (const item of items) {
           if (!object(item) || Object.keys(item).some(key => !["agent", "model", "effort", "permission"].includes(key))) fail(`seats.${seat}.${name}`, "仅含 agent、model、effort、permission 的对象");
-          if (item.agent !== undefined && !agentNames.includes(item.agent)) fail(`seats.${seat}.${name}.agent`, "codex、claude 或 pi");
+          if (item.agent !== undefined && !agentNames().includes(item.agent)) fail(`seats.${seat}.${name}.agent`, `已登记的框架：${agentNames().join("、")}`);
           for (const key of ["model", "effort"]) if (item[key] !== undefined && item[key] !== null && !text(item[key])) fail(`seats.${seat}.${name}.${key}`, "非空单行字符串或 null");
           if (item.permission !== undefined && !["read-only", "workspace-write", "full"].includes(item.permission)) fail(`seats.${seat}.${name}.permission`, "read-only、workspace-write 或 full");
         }
@@ -69,7 +72,7 @@ const validate = (value: unknown, source: string, user: boolean): Layer => {
   if (value.agents !== undefined) {
     if (!object(value.agents)) fail("agents", "框架到配置的对象");
     for (const [agent, settings] of Object.entries(value.agents)) {
-      if (!agentNames.includes(agent as typeof agentNames[number]) || !object(settings) || Object.keys(settings).some(key => !["path", "concurrency"].includes(key))) fail(`agents.${agent}`, "已知框架的 path、concurrency 配置对象");
+      if (!agentNames().includes(agent) || !object(settings) || Object.keys(settings).some(key => !["path", "concurrency"].includes(key))) fail(`agents.${agent}`, "已知框架的 path、concurrency 配置对象");
       const item = settings as Record<string, unknown>;
       if (item.concurrency !== undefined && !positive(item.concurrency)) fail(`agents.${agent}.concurrency`, "安全范围内的正整数");
       if (item.path !== undefined && item.path !== null && (!text(item.path) || !isAbsolute(item.path))) fail(`agents.${agent}.path`, "绝对可执行路径或 null");
@@ -130,7 +133,7 @@ export const resolveSeat = (config: SeatConfiguration, seat = "engineering", wor
   if (!seatNames.includes(seat as typeof seatNames[number])) throw new Error(`未知席位：${seat}`);
   if (workType !== "default" && !Object.hasOwn(config.workTypes, workType)) throw new Error(`工作类型不在仓库 workTypes 词表中：${workType}`);
   for (const key of ["model", "effort"]) if (overrides[key] !== undefined && !text(overrides[key])) throw new Error(`命令参数 --${key} 必须是非空单行字符串`);
-  const builtin = { agent: ["spec-review", "watch"].includes(seat) ? "claude" : "codex", model: seat === "watch" ? "haiku" : null, effort: null, permission: ["review", "spec-review", "research", "watch"].includes(seat) ? "read-only" : "workspace-write" } as Profile;
+  const builtin = { agent: ["spec-review", "watch"].includes(seat) ? "claude" : "codex", model: seat === "watch" ? "haiku" : null, effort: null, permission: seat !== "engineering" ? "read-only" : config.repository.codexSandbox ? "workspace-write" : undefined } as Profile;
   type Item = { values: Profile; sources: Record<string, string> };
   const base: Item = { values: builtin, sources: Object.fromEntries(Object.keys(builtin).map(key => [key, "内置默认"])) };
   let items: Item[] = [base];
@@ -151,20 +154,22 @@ export const resolveSeat = (config: SeatConfiguration, seat = "engineering", wor
         (values as Record<string, unknown>)[key] = overrides[key]; sources[key] = `命令参数 --${key}`;
       }
     }
-    if (!agentNames.includes(values.agent as typeof agentNames[number])) throw new Error(`未知框架：${values.agent}`);
+    if (!agentNames().includes(values.agent!)) throw new Error(`未知框架：${values.agent}`);
     if (values.agent === "codex") {
       for (const key of ["model", "effort"] as const) {
         if (sources[key] === "内置默认" && legacy[key]) { values[key] = legacy[key]; sources[key] = `旧 DispatchDock agents.codex.${key}`; }
         if (process.env[`CODEX_${key.toUpperCase()}`] && overrides[key] === undefined) { values[key] = process.env[`CODEX_${key.toUpperCase()}`]!; sources[key] = `环境变量 CODEX_${key.toUpperCase()}`; }
       }
       if (seat === "engineering" && sources.permission === "内置默认") {
-        const sandbox = config.repository.codexSandbox ?? legacy.sandbox;
-        if (sandbox) { values.permission = sandbox === "danger-full-access" ? "full" : sandbox; sources.permission = config.repository.codexSandbox ? "仓库 run-spec.json.codexSandbox（兼容）" : "旧 DispatchDock agents.codex.sandbox"; }
+        const sandbox = config.repository.codexSandbox;
+        if (sandbox) { values.permission = sandbox === "danger-full-access" ? "full" : sandbox; sources.permission = "仓库 run-spec.json.codexSandbox（兼容）"; }
       }
       if (process.env.CODEX_SANDBOX && seat === "engineering" && overrides.permission === undefined) {
         values.permission = process.env.CODEX_SANDBOX === "danger-full-access" ? "full" : process.env.CODEX_SANDBOX as Permission; sources.permission = "环境变量 CODEX_SANDBOX";
       }
     }
+    if (seat === "engineering" && values.permission === undefined)
+      throw new SeatConfigError(`工程席位缺少权限：请在仓库 docs/agents/run-spec.json 或用户 ${config.userFile} 的 seats.engineering.default.permission 配置 read-only、workspace-write 或 full；Codex 工程席位也可在仓库配置兼容项 codexSandbox。`);
     if (!["read-only", "workspace-write", "full"].includes(values.permission!)) throw new Error(`无效的权限：${values.permission}`);
     const framework = frameworkSettings(config, values.agent!);
     return { seat, workType, agent: values.agent!, model: values.model ?? null, effort: values.effort ?? null, permission: values.permission!, path: framework.path, tier: values.agent === "codex" ? overrides.tier ?? (process.env.CODEX_TIER || legacy.tier || null) : null,

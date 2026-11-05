@@ -93,6 +93,7 @@ export function mapLine(line: string, { root }: { root: string }) {
 }
 
 export const codex: Adapter = {
+  isConcurrencyLimit: output => output.includes("Concurrency limit exceeded"),
   label: "Codex",
   id: 'codex',
   writesReport: true,

@@ -1,7 +1,8 @@
 /**
  * 内置派发 CLI 的临时 git 仓库验收：只读旧实现录制的样本，假 Codex 回放
- * 成功、非零退出、事件失败、缺用量和中断；不导入内部实现，不依赖本机 DispatchDock。
+ * 成功、非零退出、事件失败、缺用量和中断；CLI 回放不依赖本机 DispatchDock。
  * 通过真实子进程核对 stdin、参数、协议、实际模型、旧登记名额和中断保护。
+ * 适配器登记单元测试直接核对新增框架的配置解析和限流样本判断。
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -10,6 +11,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { adapters, agentNames } from "./dispatch/adapters.ts";
+import { loadSeatConfiguration, resolveSeat } from "./dispatch/settings.ts";
 
 const entry = join(import.meta.dirname, "dispatch-task.ts");
 const tickets = join(import.meta.dirname, "tickets.ts");
@@ -57,6 +60,37 @@ const evidence = (name: string, text: string) => {
   mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
   writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, name), text);
 };
+
+test("适配器登记后配置解析立即接受新框架，无需修改 settings.ts", () => {
+  const f = fixture();
+  const previous = process.env.XDG_CONFIG_HOME;
+  try {
+    process.env.XDG_CONFIG_HOME = f.env.XDG_CONFIG_HOME;
+    adapters.fixture = { ...adapters.codex, id: "fixture", label: "测试框架" };
+    const config = loadSeatConfiguration(f.root, {
+      seats: { engineering: { default: { agent: "fixture", permission: "read-only" } } },
+      agents: { fixture: { path: join(f.root, "fake.cjs"), concurrency: 3 } },
+    });
+    const settings = resolveSeat(config)[0];
+    assert.ok(agentNames().includes("fixture"));
+    assert.equal(settings.agent, "fixture");
+    assert.equal(settings.path, join(f.root, "fake.cjs"));
+    assert.equal(settings.permission, "read-only");
+    evidence("adapter-registration.txt", JSON.stringify(settings, null, 2));
+  } finally {
+    delete adapters.fixture;
+    if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previous;
+    f.cleanup();
+  }
+});
+
+test("限流样本只由 Codex 适配器识别，Claude 和 pi 不把相同文字判为可重排", () => {
+  for (const [agent, adapter] of Object.entries(adapters)) {
+    assert.equal(adapter.isConcurrencyLimit("Concurrency limit exceeded for account"), agent === "codex");
+    assert.equal(adapter.isConcurrencyLimit("普通运行失败"), false);
+  }
+});
 
 test("built-in CLI matches recorded DispatchDock arguments, stdin, records and progress except explicit isolation and summary", () => {
   const f = fixture();
@@ -214,7 +248,7 @@ test("built-in CLI ignores empty environment overrides and falls back through re
       if (layer === "repository") writeFileSync(configFile, JSON.stringify({ seats: { engineering: { default: { model: "repository-model", effort: "low", permission: "read-only" } } }, agents: { codex: { concurrency: 4 } } }));
       else rmSync(configFile, { force: true });
       if (layer === "builtin") rmSync(userFile);
-      const result = spawnSync(process.execPath, [entry, "只读列出目录", "--name", "empty-env"], { cwd: f.root, env: { ...f.env, CASE: "success", RUN_SPEC_CODEX_CONCURRENCY: "", RUN_SPEC_CLAUDE_CONCURRENCY: "", RUN_SPEC_PI_CONCURRENCY: "" }, encoding: "utf8", timeout: 10000 });
+      const result = spawnSync(process.execPath, [entry, "只读列出目录", "--name", "empty-env", ...(layer === "builtin" ? ["--permission", "workspace-write"] : [])], { cwd: f.root, env: { ...f.env, CASE: "success", RUN_SPEC_CODEX_CONCURRENCY: "", RUN_SPEC_CLAUDE_CONCURRENCY: "", RUN_SPEC_PI_CONCURRENCY: "" }, encoding: "utf8", timeout: 10000 });
       assert.equal(result.status, 0, result.stdout + result.stderr);
       const summary = JSON.parse(readFileSync(join(f.root, ".codex-runs/empty-env.json"), "utf8"));
       assert.equal(summary.model, layer === "builtin" ? null : `${layer}-model`);

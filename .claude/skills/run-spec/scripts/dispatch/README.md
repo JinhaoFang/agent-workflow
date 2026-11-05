@@ -23,13 +23,17 @@
 | 成员 | 用途 |
 |---|---|
 | `label` | 进度起止行的框架名称；Codex 文字保持不变 |
+| `isConcurrencyLimit(output)` | 判断滚动输出是否含可重排的并发超限；派发失败时才重排。Codex 识别 `Concurrency limit exceeded`，Claude、pi 暂无已知样本，返回 `false` |
+| `restrictedCommand({root,prompt,settings,detection,env,tools})` | 可选的受限调用，工具档为 `files/none`；未提供时拒绝启动，可用框架提示从登记中筛选并取 `label` |
 | `outcome({code,failed,events,settings,root})` | 适配器决定 `success`，统一 `usage:{input,cached,output}` 与 `actualModel/actualEffort`；未知为 `null`，不猜配置即实际值 |
 | `isolationArgs()` | 生成显式隔离参数；Codex 按名称禁用两项技能，保留其他技能 |
 | `permissions` | 将 `read-only/workspace-write/full` 映射为框架参数数组，`loss` 为中文损失说明或 `null`；供后续 doctor 展示 |
 
 `SeatSettings` 承载 `seat/workType/agent/model/effort/permission`，并保留 Codex 的 `tier/path`；新增 `sources` 保存逐字段来源、`fallbackReason` 保存工作类型回落原因，两项写入同名汇总及全局 start/end 登记。`settings.ts` 统一解析五个席位、用户 `seats.json`、仓库 `seats/agents/workTypes`、兼容环境及命令覆盖，字段和优先级见 setup-run-spec 的 `run-spec.md`。`tickets dispatch` 通过内部 `--settings <JSON>` 把已解析值传到工单 worktree，避免用 worktree 的旧仓库配置再次解析。
 
-`adapters.ts` 是适配器登记处；接入框架时在这里登记。配置允许三种框架，未登记时 dry-run 和 doctor 显示不可用，实际启动拒绝。`doctor` 直接取适配器的 `permissions` 显示参数、损失及只读限制，不复制权限表；安装探测调用同一适配器的 `detect`，与派发共用 `.cmd/.bat` 包装及 Node 入口解析，版本输出为空时按适配器结果判断可用并显示“版本未知”。
+`adapters.ts` 是适配器登记处；接入框架时在这里登记。`agentNames()` 从登记实时取得框架名称，席位配置、框架配置及内部设置校验共用，不另维护名单；未登记的名称在配置解析时拒绝。`doctor` 直接取适配器的 `permissions` 显示参数、损失及只读限制，不复制权限表；安装探测调用同一适配器的 `detect`，与派发共用 `.cmd/.bat` 包装及 Node 入口解析，版本输出为空时按适配器结果判断可用并显示“版本未知”。
+
+`codexSandbox` 是可选兼容项：配置时仍校验 `read-only/workspace-write/danger-full-access`，仅作为 Codex 工程席位的默认权限，显式席位权限优先。省略时在仓库 `docs/agents/run-spec.json` 或用户 `$XDG_CONFIG_HOME/agent-workflow/seats.json`（默认 `~/.config/agent-workflow/seats.json`）的 `seats.engineering.default.permission` 配置工程权限；两处都未提供时，`dispatch --dry-run` 和 `doctor` 以 2 退出并指出位置，不回落到旧 DispatchDock 沙箱或内置写权限。显式命令权限及非空 `CODEX_SANDBOX` 环境覆盖继续生效。
 
 `doctor` 的技能隔离检查逐个列出已配置席位所用框架，要求适配器提供 `isolationArgs()` 及非空隔离参数；缺少时报失败。`run-spec`、`setup-run-spec` 可装在 `.claude/skills` 或共享的 `.agents/skills`，目录不再承担隔离判断；`review-spec`、`watch` 沿用工具裁剪隔离。
 
@@ -41,7 +45,7 @@
 
 Codex 审查已有 `.json` 汇总而根会话缺失时，仍从根会话 ID 查找子代理及后代；根用量取汇总，后代用量取各自会话，保留已知合计并注明根会话缺失、合计不完整。
 
-`review-spec` 读取 `spec-review` 席位，`watch` 读取 `watch` 席位。默认 Claude 的参数保持原样，分别只给 `Read,Glob,Grep` 和空工具集，关闭 MCP 与会话持久化；配置的路径、模型和强度生效，权限配置不能扩充工具。`seat-call.ts` 复用适配器检测、事件和成败用量；适配器可提供 `restrictedCommand`，工具档为 `files/none`。pi 对应 `read,grep,find,ls` 或 `--no-tools`，关闭扩展和 MCP，使用 `--no-session`；不运行技能发现，不另加技能隔离开关，Claude 专有费用明细不可用。Codex exec 的现有适配器无法保证同等工具集合，受限席位配置为 Codex 时以 2 拒绝启动，普通 research/review 派发照常支持 Codex。
+`review-spec` 读取 `spec-review` 席位，`watch` 读取 `watch` 席位。默认 Claude 的参数保持原样，分别只给 `Read,Glob,Grep` 和空工具集，关闭 MCP 与会话持久化；配置的路径、模型和强度生效，权限配置不能扩充工具。`seat-call.ts` 复用适配器检测、事件和成败用量；Claude 与 pi 均提供 `restrictedCommand`，工具档为 `files/none`。pi 对应 `read,grep,find,ls` 或 `--no-tools`，关闭扩展和 MCP，使用 `--no-session`；不运行技能发现，不另加技能隔离开关，Claude 专有费用明细不可用。未提供受限调用的适配器拒绝启动；安装、调用失败、缺用量及拒绝提示取适配器 `label`，建议框架从提供受限调用的登记生成。Codex exec 的现有适配器无法保证同等工具集合，受限席位配置为 Codex 时以 2 拒绝启动，普通 research/review 派发照常支持 Codex。
 
 Codex 以进程非零退出、`turn.failed`、顶层 `error` 或非配置警告的 item `error` 判失败。缺用量不等于失败，用量记 `null`；完整 `turn.completed` 用量按轮相加。实际模型/强度优先从原始事件或匹配 cwd/thread 的本机 Codex 会话中读取。技能开关依据 [Codex 官方技能文档](https://developers.openai.com/codex/skills)：`skills.config` 支持每项以 `name` 或绝对 `path` 作为唯一选择器，`enabled=false` 禁用。
 
