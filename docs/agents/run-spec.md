@@ -28,4 +28,4 @@
 - **汇报目录**：`docs/reports/`。写法见 `run-spec` 技能里的 `report.md`。
 - **实测用时**：还没有本仓库的数据，第一个 spec 之后补。
 - **独占资源**：无。
-- **常见的共享登记处**：工单脚本的子命令登记表（`tickets.ts`）、配置解析（`shared.ts`）、`doctor` 的检查项。并行的工单都要往里加一项时，派发的补充说明写"只加自己那一项"。
+- **常见的共享登记处**：工单脚本的子命令登记表（`tickets.ts`）、配置解析（`shared.ts`）、`doctor` 的检查项、派发层的适配器登记表与说明（`scripts/dispatch/adapters.ts`、`scripts/dispatch/README.md`）、席位配置说明（`setup-run-spec/seats.md`）。并行的工单都要往里加一项时，派发的补充说明写"只加自己那一项"。
