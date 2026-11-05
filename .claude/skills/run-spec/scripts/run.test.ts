@@ -31,6 +31,9 @@ const fixture = () => {
   git(["worktree", "add", "-b", "ticket/29", tree]);
   for (const cwd of [root, tree]) {
     mkdirSync(join(cwd, "docs/agents"), { recursive: true });
+    mkdirSync(join(cwd, "docs/roles"));
+    writeFileSync(join(cwd, "AGENTS.md"), "# 共同规则\n");
+    writeFileSync(join(cwd, "docs/roles/engineering.md"), "# 角色：工程负责人\n");
     writeFileSync(join(cwd, "docs/agents/run-spec.json"), JSON.stringify({ verificationCommand: ["true"], installCommand: ["true"], symlinkDirectories: [], acceptanceRoot: "out/qa", codexSandbox: "read-only" }));
   }
   const script = (name: string, source: string) => writeFileSync(join(bin, name), `#!${process.execPath}\n${source}`, { mode: 0o755 });
@@ -90,6 +93,44 @@ for (const event of [{type:'session',id:'fixture-pi'}, {type:'message_end',messa
   const seats = (value: unknown) => writeFileSync(join(xdg, "agent-workflow/seats.json"), JSON.stringify(value));
   return { base, root, tree, xdg, bin, env, run, calls, seats, cleanup: () => rmSync(base, { recursive: true, force: true }) };
 };
+
+for (const seat of ["engineering", "review", "research", "spec-review", "watch"]) {
+  test(`run 的 ${seat} 席位按约定告知角色并保存进度与登记`, () => {
+    const f = fixture();
+    try {
+      const hasRole = ["engineering", "review", "research"].includes(seat);
+      if (!hasRole) rmSync(join(f.tree, "docs/roles/engineering.md"));
+      const args = ["run", "只读核对角色传递", "--seat", seat, "--name", `role-${seat}`];
+      const preview = f.run([...args, "--dry-run"]);
+      assert.equal(preview.status, 0, preview.stderr);
+      assert.ok(!existsSync(join(f.root, ".codex-runs")));
+      assert.deepEqual(f.calls("agents.jsonl"), []);
+      const result = f.run(args);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const [call] = f.calls("agents.jsonl");
+      const progress = readFileSync(join(f.root, `.codex-runs/role-${seat}.progress.log`), "utf8").split("\n")[0];
+      const registry = readFileSync(join(f.env.CODEX_DISPATCH_HOME, "runs.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line));
+      const start = registry.find(row => row.event === "start");
+      assert.equal(start.role, hasRole ? "工程负责人" : null);
+      if (hasRole) {
+        assert.match(preview.stdout, /角色：工程负责人/);
+        assert.match(preview.stdout, /docs\/roles\/engineering.md/);
+        assert.match(call.prompt, /^你在本项目中的角色是「工程负责人」。/);
+        assert.match(call.prompt, /请先阅读仓库根目录的 AGENTS.md（共同规则）。/);
+        assert.match(call.prompt, /再阅读你的角色文档 docs\/roles\/engineering.md/);
+        assert.match(progress, /（角色：工程负责人）/);
+      } else {
+        assert.doesNotMatch(preview.stdout, /角色：|角色文档/);
+        assert.doesNotMatch(call.prompt, /本项目中的角色|角色文档/);
+        assert.doesNotMatch(progress, /角色：/);
+      }
+      if (process.env.RUN_SPEC_TEST_EVIDENCE) {
+        mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
+        writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, `run-role-${seat}.txt`), `${preview.stdout}\n进度头：${progress}\n登记：${JSON.stringify(start)}\n`);
+      }
+    } finally { f.cleanup(); }
+  });
+}
 
 test("run associates exact auxiliary names, avoids orphan collisions, and scorecard/cleanup preserve auxiliary evidence", () => {
   const f = fixture();
@@ -158,6 +199,7 @@ test("run review list shares a prompt, records a collision-safe batch, and comme
     const calls = f.calls("agents.jsonl");
     assert.equal(calls.length, 2);
     assert.equal(calls[0].prompt, calls[1].prompt);
+    assert.match(calls[0].prompt, /^你在本项目中的角色是「工程负责人」。/);
     const names = ["review-22-group-1-codex", "review-22-group-2-claude"];
     assert.deepEqual(JSON.parse(readFileSync(join(f.root, ".codex-runs/review-22-group.batch.json"), "utf8")).records, names);
     writeFileSync(join(f.tree, "conclusion.md"), "两份审查均通过。\n");

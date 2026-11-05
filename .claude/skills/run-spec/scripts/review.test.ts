@@ -557,13 +557,14 @@ test("review reads built-in usage without local sessions and keeps missing usage
   }
 });
 
-for (const state of ["complete", "missing", "unflushed", "summary-only-tokens"] as const) {
+for (const state of ["complete", "missing", "unflushed", "summary-only-tokens", "missing-root"] as const) {
   test(`review summary keeps root child checks and normalized totals for ${state}`, () => {
     const input = files();
     const root = "codex home/sessions/2026/10/12/root.jsonl";
     input[`.codex-runs/${name}.json`] = JSON.stringify({ v: 1, framework: "codex", success: true, usage: { input: 7000, cached: 5000, output: 300 } });
     if (state === "summary-only-tokens") input[root] = meta("root") + "\n";
     input[root] += event("event_msg", { type: "item_completed", thread_id: "root", item: { type: "SubAgentActivity", agent_thread_id: "child" } }) + "\n";
+    if (state === "missing-root") delete input[root];
     if (state === "missing" || state === "unflushed") {
       delete input["codex home/sessions/2026/10/12/child.jsonl"];
       delete input["codex home/sessions/2026/10/12/nested.jsonl"];
@@ -577,6 +578,12 @@ for (const state of ["complete", "missing", "unflushed", "summary-only-tokens"] 
       assert.match(body, /合计（已知部分；不完整）/);
       assert.match(body, /找不到子代理会话 child/);
       assert.match(body, /子代理（会话 child）：用时 未知/);
+    } else if (state === "missing-root") {
+      assert.match(body, /子代理 \/root\/child（会话 child）：用时 1 分钟，输入 2,000（其中缓存 1,000），输出 100 tokens/);
+      assert.match(body, /子代理 \/root\/nested（会话 nested）：用时 1 分钟，输入 300（其中缓存 200），输出 20 tokens/);
+      assert.match(body, /合计（已知部分；不完整）：用时 3.5 分钟，输入 9,300（其中缓存 6,200），输出 420 tokens/);
+      assert.match(body, /找不到审查会话 root/);
+      assert.doesNotMatch(body, /合计：|unrelated|9,999/);
     } else {
       assert.match(body, /合计：用时 3.5 分钟，输入 9,300（其中缓存 6,200），输出 420 tokens/);
       assert.doesNotMatch(body, /不完整|扫描受限/);
@@ -584,6 +591,10 @@ for (const state of ["complete", "missing", "unflushed", "summary-only-tokens"] 
     if (process.env.TICKET_32_EVIDENCE) {
       mkdirSync(process.env.TICKET_32_EVIDENCE, { recursive: true });
       writeFileSync(join(process.env.TICKET_32_EVIDENCE, `review-summary-${state}.md`), body);
+    }
+    if (state === "missing-root" && process.env.RUN_SPEC_TEST_EVIDENCE) {
+      mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
+      writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, "review-summary-missing-root.md"), body);
     }
   });
 }

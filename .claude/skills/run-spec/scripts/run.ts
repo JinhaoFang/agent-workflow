@@ -22,6 +22,7 @@ const run = async (values: Values, _numbers: number[], args: string[]): Promise<
   const overrides = Object.fromEntries(["work-type", "agent", "model", "effort", "permission"].flatMap(key => values[key] === undefined ? [] : [[key, values[key] as string]]));
   const settings = resolveSeat(loadSeatConfiguration(cwd), seat, overrides["work-type"], overrides);
   const opts: Record<string, string> = values.name === undefined ? {} : { name: values.name as string };
+  if (["engineering", "review", "research"].includes(seat)) opts.role = "engineering";
   const details = taskDetails(cwd, { task: args[0], extra: "", opts });
   const task = details.spec ? readFileSync(join(cwd, details.spec), "utf8") : args[0];
   if (!task.trim()) throw usageError("任务内容不能为空。", runCommand.help);
@@ -73,12 +74,12 @@ const run = async (values: Values, _numbers: number[], args: string[]): Promise<
   }
   console.log(`派发批次：${prefix}${spec === undefined ? "" : `；关联 spec #${spec}`}\n${settings.map((setting, index) => `记录 ${names[index]}\n${describeSeat(setting)}`).join("\n")}`);
   if (dryRun) {
-    console.log(`--dry-run：不启动模型、不写记录或关联。\n${prompt}`);
+    console.log(`--dry-run：不启动模型、不写记录或关联。\n${details.role ? `角色：${details.role.name}（角色文档 ${details.role.doc}）\n` : ""}${prompt}`);
     return;
   }
   let exit = 0;
   for (const [index, setting] of settings.entries()) {
-    const code = await dispatchTask([prompt, "--name", names[index], "--settings", JSON.stringify(setting)], cwd, {
+    const code = await dispatchTask([prompt, "--name", names[index], "--settings", JSON.stringify(setting), ...(opts.role ? ["--role", opts.role] : [])], cwd, {
       recordsRoot: root,
       onRecord(name) {
         batch.records[index] = name;
@@ -99,6 +100,7 @@ export const runCommand: Command = {
   help: `${entry} run <任务说明文件|任务文字> --seat <engineering|review|spec-review|research|watch> [--spec <S>] [--name <记录名>] [--dry-run]
 覆盖参数：--work-type <工作类型> --agent <codex|claude|pi> --model <模型> --effort <强度> --permission <read-only|workspace-write|full>。
 在当前工作区执行，任务文件在启动前读取；review 列表每项收到同样的提示，逐份运行，失败继续其余项。
+engineering、review、research 告知工程负责人角色并要求阅读 docs/roles/engineering.md；spec-review、watch 不告知角色。
 记录统一写主工作区 .codex-runs；--spec 只读查询 spec 与子工单，用现有 scorecard --record 存储自动关联每份精确名。
 review 带 --spec 时默认名 review-<S>；其余默认取可用的任务文件名或 task-<时间>。重名为批次前缀追加 -2、-3。
 多项记录名为 <前缀>-<序号>-<框架>，同名 <前缀>.batch.json 保存清单；review --record <前缀> 合计该清单。

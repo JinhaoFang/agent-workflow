@@ -305,13 +305,16 @@ const reviewUsage = (name: string, override: string | undefined, root: string) =
     scanReasons,
   );
   const selected: Session[] = [];
-  if (id && sessions.has(id)) selected.push(sessions.get(id)!);
-  else if (id && !summary) reasons.push(`找不到审查会话 ${id}`);
-  const seen = new Set(selected.map((session) => session.id));
-  for (let index = 0; index < selected.length; index++) {
+  const rootSession = id ? sessions.get(id) : undefined;
+  if (rootSession) selected.push(rootSession);
+  else if (id) reasons.push(`找不到审查会话 ${id}`);
+  const pending = id ? [id] : [];
+  const seen = new Set(pending);
+  for (let index = 0; index < pending.length; index++) {
     for (const session of sessions.values()) {
-      if (session.parent === selected[index].id && !seen.has(session.id)) {
+      if (session.parent === pending[index] && !seen.has(session.id)) {
         seen.add(session.id);
+        pending.push(session.id);
         selected.push(session);
       }
     }
@@ -319,19 +322,20 @@ const reviewUsage = (name: string, override: string | undefined, root: string) =
   const usages: Usage[] = [];
   const missing = new Set<string>();
   const lines: string[] = [];
-  if (!selected.length) {
+  if (!rootSession) {
     usages.push({ minutes, ...(summary?.usage ? { input: summary.usage.input, cached: summary.usage.cached, output: summary.usage.output } : {}) });
     lines.push(line(label, usages[0]));
   }
-  for (const [index, session] of selected.entries()) {
-    const usage = sessionUsage(session, reasons, index > 0, seen, missing, index > 0 || !summary);
-    if (index === 0 && summary?.usage)
+  for (const session of selected) {
+    const isRoot = session.id === id;
+    const usage = sessionUsage(session, reasons, !isRoot, seen, missing, !isRoot || !summary);
+    if (isRoot && summary?.usage)
       Object.assign(usage, { input: summary.usage.input, cached: summary.usage.cached, output: summary.usage.output });
-    if (index === 0) usage.minutes = minutes;
+    if (isRoot) usage.minutes = minutes;
     usages.push(usage);
     lines.push(
       line(
-        index === 0
+        isRoot
           ? `${label}（会话 ${session.id}）`
           : `子代理 ${session.meta.agent_path ?? session.id}（会话 ${session.id}）`,
         usage,
@@ -441,6 +445,7 @@ export const reviewCommand: Command = {
 --record 可给 run --seat review 生成的批次前缀，按 .batch.json 清单合计全部份数，每份列出实际模型；模型未记录时写未知。
 派发记录读取主工作区的 .codex-runs；审查时长取进度文件，token 优先取内置派发 .json，旧记录取本机会话。
 汇总只替换根会话 token 来源，仍读取根会话检查子代理缺失；子代理用量继续计入合计。
+根会话缺失时仍按根会话 ID 查找后代并计入已知用量，合计标明不完整及缺失原因。
 子代理未单独派发，时长取各自会话的已完成任务；合计为累计用时。
 会话目录默认 ~/.codex/sessions，可用 Codex 的 CODEX_HOME 环境变量更改根目录。
 索引分块仅读首行元数据，关联审查及后代后才读取对应会话全文。

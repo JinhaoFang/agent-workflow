@@ -1160,7 +1160,7 @@ test("dispatch help documents push permission, comments, failure handling and dr
     for (const text of [
       "--allow-push",
       "--resume",
-      "slots",
+      "slots 按框架显示运行与空余名额",
       "排队",
       "每 5 分钟最多打印一行",
       "不要推送",
@@ -1174,6 +1174,8 @@ test("dispatch help documents push permission, comments, failure handling and dr
       "不派发",
     ])
       assert.ok(result.stdout.includes(text), text);
+    assert.doesNotMatch(result.stdout, /slots 仅显示 Codex/);
+    evidence("dispatch-help.txt", result.stdout);
   } finally {
     f.cleanup();
   }

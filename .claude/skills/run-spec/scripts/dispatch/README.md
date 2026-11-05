@@ -35,7 +35,11 @@
 
 `tickets.ts run <任务文件|任务文字> --seat <席位> [--spec <S>] [--name <记录名>]` 在当前工作区执行，记录统一写主工作区 `.codex-runs`；覆盖参数见 `run --help`。带 `--spec` 时逐份复用 `scorecard --record` 的精确关联存储，失败记录也保留关联；评分表把非规范命名的记录计为辅助派发，cleanup 沿用辅助原始证据保护。预览不启动模型、不写记录、清单、关联或 GitHub。已安装仓库无需迁移旧记录或配置。
 
+`engineering`、`review`、`research` 与 `dispatch` 一样传 `--role engineering`，告知工程负责人角色和角色文档；角色写入进度头和全局 start 登记，预览也显示。`spec-review`、`watch` 不告知角色。已安装仓库使用前三种席位时需有 `docs/roles/engineering.md`，沿用 `dispatch` 的角色文档约定。
+
 `review` 列表的各项依次收到相同提示，记录名为 `<批次前缀>-<序号>-<框架>`；单项保留前缀本身。带 spec 的 review 默认前缀为 `review-<S>`，重名将整个前缀追加 `-2`、`-3`。原子创建的 `<前缀>.batch.json` 保存全部精确名，`review --record <前缀>` 按清单合计、逐份列出实际模型；缺失或失败仍保留已知用量并注明不完整。批次清单不作为额外派发计入评分表。
+
+Codex 审查已有 `.json` 汇总而根会话缺失时，仍从根会话 ID 查找子代理及后代；根用量取汇总，后代用量取各自会话，保留已知合计并注明根会话缺失、合计不完整。
 
 `review-spec` 读取 `spec-review` 席位，`watch` 读取 `watch` 席位。默认 Claude 的参数保持原样，分别只给 `Read,Glob,Grep` 和空工具集，关闭 MCP 与会话持久化；配置的路径、模型和强度生效，权限配置不能扩充工具。`seat-call.ts` 复用适配器检测、事件和成败用量；适配器可提供 `restrictedCommand`，工具档为 `files/none`。pi 对应 `read,grep,find,ls` 或 `--no-tools`，关闭扩展和 MCP，使用 `--no-session`；不运行技能发现，不另加技能隔离开关，Claude 专有费用明细不可用。Codex exec 的现有适配器无法保证同等工具集合，受限席位配置为 Codex 时以 2 拒绝启动，普通 research/review 派发照常支持 Codex。
 
