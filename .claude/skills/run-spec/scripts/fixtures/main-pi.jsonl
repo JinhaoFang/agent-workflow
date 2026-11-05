@@ -1,0 +1,5 @@
+{"type": "session", "version": 3, "id": "sample", "timestamp": "2026-10-31T00:00:00.000Z", "cwd": "/sample"}
+{"type": "message", "id": "0", "parentId": null, "timestamp": "2026-10-31T00:00:00.000Z", "message": {"role": "user", "content": [{"type": "text", "text": "继续"}]}}
+{"type": "message", "id": "5", "parentId": null, "timestamp": "2026-10-31T00:05:00.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "请确认"}], "usage": {"input": 10, "cacheRead": 2, "cacheWrite": 3, "output": 4}, "stopReason": "stop"}}
+{"type": "message", "id": "30", "parentId": null, "timestamp": "2026-10-31T00:30:00.000Z", "message": {"role": "user", "content": [{"type": "text", "text": "继续"}]}}
+{"type": "message", "id": "35", "parentId": null, "timestamp": "2026-10-31T00:35:00.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "请确认"}], "usage": {"input": 10, "cacheRead": 2, "cacheWrite": 3, "output": 4}, "stopReason": "stop"}}

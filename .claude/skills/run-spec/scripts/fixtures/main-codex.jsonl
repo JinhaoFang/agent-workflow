@@ -1,0 +1,7 @@
+{"type": "session_meta", "timestamp": "2026-10-31T00:00:00.000Z", "payload": {"id": "sample", "cwd": "/sample"}}
+{"type": "response_item", "timestamp": "2026-10-31T00:00:00.000Z", "payload": {"type": "message", "id": "0", "role": "user", "content": [{"type": "input_text", "text": "继续"}]}}
+{"type": "response_item", "timestamp": "2026-10-31T00:05:00.000Z", "payload": {"type": "message", "id": "5", "role": "assistant", "content": [{"type": "output_text", "text": "请确认"}]}}
+{"type": "event_msg", "timestamp": "2026-10-31T00:05:00.000Z", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 100, "cached_input_tokens": 20, "output_tokens": 10}}}}
+{"type": "response_item", "timestamp": "2026-10-31T00:30:00.000Z", "payload": {"type": "message", "id": "30", "role": "user", "content": [{"type": "input_text", "text": "继续"}]}}
+{"type": "response_item", "timestamp": "2026-10-31T00:35:00.000Z", "payload": {"type": "message", "id": "35", "role": "assistant", "content": [{"type": "output_text", "text": "请确认"}]}}
+{"type": "event_msg", "timestamp": "2026-10-31T00:35:00.000Z", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 200, "cached_input_tokens": 50, "output_tokens": 20}}}}

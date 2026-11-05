@@ -1,0 +1,4 @@
+{"type": "user", "uuid": "0", "sessionId": "sample", "timestamp": "2026-10-31T00:00:00.000Z", "message": {"role": "user", "id": "0", "content": "继续"}}
+{"type": "assistant", "uuid": "5", "sessionId": "sample", "timestamp": "2026-10-31T00:05:00.000Z", "message": {"role": "assistant", "id": "5", "content": "请确认", "usage": {"input_tokens": 10, "cache_read_input_tokens": 2, "cache_creation_input_tokens": 3, "output_tokens": 4}}}
+{"type": "user", "uuid": "30", "sessionId": "sample", "timestamp": "2026-10-31T00:30:00.000Z", "message": {"role": "user", "id": "30", "content": "继续"}}
+{"type": "assistant", "uuid": "35", "sessionId": "sample", "timestamp": "2026-10-31T00:35:00.000Z", "message": {"role": "assistant", "id": "35", "content": "请确认", "usage": {"input_tokens": 10, "cache_read_input_tokens": 2, "cache_creation_input_tokens": 3, "output_tokens": 4}}}

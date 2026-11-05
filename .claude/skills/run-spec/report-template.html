@@ -17,6 +17,7 @@ spec 汇报模板（workflow-v5 候选）：单文件，浏览器直接打开，
   color-scheme: light;
   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10); --wash: rgba(11,11,11,.04);
+  --claude: #8054bd; --pi: #008265;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
   --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --goodtext: #006300;
 }
@@ -25,6 +26,7 @@ spec 汇报模板（workflow-v5 候选）：单文件，浏览器直接打开，
     color-scheme: dark;
     --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10); --wash: rgba(255,255,255,.05);
+    --claude: #b18cde; --pi: #40bc99;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --goodtext: #0ca30c;
   }
 }
@@ -1274,7 +1276,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
   const tile = (v, k, n) => el("div", { class: "tile" }, el("div", { class: "v", text: v }), el("div", { class: "k", text: k }), n ? el("div", { class: "n", text: n }) : null);
   put("done-tiles", 
     tile(judged.length ? `${met}/${judged.length}` : "—", "目标达成", [judged.length - met ? `${judged.length - met} 项未完全达成` : null, goals.length - judged.length ? `另 ${goals.length - judged.length} 项只报告` : null].filter(Boolean).join("，") || null),
-    tile(String((R.delivered || []).length), "交付", S ? `派给 Codex 的工单 ${tickets.size} 张` : null),
+    tile(String((R.delivered || []).length), "交付", S ? `派发工单 ${tickets.size} 张` : null),
     tile(fmtMin(wall), "从开工到数据截点", S ? `截点 ${fmtTime(S.cutoffAt)}` : null),
   );
   const delivered = R.delivered || [];
@@ -1331,16 +1333,16 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
   put("evidence", evidence.length ? evidence.map((e) => el("div", { class: "card" }, el("div", { class: "row" }, el("div", {}, el("b", { text: e.claim })), evidenceBlock(e))))
     : el("p", { class: "empty", text: "无" }));
 
+  const framework = (d) => d.framework || d.agent || "codex";
+  const frameworkName = (key) => ({ codex: "Codex", claude: "Claude", pi: "pi" }[key] || key);
+  const frameworkColor = (key) => ({ codex: "var(--s1)", claude: "var(--claude)", pi: "var(--pi)" }[key] || "var(--muted)");
+  const seatName = (key) => ({ engineering: "工程", review: "审查", research: "辅助", "spec-review": "独立审查", watch: "巡检" }[key] || key || "席位未记录");
+  const dispatchLanes = val(S && S.dispatchLanes) || [{ framework: "codex", time: S && (S.time.dispatchSlots || S.time.codexSlots) }];
   const LANES = [
-    ["codexSlots", "Codex", "var(--s1)"],
-    ["verification", "验证", "var(--s2)"],
-    ["queue", "排队", "var(--s3)"],
-    ["designLead", "设计负责人", "var(--s4)"],
-    ["waitingUser", "等用户", "var(--s5)"],
+    ...dispatchLanes.map((l) => [l.framework, frameworkName(l.framework), frameworkColor(l.framework), l.time]),
+    ...[["verification", "验证", "var(--s2)"], ["queue", "排队", "var(--s3)"], ["designLead", "设计负责人", "var(--s4)"], ["waitingUser", "等用户", "var(--s5)"]].map(([key, name, color]) => [key, name, color, S && S.time[key]]),
   ];
   put("lane-legend", LANES.map(([, name, c]) => el("span", { style: `--c:${c}`, text: name })));
-  const dispatchChart = $("dispatch-bars");
-  dispatchChart.style.setProperty("--dispatch-color", LANES[0][2]);
   const dispatchMinutes = (d) => {
     const value = val(d.minutes);
     return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
@@ -1351,6 +1353,8 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     const input = usage && typeof usage.inputTokens === "number" ? usage.inputTokens : null;
     const details = [
       d.record || "记录名未记录", d.ticket ? `工单 #${d.ticket}` : "无工单号",
+      `框架：${frameworkName(framework(d))}；席位：${d.seat || "未记录"}；工作类型：${d.workType || "default"}`,
+      `模型：${d.actualModel || d.model || "未记录"}；强度：${d.actualEffort || d.effort || "未记录"}`,
       `类别：${category ?? "未记录"}`, `开始：${fmtTime(val(d.start))}`, `结束：${fmtTime(val(d.end))}`,
       minutes === null ? `时长未记录：${why(d.minutes)}` : `时长：${fmtMin(minutes)}`,
       `退出码：${exit ?? "未记录"}`, input === null ? `输入未记录：${why(d.usage)}` : `输入：${fmtNum(input)} token`,
@@ -1358,18 +1362,18 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     ].filter(Boolean).join("\n");
     const track = el("div", { class: `dispatch-track${minutes === null ? " dispatch-unknown" : ""}`, "aria-hidden": "true" });
     if (minutes !== null) track.append(el("div", { class: "dispatch-fill", style: `width:${(100 * minutes) / longestDispatch}%` }));
-    const meta = el("div", { class: "dispatch-meta" }, category ?? "类别未记录");
+    const meta = el("div", { class: "dispatch-meta" }, `${frameworkName(framework(d))} · ${category ?? "类别未记录"}${d.seat ? ` · ${seatName(d.seat)}` : ""}${d.workType && d.workType !== "default" ? ` · ${d.workType}` : ""}`);
     if (exit !== null && exit !== undefined && exit !== 0) meta.append(" · ", el("span", { class: "dispatch-exit", text: `退出 ${exit}` }));
     else if (exit === null || exit === undefined) meta.append(" · 退出码未记录");
     meta.append(input === null ? " · 输入未记录" : ` · 输入 ${fmtTok(input)}`);
-    return el("div", { class: "dispatch-item", tabindex: "0", role: "group", "aria-label": details, "data-tip": details },
+    return el("div", { class: "dispatch-item", style: `--dispatch-color:${frameworkColor(framework(d))}`, tabindex: "0", role: "group", "aria-label": details, "data-tip": details },
       el("div", { class: "dispatch-heading" }, el("b", { text: d.record || "记录名未记录" }), el("span", { text: minutes === null ? "时长未记录" : fmtMin(minutes) })),
       el("div", { class: "dispatch-line" }, track, meta),
       minutes === null ? el("div", { class: "dispatch-reason", text: `未记录：${why(d.minutes)}` }) : null);
   }) : el("p", { class: "empty", text: "没有派发记录。" }));
   const timeline = () => {
     if (!S) return el("p", { class: "empty", text: "没有评分表数据。" });
-    const lanes = LANES.map(([key, name, color]) => ({ key, name, color, field: S.time[key], spans: ((val(S.time[key]) || {}).spans || []).map((s) => [Date.parse(s.start), Date.parse(s.end)]) }));
+    const lanes = LANES.map(([key, name, color, field]) => ({ key, name, color, field, spans: ((val(field) || {}).spans || []).map((s) => [Date.parse(s.start), Date.parse(s.end)]) }));
     const all = lanes.flatMap((l) => l.spans).sort((a, b) => a[0] - b[0]);
     if (!all.length) return el("p", { class: "empty", text: "评分表里没有时段。" });
     const GAP = 45 * 60000;
@@ -1379,7 +1383,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
       if (last && a - last[1] <= GAP) last[1] = Math.max(last[1], b);
       else segs.push([a, b]);
     }
-    const W = Math.max(300, $("timeline").clientWidth), LW = W < 600 ? 64 : 92, GW = 14, ROW = 26, TOP = 6, PAD = 4;
+    const W = Math.max(240, $("timeline").clientWidth), LW = W < 600 ? 64 : 92, GW = 14, ROW = 26, TOP = 6, PAD = 4;
     const active = segs.reduce((n, [a, b]) => n + (b - a), 0) || 1;
     const usable = W - LW - GW * (segs.length - 1) - PAD;
     const offsets = [];
@@ -1423,7 +1427,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
 
   const hbars = (rows, unitFmt, ariaLabel, W) => {
     const max = Math.max(1, ...rows.map((r) => r.value || 0));
-    const narrow = W < 600, LW = narrow ? 76 : 120, VW = narrow ? 120 : 280, ROW = 26;
+    const narrow = W < 600, LW = narrow ? 98 : 150, VW = narrow ? 95 : 280, ROW = 26;
     const svg = svgEl("svg", { viewBox: `0 0 ${W} ${rows.length * ROW + 4}`, role: "img", "aria-label": ariaLabel });
     rows.forEach((r, i) => {
       const y = i * ROW;
@@ -1457,16 +1461,20 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     put("usage-note", n === null ? `任务通知里的子代理 token：未记录（${why(S.usage.subagentNotifications)}）。` : `任务通知报的子代理 token 合计 ${fmtTok(n)}，可和上面子代理一行互相核对。`);
   }
 
-  const USAGE = [["codexDispatch", "Codex 派发"], ["codexReview", "Codex 审查"], ["mainSession", "主会话"], ["independentReview", "独立审查"], ["subagents", "子代理"]];
+  const groupedUsage = val(S && S.usage.dispatches);
+  const USAGE = [
+    ...(S && S.version >= 2 ? groupedUsage ? groupedUsage.map((g) => [`${seatName(g.seat)}/${frameworkName(g.framework)}`, g.usage, frameworkColor(g.framework)]) : [["派发用量", S.usage.dispatches, "var(--muted)"]] : [["Codex 派发", S && S.usage.codexDispatch, frameworkColor("codex")], ["Codex 审查", S && S.usage.codexReview, frameworkColor("codex")]]),
+    ...[["mainSession", "主会话"], ["independentReview", "独立审查"], ["subagents", "子代理"]].map(([key, name]) => [name, S && S.usage[key], "var(--s1)"]),
+  ];
   const drawCharts = () => {
     drawGoals();
     for (const slot of ["timeline", "time-bars", "usage-bars"]) $(slot).replaceChildren();
     put("timeline", timeline());
-    const bw = Math.max(300, $("time-bars").clientWidth);
-    put("time-bars", S ? hbars(LANES.map(([key, name, color]) => ({ label: name, color, value: (val(S.time[key]) || {}).minutes ?? null, reason: why(S.time[key]) })), fmtMin, "各类时间的分钟数", bw) : el("p", { class: "empty", text: "没有评分表数据。" }));
-    put("usage-bars", S ? hbars(USAGE.map(([key, label]) => {
-      const u = val(S.usage[key]);
-      return { label, value: u ? u.inputTokens : null, reason: why(S.usage[key]), short: u ? `输入 ${fmtTok(u.inputTokens)}` : null,
+    const bw = Math.max(240, $("time-bars").clientWidth);
+    put("time-bars", S ? hbars(LANES.map(([, name, color, field]) => ({ label: name, color, value: (val(field) || {}).minutes ?? null, reason: why(field) })), fmtMin, "各类时间的分钟数", bw) : el("p", { class: "empty", text: "没有评分表数据。" }));
+    put("usage-bars", S ? hbars(USAGE.map(([label, field, color]) => {
+      const u = val(field);
+      return { label, color, value: u ? u.inputTokens : null, reason: why(field), short: u ? `输入 ${fmtTok(u.inputTokens)}` : null,
         text: u ? `输入 ${fmtTok(u.inputTokens)}（缓存 ${Math.round((100 * u.cachedInputTokens) / (u.inputTokens || 1))}%）· 输出 ${fmtTok(u.outputTokens)}` : null };
     }), fmtTok, "各来源的输入 token", bw) : el("p", { class: "empty", text: "没有评分表数据。" }));
   };
@@ -1481,8 +1489,8 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
 
   const table = (head, rows) => el("div", { class: "tw" }, el("table", {}, el("thead", {}, el("tr", {}, head.map(([t, num]) => el("th", { class: num ? "num" : null, text: t })))),
     el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el("td", { class: head[i][1] ? "num" : null }, c)))))));
-  put("dispatch-table", dispatches.length ? table([["记录"], ["工单"], ["类别"], ["开始"], ["分钟", 1], ["退出码", 1], ["输入", 1], ["输出", 1]],
-    dispatches.map((d) => { const u = val(d.usage); return [d.record || "", d.ticket ? issue(d.ticket) : "", val(d.category) ?? "未知", fmtTime(val(d.start)), fmtNum(val(d.minutes), 1), String(val(d.exitCode) ?? "未知"), fmtTok(u && u.inputTokens), fmtTok(u && u.outputTokens)]; }))
+  put("dispatch-table", dispatches.length ? table([["记录"], ["工单"], ["席位 / 类型"], ["框架 / 模型 / 强度"], ["类别"], ["开始"], ["分钟", 1], ["退出码", 1], ["输入", 1], ["输出", 1]],
+    dispatches.map((d) => { const u = val(d.usage); return [d.record || "", d.ticket ? issue(d.ticket) : "", `${d.seat || "未记录"} / ${d.workType || "default"}`, `${frameworkName(framework(d))} / ${d.actualModel || d.model || "未记录"} / ${d.actualEffort || d.effort || "未记录"}`, val(d.category) ?? "未知", fmtTime(val(d.start)), fmtNum(val(d.minutes), 1), String(val(d.exitCode) ?? "未知"), fmtTok(u && u.inputTokens), fmtTok(u && u.outputTokens)]; }))
     : el("p", { class: "empty", text: "无" }));
   const runs = (ver && ver.runs) || [];
   put("verify-table", runs.length ? table([["层"], ["对象"], ["调用方"], ["开始"], ["排队", 1], ["运行", 1], ["退出码", 1]],
