@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const entry = join(import.meta.dirname, "dispatch-task.ts");
-const samples = Object.fromEntries(["success", "model-error", "tool-error", "aborted"].map(name => [name, readFileSync(join(import.meta.dirname, `fixtures/pi-${name}.jsonl`), "utf8").trim().split("\n").map(line => JSON.parse(line))]));
+const samples = Object.fromEntries(["success", "model-error", "tool-error", "aborted", "retry-success", "retry-failed"].map(name => [name, readFileSync(join(import.meta.dirname, `fixtures/pi-${name}.jsonl`), "utf8").trim().split("\n").map(line => JSON.parse(line))]));
 const task = "只读核对 git diff；$(literal) `literal`\n列出技能";
 const fixture = () => {
   const temporary = mkdtempSync(join(tmpdir(), "pi-adapter-中文 "));
@@ -46,8 +46,13 @@ if (args[args.indexOf('--mode')+1] === 'rpc') {
 }
 if (process.env.CASE === 'hold') { setInterval(() => {}, 1000); return; }
 const cases = ${JSON.stringify(samples)};
-let events = cases[process.env.CASE] || cases.success;
+let events = cases[process.env.CASE] || (process.env.CASE.startsWith('retry-') ? cases['retry-success'] : cases.success);
 events = JSON.parse(JSON.stringify(events).replaceAll('<ROOT>', process.cwd()));
+if (process.env.CASE === 'retry-no-settled') events = events.filter(e => e.type !== 'agent_settled');
+if (process.env.CASE === 'retry-aborted') events.at(-1).aborted = true;
+if (process.env.CASE === 'retry-length') events.filter(e => e.type === 'message_end').at(-1).message.stopReason = 'length';
+if (process.env.CASE === 'retry-final-error') events.splice(-1, 0, {type:'error',message:'最终运行失败'});
+if (process.env.CASE === 'retry-final-failure') events.splice(-1, 0, {type:'auto_retry_end',success:false,attempt:2,finalError:'最终重试失败'});
 if (process.env.CASE === 'missing-usage') events.filter(e => e.type === 'message_end').at(-1).message.usage = undefined;
 if (process.env.CASE === 'invalid-usage') events.filter(e => e.type === 'message_end').at(-1).message.usage.cacheRead = -1;
 if (process.env.CASE === 'no-settled') events = events.filter(e => e.type !== 'agent_settled');
@@ -65,7 +70,7 @@ for (const event of events) {
   console.log(JSON.stringify(event));
   if (event.type === 'message_end') console.log(JSON.stringify({type:'turn_end',message:event.message,toolResults:[]}));
 }
-if (process.env.CASE === 'nonzero') { console.error('pi 进程失败'); process.exitCode=7; }
+if (['nonzero', 'retry-nonzero'].includes(process.env.CASE)) { console.error('pi 进程失败'); process.exitCode=7; }
 `);
   const env = { ...process.env, XDG_CONFIG_HOME: xdg, CODEX_DISPATCH_HOME: home };
   const args = [entry, task, "--agent", "pi", "--name", "sample", "--permission", "read-only", "--model", "requested/model", "--effort", "minimal"];
@@ -162,6 +167,24 @@ test("pi CLI keeps recovered tool failure separate from model failure and uses s
     assert.equal(f.summary().success, true);
   } finally { f.cleanup(); }
 });
+
+for (const [scenario, status] of [["retry-success", 0], ["retry-failed", 1], ["retry-no-settled", 1], ["retry-aborted", 1], ["retry-length", 1], ["retry-final-error", 1], ["retry-final-failure", 1], ["retry-nonzero", 7]] as const) {
+  test(`pi CLI 按最终结果判定 503 自动重试：${scenario}`, () => {
+    const f = fixture();
+    try {
+      const result = f.run(scenario);
+      assert.equal(result.status, status, result.stdout + result.stderr);
+      assert.equal(f.summary().success, status === 0);
+      assert.equal(f.summary().processExit, scenario === "retry-nonzero" ? 7 : 0);
+      assert.match(f.read(".progress.log"), /503:/);
+      if (scenario === "retry-success") {
+        assert.match(f.read(".progress.log"), /=== pi 结束：exit=0/);
+        assert.deepEqual(f.summary().usage, { input: 6021, cached: 4864, output: 632 });
+        assert.equal(f.summary().actualModel, "zai-coding-cn/glm-5.3-flash");
+      }
+    } finally { f.cleanup(); }
+  });
+}
 
 test("pi CLI waits through agent_end resumption and counts only authoritative message_end usage", () => {
   const f = fixture();

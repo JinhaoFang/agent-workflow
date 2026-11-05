@@ -167,8 +167,9 @@ export const pi: Adapter = {
     const last = messages.at(-1);
     const settled = events.reduce((index, event, current) => event.type === "agent_settled" ? current : index, -1);
     const activity = events.reduce((index, event, current) => event.type !== "agent_settled" && /^(?:agent_|turn_|message_|tool_execution_|auto_retry_|compaction_)/.test(event.type) ? current : index, -1);
+    const recovered = events.reduce((index, event, current) => event.type === "auto_retry_end" && event.success === true ? current : index, -1);
     return {
-      success: code === 0 && !failed && settled > activity && events[settled]?.aborted === false && last?.stopReason === "stop" && !messages.some(message => ["error", "aborted", "length"].includes(message.stopReason)) && !events.some(event => event.type === "error" || (event.type === "auto_retry_end" && event.success === false)),
+      success: code === 0 && !failed && settled > activity && events[settled]?.aborted === false && last?.stopReason === "stop" && !events.slice(recovered + 1).some(event => event.type === "error" || (event.type === "auto_retry_end" && event.success === false)),
       usage: usage.length > 0 && usage.every(value => value !== null) && Object.values(totals).every(Number.isSafeInteger) ? totals : null,
       actualModel: typeof last?.provider === "string" && typeof last.model === "string" ? `${last.provider}/${last.model}` : null,
       actualEffort: typeof last?.thinkingLevel === "string" ? last.thinkingLevel : actualEffort(events, root, recordsRoot),

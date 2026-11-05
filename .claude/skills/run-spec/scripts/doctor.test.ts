@@ -8,8 +8,8 @@
  * direct version/auth probes exercise the same bounded gh retry as API calls.
  * A fake Claude CLI makes availability checks independent of the host install;
  * optional configuration covers defaults, configured/env sources and exit 2.
- * Codex probes cover DispatchDock's explicit Node/wrapper path, PATH fallback
- * and missing executables with isolated PATH/config directories.
+ * 各框架的 Node/.cmd/.bat 路径与派发入口对照，覆盖空版本、失败探测和无效路径；
+ * Codex 兼容旧配置的包装路径及隔离 PATH 中缺少可执行文件的情况。
  * Verification options report substituted effective values and per-variable
  * sources; TICKET_97_EVIDENCE captures default/configured doctor output.
  */
@@ -380,6 +380,53 @@ test("seat doctor probes configured Codex and Claude paths and ignores unused fr
     assert.doesNotMatch(unused.stdout + unused.stderr, /claude CLI 可用/);
   } finally { f.cleanup(); }
 });
+
+for (const agent of ["codex", "claude", "pi"]) {
+  for (const extension of ["cjs", "cmd", "bat"]) {
+    test(`doctor 与派发复用框架探测：${agent}.${extension}`, () => {
+      const f = fixture();
+      try {
+        const executable = join(f.temporary, `${agent} entry.cjs`);
+        const configured = extension === "cjs" ? executable : join(f.temporary, `${agent} wrapper.${extension}`);
+        const events = readFileSync(join(import.meta.dirname, `fixtures/${agent}-success.jsonl`), "utf8");
+        writeFileSync(executable, `
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args.includes('--version')) {
+  if (process.env.PROBE_MODE !== 'empty-version') console.log('${agent} wrapper fixture');
+  process.exit(process.env.PROBE_MODE === 'version-failure' ? 3 : 0);
+}
+fs.readFileSync(0, 'utf8');
+if (args[args.indexOf('--mode') + 1] === 'rpc') {
+  console.log(JSON.stringify({type:'response',id:'run-spec-skills',command:'get_commands',success:true,data:{commands:[]}}));
+} else {
+  if (args.includes('-o')) fs.writeFileSync(args[args.indexOf('-o') + 1], '包装入口派发成功');
+  process.stdout.write(${JSON.stringify(events)}.replaceAll('<ROOT>', process.cwd()));
+}
+`);
+        if (extension !== "cjs") writeFileSync(configured, `@"%dp0%/${agent} entry.cjs" %*`);
+        f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, seats: { engineering: { default: { agent } } }, agents: { [agent]: { path: configured } } }));
+        for (const mode of ["available", "empty-version", "version-failure", ...(extension === "cjs" ? ["missing-entry"] : ["invalid-wrapper"])]) {
+          if (mode === "missing-entry") rmSync(executable);
+          if (mode === "invalid-wrapper") writeFileSync(configured, "@echo 无法解析的包装\n");
+          const available = mode === "available" || mode === "empty-version";
+          const doctor = f.run(["doctor"], { env: { PROBE_MODE: mode } });
+          const dispatch = spawnSync(process.execPath, [join(import.meta.dirname, "dispatch-task.ts"), "回放很小的只读任务", "--agent", agent, "--name", `${agent}-${extension}-${mode}`, "--permission", "read-only"], {
+            cwd: f.root, encoding: "utf8", timeout: 10000,
+            env: { ...process.env, PATH: `${f.bin}${delimiter}${process.env.PATH}`, XDG_CONFIG_HOME: join(f.temporary, "xdg"), CODEX_DISPATCH_HOME: join(f.temporary, "dispatch-home"), PROBE_MODE: mode },
+          });
+          assert.ifError(dispatch.error);
+          assert.equal(doctor.status, available ? 0 : 1, doctor.stdout + doctor.stderr);
+          assert.equal(dispatch.status, available ? 0 : 2, dispatch.stdout + dispatch.stderr);
+          const summary = JSON.parse(readFileSync(join(f.root, `.codex-runs/${agent}-${extension}-${mode}.json`), "utf8"));
+          assert.equal(summary.success, available);
+          const label = agent === "codex" ? "Codex CLI 可用" : agent === "claude" ? "claude CLI 可用" : "席位框架安装 pi";
+          assert.ok((available ? doctor.stdout : doctor.stderr).includes(`${available ? "通过" : "不通过"}：${label}`));
+        }
+      } finally { f.cleanup(); }
+    });
+  }
+}
 
 test("doctor reports static configuration values and sources and rejects malformed combinations with exit 2", () => {
   const f = fixture();
@@ -1044,7 +1091,7 @@ test("doctor reports a missing Claude CLI as an unmet prerequisite", () => {
     fails(
       f.run(["doctor"], { isolatedPath: true }),
       "claude CLI 可用",
-      /无法运行 claude --version[\s\S]*安装 Claude Code CLI/,
+      /找不到 Claude Code CLI[\s\S]*安装 Claude Code CLI/,
     );
   } finally {
     f.cleanup();
@@ -1201,7 +1248,7 @@ test("doctor finds configured Codex Node and npm wrapper entries without Codex o
   }
 });
 
-test("doctor reports both Codex search locations when config and PATH have no CLI", () => {
+test("doctor reports the adapter diagnostic when config and PATH have no Codex CLI", () => {
   const f = fixture();
   try {
     rmSync(join(f.bin, "codex"));
@@ -1215,7 +1262,7 @@ test("doctor reports both Codex search locations when config and PATH have no CL
     fails(
       missing,
       "Codex CLI 可用",
-      /已查找：.*config.json 的 agents.codex.path、PATH/,
+      /找不到 Codex CLI[\s\S]*config.json 的 agents.codex.path/,
     );
     const directory = process.env.RUN_SPEC_TEST_EVIDENCE;
     if (directory) {

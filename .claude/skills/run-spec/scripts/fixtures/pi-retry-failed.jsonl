@@ -1,0 +1,17 @@
+{"type":"session","version":3,"id":"01a1ab56-ddcb-70ce-94dd-59010d2f6c24","cwd":"<ROOT>"}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_end","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"fixture","model":"fixture-model","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","errorMessage":"503: {\"message\":\"验收样本：本地模型服务暂时不可用\",\"type\":\"server_error\"}","thinkingLevel":"off"}}
+{"type":"agent_end","willRetry":true}
+{"type":"auto_retry_start","attempt":1,"maxAttempts":2,"delayMs":1000,"errorMessage":"503: {\"message\":\"验收样本：本地模型服务暂时不可用\",\"type\":\"server_error\"}"}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_end","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"fixture","model":"fixture-model","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","errorMessage":"503: {\"message\":\"验收样本：本地模型服务暂时不可用\",\"type\":\"server_error\"}","thinkingLevel":"off"}}
+{"type":"agent_end","willRetry":true}
+{"type":"auto_retry_start","attempt":2,"maxAttempts":2,"delayMs":2000,"errorMessage":"503: {\"message\":\"验收样本：本地模型服务暂时不可用\",\"type\":\"server_error\"}"}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_end","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"fixture","model":"fixture-model","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","errorMessage":"503: {\"message\":\"验收样本：本地模型服务暂时不可用\",\"type\":\"server_error\"}","thinkingLevel":"off"}}
+{"type":"agent_end","willRetry":false}
+{"type":"auto_retry_end","success":false,"attempt":2,"finalError":"503: {\"message\":\"验收样本：本地模型服务暂时不可用\",\"type\":\"server_error\"}"}
+{"type":"agent_settled","aborted":false}

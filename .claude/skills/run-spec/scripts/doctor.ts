@@ -13,7 +13,7 @@
  * Probe the Claude CLI with --version; optional config values show their source.
  * Invalid optional configuration exits 2, preserving existing prerequisite exits.
  * Check an existing checkout-root .env with git check-ignore without reading it.
- * Resolve Codex through DispatchDock's configured path, then PATH, and probe its version.
+ * 通过各框架适配器的 detect 复用派发的启动器解析和可用判定。
  * 席位每档一行，只列非内置来源的层名；合并回落、权限损失与未接适配器提示。
  * TODO(design): 核对紧凑席位行和合并提示的措辞。
  */
@@ -32,8 +32,8 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
-import { codexVersion } from "./dispatchdock.ts";
 import { adapters } from "./dispatch/adapters.ts";
+import type { SeatSettings } from "./dispatch/adapter.ts";
 import { frameworkSettings, resolveSeat, seatNames, SeatConfigError } from "./dispatch/settings.ts";
 import {
   CheckFailure,
@@ -162,7 +162,7 @@ const ignored = (root: string, directory: string, link: boolean): boolean => {
   }
 };
 
-const doctor = (values: Values): void => {
+const doctor = async (values: Values): Promise<void> => {
   if (values["dry-run"] !== undefined)
     throw usageError("doctor 始终只读，不接受 --dry-run。", doctorCommand.help);
   let failures = 0;
@@ -170,13 +170,13 @@ const doctor = (values: Values): void => {
   const check = (
     name: string,
     repair: string,
-    inspect: () => string | void,
+    inspect: () => string | void | Promise<string | void>,
     quiet = false,
-  ): void => {
-    try {
-      const detail = inspect();
+  ): void | Promise<void> => {
+    const pass = (detail: string | void): void => {
       if (!quiet) console.log(`通过：${name}${detail ? `；${detail}` : ""}`);
-    } catch (error) {
+    };
+    const fail = (error: unknown): void => {
       failures++;
       if (!(error instanceof CheckFailure)) runtimeErrors++;
       const message =
@@ -184,6 +184,13 @@ const doctor = (values: Values): void => {
           ? error.message
           : "检查运行出错，请检查文件权限和运行环境。";
       console.error(`出错：不通过：${name}；${message}\n修法：${repair}`);
+    };
+    try {
+      const detail = inspect();
+      if (detail instanceof Promise) return detail.then(pass, fail);
+      pass(detail);
+    } catch (error) {
+      fail(error);
     }
   };
   const cwd = process.cwd();
@@ -397,7 +404,7 @@ const doctor = (values: Values): void => {
   );
   if (config) {
     const seats = config.seatConfiguration;
-    const used = new Set<string>();
+    const used = new Map<string, SeatSettings>();
     const fallbacks = new Map<string, string[]>();
     const losses = new Map<string, { loss: string; seats: Set<string> }>();
     const unavailable = new Map<string, { seats: Set<string>; readOnly: boolean }>();
@@ -412,7 +419,7 @@ const doctor = (values: Values): void => {
             return;
           }
           for (const [index, settings] of entries.entries()) {
-            used.add(settings.agent);
+            used.set(settings.agent, settings);
             console.log(`${seat}.${workType}${entries.length > 1 ? `[${index}]` : ""}：框架：${settings.agent}；模型：${settings.model ?? "框架默认"}；强度：${settings.effort ?? "框架默认"}；权限：${settings.permission}${compactSources(settings.sources ?? {}, { agent: "框架", model: "模型", effort: "强度", permission: "权限" })}`);
             const adapter = adapters[settings.agent];
             if (!adapter) {
@@ -435,7 +442,7 @@ const doctor = (values: Values): void => {
     }
     for (const [workType, names] of fallbacks)
       console.log(`提示：这些席位没有『${workType}』档，回落 default：${names.join("、")}`);
-    for (const agent of used) {
+    for (const [agent] of used) {
       const settings = frameworkSettings(seats, agent);
       console.log(`框架配置 ${agent}：并发：${settings.concurrency}；路径：${settings.path ?? "PATH"}${compactSources(settings.sources, { concurrency: "并发", path: "路径" })}`);
     }
@@ -443,14 +450,15 @@ const doctor = (values: Values): void => {
       console.log(`提示：权限映射损失：${[...losses].map(([mapping, item]) => `${mapping}（席位：${[...item.seats].join("、")}）：${item.loss}`).join("；")}`);
     if (unavailable.size)
       console.log(`提示：适配器未接入：${[...unavailable].map(([agent, item]) => `${agent}（席位：${[...item.seats].join("、")}）；当前不可用，权限映射损失未知${item.readOnly ? "，无法确认强制只读" : ""}`).join("；")}`);
-    for (const agent of used) {
+    for (const [agent, seat] of used) {
       const settings = frameworkSettings(seats, agent);
-      check(agent === "codex" ? "Codex CLI 可用" : agent === "claude" ? "claude CLI 可用" : `席位框架安装 ${agent}`, `安装 ${agent === "claude" ? "Claude Code CLI" : agent} 并加入 PATH，或配置 agents.${agent}.path。`, () => {
-        if (agent === "codex") return codexVersion(settings.path, settings.sources.path);
-        const path = settings.path ?? agent;
-        const result = spawnSync(/\.(?:js|mjs|cjs)$/i.test(path) ? process.execPath : path, [...(/\.(?:js|mjs|cjs)$/i.test(path) ? [path] : []), "--version"], { encoding: "utf8", timeout: 10000, shell: false });
-        requireCheck(!result.error && result.status === 0 && !!result.stdout.trim(), `框架 ${agent} 未安装或无法运行 ${path} --version`);
-        return `${result.stdout.trim()}；路径：${path}；来源：${settings.sources.path}`;
+      await check(agent === "codex" ? "Codex CLI 可用" : agent === "claude" ? "claude CLI 可用" : `席位框架安装 ${agent}`, `安装 ${agent === "claude" ? "Claude Code CLI" : agent} 并加入 PATH，或配置 agents.${agent}.path。`, async () => {
+        const adapter = adapters[agent];
+        requireCheck(!!adapter, `框架 ${agent} 尚未接入适配器，当前不可用`);
+        const detection = await adapter.detect({ env: process.env, settings: seat });
+        requireCheck(detection.installed, detection.error ?? `框架 ${agent} 未安装或无法运行 ${settings.path ?? agent} --version`);
+        const path = detection.launcher ? [detection.launcher.executable, ...detection.launcher.args].join(" ") : settings.path ?? "PATH";
+        return `${detection.version ?? "版本未知"}；路径：${path}；来源：${settings.sources.path}`;
       });
     }
     check("兼容配置 codexSandbox/codexConcurrency", "权限建议迁到 seats.engineering.default.permission，并发迁到 agents.codex.concurrency。", () =>
@@ -605,7 +613,8 @@ export const doctorCommand: Command = {
 权限映射损失直接取适配器 permissions，合并涉及席位提示；未接适配器也合并提示不可用。
 词表内用户未配档只提示；codexSandbox/codexConcurrency 继续兼容并建议迁移。
 检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18、claude CLI 可用；
-Codex CLI 先查席位 agents.codex.path，兼容旧 DispatchDock 配置，再查 PATH，并运行 --version；失败列出查找位置；
+框架安装探测复用各适配器 detect，与派发共用启动器解析，支持 .cmd/.bat 包装和 Node 入口；
+Codex 路径按席位配置兼容旧 DispatchDock 配置，再查 PATH；版本未知时仍按适配器结果判断可用；
 GitHub 的 role:engineering、role:design、ready-for-human 标签、只允许 merge commit、合并后自动删除分支；
 Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签说明；
 run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；

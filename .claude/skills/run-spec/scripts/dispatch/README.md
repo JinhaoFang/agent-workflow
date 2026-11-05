@@ -29,7 +29,7 @@
 
 `SeatSettings` 承载 `seat/workType/agent/model/effort/permission`，并保留 Codex 的 `tier/path`；新增 `sources` 保存逐字段来源、`fallbackReason` 保存工作类型回落原因，两项写入同名汇总及全局 start/end 登记。`settings.ts` 统一解析五个席位、用户 `seats.json`、仓库 `seats/agents/workTypes`、兼容环境及命令覆盖，字段和优先级见 setup-run-spec 的 `run-spec.md`。`tickets dispatch` 通过内部 `--settings <JSON>` 把已解析值传到工单 worktree，避免用 worktree 的旧仓库配置再次解析。
 
-`adapters.ts` 是适配器登记处；接入框架时在这里登记。配置允许三种框架，未登记时 dry-run 和 doctor 显示不可用，实际启动拒绝。`doctor` 直接取适配器的 `permissions` 显示参数、损失及只读限制，不复制权限表。
+`adapters.ts` 是适配器登记处；接入框架时在这里登记。配置允许三种框架，未登记时 dry-run 和 doctor 显示不可用，实际启动拒绝。`doctor` 直接取适配器的 `permissions` 显示参数、损失及只读限制，不复制权限表；安装探测调用同一适配器的 `detect`，与派发共用 `.cmd/.bat` 包装及 Node 入口解析，版本输出为空时按适配器结果判断可用并显示“版本未知”。
 
 `tickets.ts run <任务文件|任务文字> --seat <席位> [--spec <S>] [--name <记录名>]` 在当前工作区执行，记录统一写主工作区 `.codex-runs`；覆盖参数见 `run --help`。带 `--spec` 时逐份复用 `scorecard --record` 的精确关联存储，失败记录也保留关联；评分表把非规范命名的记录计为辅助派发，cleanup 沿用辅助原始证据保护。预览不启动模型、不写记录、清单、关联或 GitHub。已安装仓库无需迁移旧记录或配置。
 
@@ -53,12 +53,14 @@ Claude 的共享 `message.id` 文本分片按顺序拼接，工具开始和返�
 
 pi 通过 `--mode json` 接收 stdin；`model` 原样传 `--model 提供商/模型`，`effort` 传 `--thinking`。只认 `message_end` 的完整 assistant 消息，不重复累计流式更新、`turn_end` 或 `agent_end` 的消息副本。输入总数为 `input + cacheRead + cacheWrite`，其中缓存为 `cacheRead`，输出为 `output`；任一消息缺字段或计数不合法，整次用量为 `null`。实际模型记作 assistant 的 `provider/model`，强度优先取 `thinkingLevel`，再取会话中的 `thinking_level_change`，未知保留 `null`。会话放在 `.codex-runs/<记录名>.pi-sessions/`，对应 `--session-dir`，无需到用户默认会话目录寻找。
 
-pi 必须在最后一次自动工作之后收到 `agent_settled` 且 `aborted:false`、最后 assistant 正常 `stop` 才可成功；缺少该事件、消息 `error/aborted/length`、最终重试失败或进程非零都判失败。工具使用 `toolCallId` 关联开始与结束，bash 退出码只取 `result.structuredContent.exit_code`，缺少时记未知；可恢复的工具错误记录到进度，由模型继续完成任务，不直接判整次失败。协议以 [pi JSON 文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/json.md) 为准，本机核对版本为 1.5.0。
+pi 必须在最后一次自动工作之后收到 `agent_settled` 且 `aborted:false`、最后 assistant 正常 `stop`、进程退出 0 才可成功。自动重试的最终 `auto_retry_end success:true` 表示恢复，此前的失败消息和错误事件只记录过程；恢复之后仍有错误或重试失败则判失败。缺少结束事件、最后消息 `error/aborted/length`、最终重试失败或进程非零也都判失败。工具使用 `toolCallId` 关联开始与结束，bash 退出码只取 `result.structuredContent.exit_code`，缺少时记未知；可恢复的工具错误记录到进度，由模型继续完成任务，不直接判整次失败。协议以 [pi JSON 文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/json.md) 为准，本机核对版本为 1.5.0。
 
 pi 先以无模型 RPC `get_commands` 取得原有技能及其文件路径，再通过 `--no-skills --skill <文件>…` 显式加载允许项，按名称排除 `run-spec`、`setup-run-spec`。保留默认目录、配置及已安装包的技能与重名优先级；无法读取有效清单时拒绝派发。清单探测使用同一 cwd、环境及本次 `--approve` 信任；不保存信任决定，不更改用户配置。探测加 `--offline --no-session`，未安装包的技能不在允许列表内，需提前安装。RPC 来自 [pi 命令文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc-commands.md#get_commands)，资源加载约定见 [技能文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md)。
 
 pi 各权限均关闭扩展和 MCP，防止扩展重新加入屏蔽技能；可写与完全档保留默认内建工具。只读档启用 `read,grep,find,ls,bash`，由附加任务说明禁止写入。pi 没有系统沙箱：bash 及其子进程仍能写文件、访问网络或运行会生成缓存/报告的测试；可写档也无法限制在工作区内。这些损失保存在适配器 `permissions`，doctor 展示由后续工单统一处理。只读可以完成代码审查和不产生文件的复测；会写缓存或产物的复测需要另行授权可写权限。pi 自身启动可能初始化缓存及临时锁，工具的“只读”不承诺进程零写入。
 
 pi 回放样本为 `../fixtures/pi-{success,model-error,tool-error,aborted}.jsonl`：成功取自本机 GLM 只读实测；其余来自本机 pi 连接本地受控 OpenAI 兼容服务，其中模型错误返回 HTTP 400，工具错误实际执行退出 3 的 Python 命令，中止通过 RPC `abort`。四种进程均退出 0；样本仅截取完整消息和生命周期、工具事件，移除时间、响应 ID、重复快照并归一化工作区及用户路径。缺用量、缺结束事件和恢复运行由假可执行文件基于真实样本生成，全部从 CLI 入口回放。
+
+`../fixtures/pi-retry-{success,failed}.jsonl` 是上述真实样本的受控变换：将 `pi-model-error` 的 400 错误改为 503 服务暂不可用，保留失败 assistant 消息、用量和会话结构；将首个 `agent_end.willRetry` 改为 `true`，移走中间的 `agent_settled`，按 pi 1.5.0 的 `AgentSessionEvent` 和 `_prepareRetry/_handleAgentEvent/_handlePostAgentRun` 加入 `auto_retry_start`（`attempt/maxAttempts/delayMs/errorMessage`）与新的 `agent_start/turn_start`。成功样本接入 `pi-success` 的最后一条完整 assistant 消息，随后 `auto_retry_end success:true attempt:1`、`agent_end willRetry:false`、`agent_settled aborted:false`；失败样本重放两次失败响应，按 1、2 次重试计数增加延迟，耗尽后在 `agent_end willRetry:false` 后发出 `auto_retry_end success:false attempt:2 finalError`，最后同样 settled。两种假进程均退出 0；中止、截断、缺 settled、恢复后错误和进程非零由成功重试样本继续受控变换。
 
 同名 `.json` 与全局 end 记录保存席位、工作类型、框架、配置模型/强度、权限、成功与否、进程/派发退出码、统一用量、实际模型/强度。其余四种记录不变。验收、审查、评分表优先读此汇总；新记录用量缺失保持未知，旧记录继续用原日志/会话读取方式。清理和保护仍按原记录名规则，涵盖新增 `.json` 和已有旧文件。
