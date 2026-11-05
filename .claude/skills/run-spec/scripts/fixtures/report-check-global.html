@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- 新增全局名样本：window.reportCheckLeak 是唯一新增名字；只有全局名检查应失败。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>新增全局名样本</title>
+<style>
+body { margin: 0; font: 16px/1.6 system-ui, sans-serif; }
+[data-slot="timeline"] { height: 40px; background: #3987e5; }
+</style>
+</head>
+<body>
+<h1>新增全局名</h1>
+<div data-slot="timeline" aria-label="时间线"></div>
+<script>window.reportCheckLeak = 1;</script>
+</body>
+</html>

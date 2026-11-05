@@ -1,0 +1,19 @@
+<!doctype html>
+<!-- 手机溢出样本：展开 details 后内容宽 600；innerWidth 随内容扩大，只有窄屏检查应失败。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>手机溢出样本</title>
+<style>
+body { margin: 0; font: 16px/1.6 system-ui, sans-serif; }
+[data-slot="timeline"] { height: 40px; background: #3987e5; }
+details > div { width: 600px; height: 40px; background: #d95926; }
+</style>
+</head>
+<body>
+<h1>展开后溢出</h1>
+<div data-slot="timeline" aria-label="时间线"></div>
+<details><summary>查看宽内容</summary><div>这块内容宽 600 像素。</div></details>
+</body>
+</html>
