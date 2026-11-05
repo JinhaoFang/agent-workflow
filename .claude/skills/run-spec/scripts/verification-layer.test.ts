@@ -229,7 +229,8 @@ test("verify ticket defaults full, overrides select layers and conflict exits 2"
     assert.equal(preview.status, 0, preview.stderr);
     assert.match(preview.stdout, /验证层：static/);
     assert.equal(f.events().length, before);
-    assert.equal(f.ledger().length, 4);
+    assert.equal(f.ledger().length, 5);
+    assert.equal(f.ledger().at(-1)?.verification, null);
   } finally { f.cleanup(); }
 });
 

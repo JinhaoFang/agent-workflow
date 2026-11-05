@@ -5,6 +5,7 @@
  * SCORECARD_EVIDENCE 可指定输出
  * 固定输入、预期/实际 JSON、手算过程和测试命令记录的验收目录。
  * TICKET_12_EVIDENCE 保存真实 CLI 的启动故障、失败调用和帮助文字证据。
+ * TICKET_17_EVIDENCE 可保存全部 CLI 输出及关联台账，供本轮叶节点和辅助归属验收。
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -136,9 +137,18 @@ else if (args[0] === 'api' && args[2] === 'GET') {
 `);
   const chmod = spawnSync("chmod", ["+x", join(temporary, "gh")]);
   assert.equal(chmod.status, 0);
+  let sequence = 0;
+  const evidence = process.env.TICKET_17_EVIDENCE ? join(process.env.TICKET_17_EVIDENCE, temporary.split("/").at(-1)!) : null;
   const run = (args: string[], cwd = root) => {
     const result = spawnSync(process.execPath, [cli, ...args], { cwd, encoding: "utf8", timeout: 30000, env: { ...process.env, PATH: `${temporary}${delimiter}${process.env.PATH}`, CODEX_HOME: codex, CODEX_DISPATCH_HOME: dispatch, SCORECARD_FIXTURE: temporary } });
     assert.ifError(result.error);
+    if (evidence) {
+      mkdirSync(evidence, { recursive: true });
+      const prefix = String(++sequence).padStart(3, "0");
+      writeFileSync(join(evidence, `${prefix}-command.json`), JSON.stringify({ command: [process.execPath, cli, ...args], status: result.status, stdout: result.stdout, stderr: result.stderr }, null, 2));
+      for (const file of ["verification.jsonl", "scorecard-records.json"]) if (existsSync(join(records, file))) cpSync(join(records, file), join(evidence, `${prefix}-${file}`));
+      if (args[0] === "scorecard" && result.status === 0 && !args.includes("--help") && !args.includes("--out")) writeFileSync(join(evidence, `${prefix}-scorecard.json`), result.stdout);
+    }
     return result;
   };
   return { temporary, root, records, worktree, codex, dispatch, remote, comments, artifacts, claude, ledger, config, sessionFile, lines, write, run, git, cleanup: () => rmSync(temporary, { recursive: true, force: true }) };
@@ -508,5 +518,200 @@ test("更新损坏的原评分表评论，不再新建；缺子代理用量不�
     const card = JSON.parse(f.run(["scorecard", "2", "--session", f.claude]).stdout);
     assert.equal(card.usage.subagents.value, null);
     assert.equal(card.usage.subagentNotifications.value, 99);
+  } finally { f.cleanup(); }
+});
+
+for (const exclusiveVerification of [false, true]) {
+  for (const scenario of ["single", "multiple", "parallel", "failure", "launch", "preflight"]) {
+    test(`实际嵌套验证按叶节点统计：${scenario}，锁=${exclusiveVerification}`, () => {
+      const f = fixture();
+      try {
+        rmSync(join(f.records, "verification.jsonl"));
+        const checker = join(f.temporary, "checker.cjs");
+        const wrapper = join(f.temporary, "wrapper.cjs");
+        const counter = join(f.temporary, "checker-count.txt");
+        f.write(checker, `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'run\n'); process.exitCode = ${scenario === "failure" ? 1 : 0};`.replace("'run\n'", "'run\\n'"));
+        const count = ["multiple", "parallel"].includes(scenario) ? 2 : 1;
+        const childArgs = [cli, "verify", ...(scenario === "preflight" ? ["--static"] : [])];
+        f.write(wrapper, scenario === "parallel"
+          ? `const {spawn}=require('node:child_process'); Promise.all(Array.from({length:${count}},()=>new Promise(resolve=>{const p=spawn(process.execPath,${JSON.stringify(childArgs)},{stdio:'inherit'});p.on('exit',c=>resolve(c));}))).then(codes=>{process.exitCode=Math.max(...codes);});`
+          : `const {spawnSync}=require('node:child_process'); for(let i=0;i<${count};i++){const r=spawnSync(process.execPath,${JSON.stringify(childArgs)},{stdio:'inherit'});process.exitCode=r.status;}`);
+        f.write(join(f.root, "docs/agents/run-spec.json"), JSON.stringify({ ...f.config, exclusiveVerification,
+          verificationCommand: scenario === "launch" ? [join(f.temporary, "absent-checker")] : [process.execPath, checker], prCheckCommand: [process.execPath, wrapper] }));
+        const result = f.run(["pr-check", "93"]);
+        assert.equal(result.status, scenario === "failure" ? 1 : ["launch", "preflight"].includes(scenario) ? 2 : 0, result.stdout + result.stderr);
+        const rows = readFileSync(join(f.records, "verification.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+        assert.equal(rows.length, count + 1);
+        const parent = rows.find((row) => row.caller === "pr-check");
+        assert.ok(parent.invocationId);
+        assert.ok(rows.filter((row) => row.caller === "verify").every((row) => row.parentInvocationId === parent.invocationId));
+        const score = f.run(["scorecard", "2"]);
+        assert.equal(score.status, 0, score.stderr);
+        const card = JSON.parse(score.stdout);
+        const executed = ["launch", "preflight"].includes(scenario) ? 0 : count;
+        assert.equal(card.verification.value.fullCount, executed);
+        assert.equal(card.verification.value.fullMinutes, rows.filter((row) => row.caller === "verify" && row.verification).reduce((sum, row) => sum + (Date.parse(row.verification.finishedAt) - Date.parse(row.verification.startedAt)) / 60000, 0));
+        assert.equal(existsSync(counter) ? readFileSync(counter, "utf8").trim().split("\n").length : 0, executed);
+        verificationEvidence(`nested-${scenario}-${exclusiveVerification}`, f, [["pr-check", "93"], ["scorecard", "2"]], [result, score]);
+      } finally { f.cleanup(); }
+    });
+  }
+}
+
+test("新旧台账混读，包装排队和 land 调用保留，跨分支子节点先建关系", () => {
+  const f = fixture();
+  try {
+    const parent = { ...f.ledger[0], invocationId: "parent", parentInvocationId: null };
+    const child = { ...f.ledger[0], invocationId: "child", parentInvocationId: "parent", caller: "verify", queuedMinutes: 0, branch: "spec/20-other" };
+    f.lines(join(f.records, "verification.jsonl"), [parent, child, f.ledger[1], f.ledger[2]]);
+    const result = f.run(["scorecard", "2"]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.equal(card.verification.value.fullCount, 0);
+    assert.equal(card.verification.value.staticCount, 1);
+    assert.equal(card.merges.value.landCount, 2);
+    assert.equal(card.merges.value.fullVerificationFailures, 1);
+    assert.equal(card.time.queue.value.minutes, 2);
+    for (const rows of [
+      [{ ...parent, parentInvocationId: "absent" }],
+      [parent, { ...parent }],
+      [{ ...parent, parentInvocationId: "child" }, child],
+    ]) {
+      f.lines(join(f.records, "verification.jsonl"), rows);
+      const broken = f.run(["scorecard", "2"]);
+      assert.equal(broken.status, 0, broken.stderr);
+      const missing = JSON.parse(broken.stdout);
+      assert.equal(missing.verification.value, null);
+      assert.match(missing.verification.reason, /断链或成环/);
+      assert.ok(missing.missing.some((item: { field: string }) => item.field === "verification"));
+    }
+  } finally { f.cleanup(); }
+});
+
+test("显式辅助关联持久幂等，精确名隔离，跨 spec 冲突和缺记录可见", () => {
+  const f = fixture();
+  try {
+    const name = "check-6-2";
+    const external = join(f.temporary, "external-runner");
+    f.lines(join(f.records, `${name}.log`), [{ type: "thread.started", thread_id: "auxiliary", _at: Date.parse(at(10)) }]);
+    f.write(join(f.records, `${name}.progress.log`), "=== Codex 结束：exit=0，用时 5 分钟，汇报在 x.md ===\n");
+    f.write(join(f.records, `${name}-extra.md`), "不得按前缀纳入");
+    f.lines(f.sessionFile("auxiliary"), [
+      { type: "session_meta", timestamp: at(10), payload: { id: "auxiliary", cwd: external } },
+      { type: "event_msg", timestamp: at(15), payload: { type: "token_count", info: { total_token_usage: { input_tokens: 30, cached_input_tokens: 10, output_tokens: 4 } } } },
+    ]);
+    const preview = f.run(["scorecard", "2", "--record", name, "--dry-run"]);
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.equal(existsSync(join(f.records, "scorecard-records.json")), false);
+    const first = f.run(["scorecard", "2", "--record", name, "--record", name]);
+    assert.equal(first.status, 0, first.stderr);
+    const saved = readFileSync(join(f.records, "scorecard-records.json"), "utf8");
+    const duplicate = f.run(["scorecard", "2", "--record", name]);
+    assert.equal(duplicate.status, 0, duplicate.stderr);
+    assert.equal(readFileSync(join(f.records, "scorecard-records.json"), "utf8"), saved);
+    const repeated = f.run(["scorecard", "2"]);
+    assert.equal(repeated.status, 0, repeated.stderr);
+    const card = JSON.parse(repeated.stdout);
+    assert.deepEqual(card.recordBindings, [name]);
+    const auxiliary = card.dispatches.value.find((item: { record: string }) => item.record === name);
+    assert.equal(auxiliary.ticket, null);
+    assert.equal(auxiliary.category.value, "辅助");
+    assert.deepEqual(auxiliary.usage.value, tokens(30, 10, 4));
+    assert.deepEqual(card.usage.codexDispatch.value, tokens(1030, 810, 54));
+    assert.deepEqual(card.usage.codexReview.value, tokens(200, 100, 20));
+    assert.equal(card.dispatches.value.length, 3);
+    const conflict = f.run(["scorecard", "3", "--record", name]);
+    assert.notEqual(conflict.status, 0);
+    assert.match(conflict.stderr, /冲突|归属|关联/);
+    for (const invalid of ["../check", "check*", "check.log", "gh-50", "review-3"]) assert.notEqual(f.run(["scorecard", "2", "--record", invalid]).status, 0, invalid);
+    const missing = f.run(["scorecard", "2", "--record", "missing-work"]);
+    assert.equal(missing.status, 0, missing.stderr);
+    const absent = JSON.parse(missing.stdout);
+    assert.ok(absent.missing.some((item: { field: string }) => item.field === "dispatches.missing-work.start"));
+    assert.equal(absent.usage.codexDispatch.value, null);
+  } finally { f.cleanup(); }
+});
+
+test("评分表须覆盖新增旧记录的关联集合，重发后放行且保留辅助和关联文件", () => {
+  const f = fixture();
+  try {
+    f.write(join(f.records, "old-work.md"), "很早的辅助汇报");
+    utimesSync(join(f.records, "old-work.md"), new Date(at(1)), new Date(at(1)));
+    assert.equal(f.run(["scorecard", "2", "--post"]).status, 0);
+    const comments = JSON.parse(readFileSync(f.comments, "utf8"));
+    comments[0].body = comments[0].body.replace(/"cutoffAt": "[^"]+"/, '"cutoffAt": "2099-01-01T00:00:00.000Z"');
+    f.write(f.comments, JSON.stringify(comments));
+    assert.equal(f.run(["scorecard", "2", "--record", "old-work"]).status, 0);
+    const blocked = f.run(["cleanup", "2", "--dry-run"]);
+    assert.equal(blocked.status, 1, blocked.stderr);
+    assert.match(blocked.stderr, /覆盖.*关联/);
+    assert.equal(existsSync(f.worktree), true);
+    assert.equal(f.run(["scorecard", "2", "--post"]).status, 0);
+    const released = f.run(["cleanup", "2"]);
+    assert.equal(released.status, 0, released.stderr);
+    assert.equal(existsSync(join(f.records, "old-work.md")), true);
+    assert.equal(existsSync(join(f.records, "scorecard-records.json")), true);
+  } finally { f.cleanup(); }
+});
+
+test("辅助生命周期可来自外部 runner，同名多次实际运行必须标缺数", () => {
+  const f = fixture();
+  try {
+    const external = join(f.temporary, "external-runner");
+    const lifecycle = [
+      { v: 1, event: "start", id: "run-one", name: "auxiliary", repo: external, started: Date.parse(at(10)) },
+      { v: 1, event: "end", id: "run-one", exit: 0, at: Date.parse(at(15)) },
+    ];
+    f.lines(join(f.dispatch, "runs.jsonl"), lifecycle);
+    const single = f.run(["scorecard", "2", "--record", "auxiliary"]);
+    assert.equal(single.status, 0, single.stderr);
+    const one = JSON.parse(single.stdout).dispatches.value.find((item: { record: string }) => item.record === "auxiliary");
+    assert.equal(one.minutes.value, 5);
+    assert.equal(one.usage.value, null);
+    f.lines(join(f.dispatch, "runs.jsonl"), [...lifecycle, { ...lifecycle[0], id: "run-two" }]);
+    const ambiguous = f.run(["scorecard", "2"]);
+    assert.equal(ambiguous.status, 0, ambiguous.stderr);
+    const two = JSON.parse(ambiguous.stdout).dispatches.value.find((item: { record: string }) => item.record === "auxiliary");
+    assert.equal(two.start.value, null);
+    assert.equal(two.exitCode.value, null);
+    assert.match(two.usage.reason, /多个实际运行/);
+  } finally { f.cleanup(); }
+});
+
+for (const retained of [false, true]) {
+  test(`cleanup 保留没有一致主副本的辅助证据，kept=${retained}`, () => {
+    const f = fixture();
+    try {
+      const directory = retained ? `${f.root}.worktrees/.kept/5/.codex-runs` : join(f.worktree, ".codex-runs");
+      const record = join(directory, "auxiliary.md");
+      f.write(record, "唯一原始汇报");
+      assert.equal(f.run(["scorecard", "2", "--record", "auxiliary", "--post"]).status, 0);
+      for (const bypass of [[], ["--no-scorecard"]]) {
+        const blocked = f.run(["cleanup", "2", ...bypass]);
+        assert.equal(blocked.status, 1, blocked.stderr);
+        assert.match(blocked.stderr, /辅助记录保护/);
+        assert.equal(readFileSync(record, "utf8"), "唯一原始汇报");
+        assert.equal(existsSync(f.worktree), true);
+      }
+      f.write(join(f.records, "auxiliary.md"), "不同内容");
+      assert.equal(f.run(["cleanup", "2", "--no-scorecard"]).status, 1);
+      f.write(join(f.records, "auxiliary.md"), "唯一原始汇报");
+      assert.equal(f.run(["scorecard", "2", "--post"]).status, 0);
+      const released = f.run(["cleanup", "2"]);
+      assert.equal(released.status, 0, released.stderr);
+      assert.equal(readFileSync(join(f.records, "auxiliary.md"), "utf8"), "唯一原始汇报");
+    } finally { f.cleanup(); }
+  });
+}
+
+test("显式辅助名即使命中既有日志清理前缀也保留原始文件", () => {
+  const f = fixture();
+  try {
+    f.write(join(f.records, "verify-5-helper.log"), "辅助原始记录");
+    const registered = f.run(["scorecard", "2", "--record", "verify-5-helper", "--post"]);
+    assert.equal(registered.status, 0, registered.stderr);
+    const cleaned = f.run(["cleanup", "2"]);
+    assert.equal(cleaned.status, 0, cleaned.stderr);
+    assert.equal(readFileSync(join(f.records, "verify-5-helper.log"), "utf8"), "辅助原始记录");
   } finally { f.cleanup(); }
 });

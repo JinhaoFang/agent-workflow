@@ -43,39 +43,39 @@ const verify = async (values: Values, numbers: number[]): Promise<void> => {
   const trees = git(checkout, ["worktree", "list", "--porcelain"]);
   const root = trees.split("\n")[0].slice(9);
   const ticket = numbers[0];
-  const cwd = ticket === undefined ? root : `${root}.worktrees/${ticket}`;
-  if (
-    ticket !== undefined &&
-    (!existsSync(cwd) ||
-      !trees
-        .split("\n\n")
-        .some((block) => block.split("\n").includes(`worktree ${cwd}`)))
-  )
-    throw new CheckFailure(`工单 worktree 不存在：${cwd}`);
-  const config = dispatchConfig(checkout);
-  const selected = selectVerification(config, root, {
-    values,
-    ticket: ticket !== undefined,
-  });
-  printVerificationLayer(config, selected);
-  const directory = join(root, ".codex-runs");
-  const log = join(
-    directory,
-    `verify-${ticket ?? "main"}-${Date.now()}-${process.pid}.log`,
-  );
-  if (values["dry-run"]) {
-    console.log(
-      `验证命令（${cwd}）：${JSON.stringify(selected.command)}`,
-    );
-    console.log(`完整日志：${log}（仅预览，不写入）`);
-    return;
-  }
   await withVerificationRecord(
     root,
     "verify",
     ticket === undefined ? { kind: "main" } : { kind: "ticket", number: ticket },
-    false,
+    Boolean(values["dry-run"]),
     async (attempt) => {
+      const cwd = ticket === undefined ? root : `${root}.worktrees/${ticket}`;
+      if (
+        ticket !== undefined &&
+        (!existsSync(cwd) ||
+          !trees
+            .split("\n\n")
+            .some((block) => block.split("\n").includes(`worktree ${cwd}`)))
+      )
+        throw new CheckFailure(`工单 worktree 不存在：${cwd}`);
+      const config = dispatchConfig(checkout);
+      const selected = selectVerification(config, root, {
+        values,
+        ticket: ticket !== undefined,
+      });
+      printVerificationLayer(config, selected);
+      const directory = join(root, ".codex-runs");
+      const log = join(
+        directory,
+        `verify-${ticket ?? "main"}-${Date.now()}-${process.pid}.log`,
+      );
+      if (values["dry-run"]) {
+        console.log(
+          `验证命令（${cwd}）：${JSON.stringify(selected.command)}`,
+        );
+        console.log(`完整日志：${log}（仅预览，不写入）`);
+        return;
+      }
       attempt.layer = selected.layer;
       mkdirSync(directory, { recursive: true });
       const descriptor = openSync(log, "wx");

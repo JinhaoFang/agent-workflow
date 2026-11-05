@@ -1,15 +1,19 @@
 /**
- * 评分表的只读采集：按 spec 分支和直接子工单归属台账，按记录名合并
- * 主工作区与工单 worktree 的派发副本；读取 DispatchDock 生命周期和进度。
+ * 评分表的只读采集：按 spec 分支、直接子工单和持久精确归属采集记录，按
+ * 记录名合并主工作区、工单 worktree 与 .kept 的派发副本；读取生命周期和进度。
  * Codex 会话按 session_meta.cwd、thread.started ID 和父会话关联，使用最后
  * 一个累计 token_count。公共台账不删除、不改写；截点包含记录文件修改时间，
  * 使尚在运行、补写汇报和没有结构化时间的旧记录也能触发 cleanup 拦截。
+ * 显式归属可采集外部 runner 生命周期；同名多次运行只报告歧义，不猜归属。
+ * cleanup 可独立核对辅助证据的主工作区完整副本，防止删除仅存的原始记录。
  */
 import { closeSync, existsSync, openSync, readFileSync, readdirSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { dispatchHome } from "./dispatchdock.ts";
-import { git, matchesRecord, recordName } from "./shared.ts";
+import { CheckFailure, git, matchesRecord, recordName } from "./shared.ts";
+import { readRecordBindings, type RecordBinding } from "./scorecard-bindings.ts";
+export { readRecordBindings, registerRecordBindings, type RecordBinding } from "./scorecard-bindings.ts";
 
 export type Json = Record<string, any>;
 export type Span = { start: string; end: string };
@@ -59,7 +63,10 @@ export const sumTokens = (values: Tokens[]): Tokens => values.reduce((sum, item)
 export type LocalDispatch = {
   name: string;
   ticket: number | null;
+  kind: "ticket" | "review" | "auxiliary";
+  ambiguity: string | null;
   files: Map<string, string>;
+  evidenceFiles: Map<string, string[]>;
   lifecycle: Json[];
   start: string | null;
   end: string | null;
@@ -68,11 +75,13 @@ export type LocalDispatch = {
   raw: Json[];
   prompt: string;
 };
-export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>) => {
+export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>, bindings: RecordBinding[] = readRecordBindings(root, spec, tickets)) => {
   const ownedBranch = (branch: unknown): boolean => typeof branch === "string" &&
     (branch.startsWith(`spec/${spec}-`) || [...tickets].some((ticket) => branch === `ticket/${ticket}`));
   const ledgerFile = join(root, ".codex-runs/verification.jsonl");
-  const ledger = existsSync(ledgerFile) ? jsonLines(read(ledgerFile)).filter((row) => ownedBranch(row.branch)) : null;
+  const allLedger = existsSync(ledgerFile) ? jsonLines(read(ledgerFile)) : null;
+  const ledger = allLedger?.filter((row) => ownedBranch(row.branch)) ?? null;
+  const explicit = new Set(bindings.map((row) => row.name));
   const dispatches = new Map<string, LocalDispatch>();
   let cutoffAt: string | null = null;
   const touch = (value: unknown) => {
@@ -83,29 +92,35 @@ export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>)
     touch(row.startedAt);
     touch(row.finishedAt);
   }
+  for (const row of bindings) touch(row.registeredAt);
   const owner = (name: string) => [...tickets].find((ticket) => matchesRecord(name, `gh-${ticket}`));
-  const ownedName = (name: string) => owner(name) !== undefined || matchesRecord(name, `review-${spec}`);
+  const ownedName = (name: string) => owner(name) !== undefined || matchesRecord(name, `review-${spec}`) || explicit.has(name);
   const ensure = (name: string): LocalDispatch => {
     if (!dispatches.has(name)) dispatches.set(name, {
-      name, ticket: owner(name) ?? null, files: new Map(), lifecycle: [],
+      name, ticket: owner(name) ?? null, kind: owner(name) !== undefined ? "ticket" : matchesRecord(name, `review-${spec}`) ? "review" : "auxiliary",
+      ambiguity: null, files: new Map(), evidenceFiles: new Map(), lifecycle: [],
       start: null, end: null, exitCode: null, reported: false, raw: [], prompt: "",
     });
     return dispatches.get(name)!;
   };
+  for (const name of explicit) ensure(name);
   const roots = new Set([root, ...[...tickets].map((ticket) => `${root}.worktrees/${ticket}`)]);
-  for (const checkout of roots) {
+  const evidenceRoots = new Set([...roots, ...[...tickets].map((ticket) => `${root}.worktrees/.kept/${ticket}`)]);
+  for (const checkout of evidenceRoots) {
     const directory = join(checkout, ".codex-runs");
     if (!existsSync(directory)) continue;
     for (const file of readdirSync(directory, { withFileTypes: true })) {
       if (!file.isFile()) continue;
       const path = join(directory, file.name);
-      if (new RegExp(`^review-spec-${spec}-[1-9]\\d*\\.json$`).test(file.name)) touch(statSync(path).mtimeMs);
-      if (!ownedName(file.name)) continue;
+      if (roots.has(checkout) && new RegExp(`^review-spec-${spec}-[1-9]\\d*\\.json$`).test(file.name)) touch(statSync(path).mtimeMs);
       const name = recordName(file.name);
+      if (!roots.has(checkout) && (!explicit.has(name) || owner(name) !== undefined || matchesRecord(name, `review-${spec}`))) continue;
+      if (!ownedName(name)) continue;
       const suffix = file.name.slice(name.length);
       if (![".log", ".progress.log", ".events.jsonl", ".md", ".json"].includes(suffix)) continue;
       touch(statSync(path).mtimeMs);
       const item = ensure(name);
+      item.evidenceFiles.set(suffix, [...(item.evidenceFiles.get(suffix) ?? []), path]);
       const previous = item.files.get(suffix);
       if (!previous || statSync(path).mtimeMs > statSync(previous).mtimeMs) item.files.set(suffix, path);
     }
@@ -115,7 +130,8 @@ export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>)
   const starts = new Map<string, LocalDispatch>();
   for (const row of jsonLines(complete)) {
     if (row.event === "start" && row.v === 1 && typeof row.name === "string" &&
-      ownedName(row.name) && typeof row.repo === "string" && roots.has(resolve(row.repo))) {
+      typeof row.id === "string" && ownedName(row.name) && typeof row.repo === "string" &&
+      (roots.has(resolve(row.repo)) || explicit.has(row.name))) {
       const item = ensure(row.name);
       item.lifecycle.push(row);
       starts.set(row.id, item);
@@ -126,10 +142,13 @@ export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>)
     }
   }
   for (const item of dispatches.values()) {
-    const rawText = read(item.files.get(".log") ?? "");
-    item.raw = rawText.split(/\r?\n/).filter((line) => line.startsWith("{")).flatMap((line) => {
+    const parseRaw = (path: string): Json[] => read(path).split(/\r?\n/).filter((line) => line.startsWith("{")).flatMap((line) => {
       try { return [JSON.parse(line)]; } catch { return []; }
     });
+    item.raw = parseRaw(item.files.get(".log") ?? "");
+    const runIds = new Set(item.lifecycle.filter((row) => row.event === "start").map((row) => row.id));
+    const threadIds = new Set((item.evidenceFiles.get(".log") ?? []).flatMap(parseRaw)
+      .filter((row) => row.type === "thread.started" && typeof row.thread_id === "string").map((row) => row.thread_id));
     const progress = read(item.files.get(".progress.log") ?? "");
     const first = item.lifecycle.find((event) => event.event === "start");
     const last = [...item.lifecycle].reverse().find((event) => event.event === "end");
@@ -143,8 +162,36 @@ export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>)
     item.prompt = progress.split("\n", 1)[0];
     touch(item.start);
     touch(item.end);
+    if (runIds.size > 1 || threadIds.size > 1) {
+      item.ambiguity = `精确记录名 ${item.name} 对应多个实际运行，无法确定本 spec 的派发归属`;
+      item.start = null;
+      item.end = null;
+      item.exitCode = null;
+      item.raw = [];
+    }
   }
-  return { ledger, dispatches: [...dispatches.values()].sort((a, b) => (a.start ?? a.name).localeCompare(b.start ?? b.name)), cutoffAt: cutoffAt as string | null };
+  return { ledger, allLedger, recordBindings: [...explicit].sort(), dispatches: [...dispatches.values()].sort((a, b) => (a.start ?? a.name).localeCompare(b.start ?? b.name)), cutoffAt: cutoffAt as string | null };
+};
+
+export const assertAuxiliaryEvidencePreserved = (root: string, spec: number, tickets: Set<number>): void => {
+  const auxiliary = new Set(readRecordBindings(root, spec, tickets).map((binding) => binding.name)
+    .filter((name) => !matchesRecord(name, `review-${spec}`) && ![...tickets].some((ticket) => matchesRecord(name, `gh-${ticket}`))));
+  if (!auxiliary.size) return;
+  for (const ticket of tickets) {
+    for (const checkout of [`${root}.worktrees/${ticket}`, `${root}.worktrees/.kept/${ticket}`]) {
+      const directory = join(checkout, ".codex-runs");
+      if (!existsSync(directory)) continue;
+      for (const file of readdirSync(directory, { withFileTypes: true })) {
+        if (!file.isFile()) continue;
+        const name = recordName(file.name);
+        if (!auxiliary.has(name) || ![".log", ".progress.log", ".events.jsonl", ".md", ".json"].includes(file.name.slice(name.length))) continue;
+        const path = join(directory, file.name);
+        const saved = join(root, ".codex-runs", file.name);
+        if (!existsSync(saved) || !readFileSync(saved).equals(readFileSync(path)))
+          throw new CheckFailure(`辅助记录保护：${path} 没有内容一致的主工作区副本；请先保存到 ${saved} 并核对，原始记录所在 worktree 或 .kept 目录必须保留。`);
+      }
+    }
+  }
 };
 
 export type CodexSession = { id: string; parent: string | null; cwd: string; events: Json[] };

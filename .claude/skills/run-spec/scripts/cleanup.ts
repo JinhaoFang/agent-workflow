@@ -14,11 +14,14 @@
  * and interrupted input snapshot directories, retaining other/default names.
  * Before deleting anything require a posted scorecard covering owned records;
  * dry-run still prints the plan and check result; --no-scorecard bypasses it.
+ * Explicit auxiliary bindings never expand deletion; require identical main
+ * copies before deleting any worktree or retained directory holding evidence.
  */
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { printKeptDirectory } from "./ignored-artifacts.ts";
 import { checkScorecard } from "./scorecard.ts";
+import { assertAuxiliaryEvidencePreserved, readRecordBindings } from "./scorecard-records.ts";
 import {
   entry,
   CheckFailure,
@@ -27,6 +30,7 @@ import {
   github,
   issueNumber,
   matchesRecord,
+  recordName,
   type Command,
   type Values,
 } from "./shared.ts";
@@ -53,11 +57,14 @@ const cleanup = (values: Values, numbers: number[]): void => {
       issueNumber(String(child.number)),
     ),
   );
+  const auxiliary = new Set(readRecordBindings(root, spec, tickets).map((binding) => binding.name).filter((name) =>
+    !matchesRecord(name, `review-${spec}`) && ![...tickets].some((ticket) => matchesRecord(name, `gh-${ticket}`))));
   const records = join(root, ".codex-runs");
   const files = existsSync(records)
     ? readdirSync(records, { withFileTypes: true })
         .filter((file) => {
           const name = file.name;
+          if (auxiliary.has(recordName(name))) return false;
           return (
             matchesRecord(name, `review-${spec}`) ||
             (file.isFile() &&
@@ -164,6 +171,7 @@ const cleanup = (values: Values, numbers: number[]): void => {
     !deletableRemote.length
   )
     console.log("没有可删除的内容。");
+  assertAuxiliaryEvidencePreserved(root, spec, tickets);
   if (values["no-scorecard"]) console.log("已跳过评分表检查（--no-scorecard）。");
   else checkScorecard(root, spec, tickets, endpoint(spec));
   const remoteFailures: string[] = [];
@@ -221,6 +229,9 @@ export const cleanupCommand: Command = {
 对应本地与 origin 远端分支同时保留，预览与执行使用同一保留集合，以 1 退出；不强行删除 worktree。
 删除任何内容之前检查 spec 上的评分表评论；没有有效评论或本 spec 的台账、派发记录
 在评分表截点之后有更新时，以 1 退出且不删除任何内容，并提示 scorecard <spec> --post。
+评分表还须覆盖当前全部显式 --record 关联集合；新关联旧文件也须重新发布评分表。
+关联文件和辅助记录不纳入删除范围；worktree 或 .kept 中辅助证据没有内容一致的主工作区副本时，
+清理以 1 退出且不删除任何内容，此保护不因 --no-scorecard 而跳过。
 按 branch=spec/<号>-… 和直接子工单 ticket/<号> 归属台账；其他 spec 的新记录不拦截。
 --no-scorecard 显式跳过评分表检查，适用于 gh 出错或用户不要评分表。
 --dry-run 只读取 GitHub、git 和文件，列出清单及评分表拦截结论，不删除任何内容。`,
