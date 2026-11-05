@@ -12,6 +12,8 @@
  * Codex 兼容旧配置的包装路径及隔离 PATH 中缺少可执行文件的情况。
  * Verification options report substituted effective values and per-variable
  * sources; TICKET_97_EVIDENCE captures default/configured doctor output.
+ * 技能可从 Claude 或共享目录安装；CLI 预加载临时移除隔离成员验证失败，
+ * TICKET_34_EVIDENCE 保存隔离检查的实际输出，不改源码或适配器文件。
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -134,6 +136,7 @@ console.log("codex-cli 0.1.0 (fixture)");
       oldNode?: boolean;
       concurrency?: string;
       isolatedPath?: boolean;
+      preload?: string;
       env?: NodeJS.ProcessEnv;
     } = {},
   ) => {
@@ -149,6 +152,7 @@ console.log("codex-cli 0.1.0 (fixture)");
           ...args,
         ]
       : [cli, ...args];
+    if (options.preload) command.unshift("--import", options.preload);
     const result = spawnSync(process.execPath, command, {
       cwd: options.cwd ?? root,
       encoding: "utf8",
@@ -237,6 +241,8 @@ test("seat doctor reports default, user pi profiles, repository overrides and re
       assert.match(userResult.stdout, /提示：适配器未接入：pi（席位：engineering、review）；当前不可用.*无法确认强制只读/);
     else assert.match(userResult.stdout, /提示：权限映射损失：.*pi\/read-only（席位：review）/);
     assert.match(userResult.stdout, /席位框架安装 pi；pi fixture/);
+    for (const agent of ["codex", "claude", "pi"])
+      assert.match(userResult.stdout, new RegExp(`通过：技能隔离 ${agent}；适配器 isolationArgs`));
     capture("doctor-user.log", userResult);
     f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "HTML" }, seats: { engineering: { default: { model: "repository-default" }, 前端: { effort: "low" } }, review: { default: [{ agent: "codex", model: "repository-review" }] } }, agents: { codex: { concurrency: 4, path: join(f.bin, "codex") } } }));
     const repository = f.run(["doctor"], { concurrency: "5", env: { CODEX_MODEL: "environment-model" } });
@@ -601,7 +607,8 @@ test("doctor passes with tracked source skills, paginated labels and directory-o
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, "");
     assert.match(result.stdout, /自检结束：全部通过/);
-    assert.match(result.stdout, /技能隔离 setup-run-spec；尚未安装/);
+    assert.match(result.stdout, /技能隔离 codex；适配器 isolationArgs/);
+    assert.match(result.stdout, /review-spec、watch 通过工具裁剪隔离/);
     assert.match(result.stdout, /同名软链接实测通过/);
     assert.match(result.stdout, /通过：claude CLI 可用；2\.1\.0/);
     assert.match(
@@ -632,7 +639,7 @@ test("doctor passes with tracked source skills, paginated labels and directory-o
   }
 });
 
-test("doctor accepts ignored installed skills and absent optional triage, and checks setup-run-spec when present", () => {
+test("doctor accepts ignored installed skills and absent optional triage, including shared setup-run-spec", () => {
   const f = fixture();
   try {
     f.git(["rm", "--cached", "-r", ".claude/skills"]);
@@ -642,7 +649,8 @@ test("doctor accepts ignored installed skills and absent optional triage, and ch
     f.skill("setup-run-spec");
     assert.equal(f.run().status, 0);
     f.skill("setup-run-spec", ".agents/skills");
-    fails(f.run(), "技能隔离 setup-run-spec", /移除共享目录副本/);
+    const shared = f.run();
+    assert.equal(shared.status, 0, shared.stdout + shared.stderr);
   } finally {
     f.cleanup();
   }
@@ -761,39 +769,70 @@ test("doctor uses repository excludes without copying or changing them", () => {
   }
 });
 
-test("doctor rejects shared skill copies, direct and indirect shared symlinks, and broken skill links", () => {
-  for (const name of ["run-spec", "setup-run-spec"]) {
-    for (const mode of ["copy", "link", "indirect", "broken"]) {
-      const f = fixture();
-      try {
+test("doctor 技能隔离：两个技能在 Claude、共享目录或软链接安装均通过", () => {
+  for (const mode of ["claude", "shared", "copy", "link", "indirect"]) {
+    const f = fixture();
+    try {
+      for (const name of ["run-spec", "setup-run-spec"]) {
         f.skill(name);
-        if (mode === "copy") f.skill(name, ".codex/skills");
-        else {
+        if (mode === "claude") continue;
+        f.skill(name, ".agents/skills");
+        if (mode !== "copy") {
           rmSync(join(f.root, ".claude/skills", name), { recursive: true });
-          if (mode === "broken")
-            symlinkSync(
-              join(f.temporary, "missing"),
-              join(f.root, ".claude/skills", name),
-            );
-          else {
-            f.write(".agents/skills/unexpected-name/SKILL.md", "skill");
-            let target = join(f.root, ".agents/skills/unexpected-name");
-            if (mode === "indirect") {
-              symlinkSync(target, join(f.temporary, "alias"));
-              target = join(f.temporary, "alias");
-            }
-            symlinkSync(target, join(f.root, ".claude/skills", name));
+          if (mode === "shared") continue;
+          let target = join(f.root, ".agents/skills", name);
+          if (mode === "indirect") {
+            const alias = join(f.temporary, `${name}-alias`);
+            symlinkSync(target, alias);
+            target = alias;
           }
+          symlinkSync(target, join(f.root, ".claude/skills", name));
         }
-        fails(f.run(), `技能隔离 ${name}`, /共享目录|缺少有效的 SKILL/);
-      } finally {
-        f.cleanup();
       }
+      const result = f.run();
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.match(result.stdout, /通过：技能隔离 codex/);
+      assert.match(result.stdout, /通过：技能隔离 claude/);
+      if (process.env.TICKET_34_EVIDENCE) {
+        mkdirSync(process.env.TICKET_34_EVIDENCE, { recursive: true });
+        writeFileSync(join(process.env.TICKET_34_EVIDENCE, `doctor-${mode}.log`), result.stdout + result.stderr + `\n退出码：${result.status}\n`);
+      }
+    } finally {
+      f.cleanup();
     }
   }
 });
 
-test("doctor detects ancestor shared skills even when the local Claude skill is valid", () => {
+test("doctor 技能隔离：已用适配器缺少或返回空隔离参数时退出 1，未用框架不检查", () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });
+    const module = new URL("./dispatch/adapters.ts", import.meta.url).href;
+    const preload = (patch: string) => `data:text/javascript,${encodeURIComponent(`import { adapters } from ${JSON.stringify(module)}; ${patch}`)}`;
+    const unused = f.run(["doctor"], { preload: preload("delete adapters.pi.isolationArgs;") });
+    assert.equal(unused.status, 0, unused.stdout + unused.stderr);
+    assert.doesNotMatch(unused.stdout, /技能隔离 pi/);
+    f.write("docs/agents/run-spec.json", JSON.stringify({
+      ...f.config,
+      workTypes: { 前端: "HTML" },
+      seats: { engineering: { 前端: { agent: "pi" } } },
+    }));
+    for (const agent of ["codex", "claude", "pi"]) {
+      for (const mode of ["missing", "empty"]) {
+        const patch = mode === "missing" ? `delete adapters.${agent}.isolationArgs;` : `adapters.${agent}.isolationArgs = () => [];`;
+        const result = f.run(["doctor"], { preload: preload(patch) });
+        fails(result, `技能隔离 ${agent}`, /isolationArgs/);
+        assert.match(result.stdout, /自检结束：1 项不通过/);
+        if (process.env.TICKET_34_EVIDENCE) {
+          mkdirSync(process.env.TICKET_34_EVIDENCE, { recursive: true });
+          writeFileSync(join(process.env.TICKET_34_EVIDENCE, `doctor-${agent}-${mode}.log`), result.stdout + result.stderr + `\n退出码：${result.status}\n`);
+        }
+      }
+    }
+  } finally { f.cleanup(); }
+});
+
+test("doctor accepts ancestor shared skills alongside local Claude skills", () => {
   const f = fixture();
   try {
     mkdirSync(join(f.temporary, ".agents/skills/run-spec"), {
@@ -803,7 +842,8 @@ test("doctor detects ancestor shared skills even when the local Claude skill is 
       join(f.temporary, ".agents/skills/run-spec/SKILL.md"),
       "skill",
     );
-    fails(f.run(), "技能隔离 run-spec", /Codex 可见/);
+    const result = f.run();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
   } finally {
     f.cleanup();
   }
@@ -972,6 +1012,8 @@ test("doctor help lists all checks and incorrect arguments exit 2 without invoki
       "triage",
       "setup-run-spec",
       "共享目录",
+      "isolationArgs",
+      "工具裁剪",
       "配置",
       "codexConcurrency",
       "prCheckCommand",

@@ -1,14 +1,14 @@
 /**
  * Read-only run-spec doctor: register doctorCommand in tickets.ts. Inspect the
- * invoking checkout, main-worktree dispatcher and legacy skill locations, GitHub
+ * invoking checkout, main-worktree dispatcher and skill locations, GitHub
  * settings, documentation and configuration. Never fix or write repository
  * state. Git ignore probes use a disposable work tree with copied applicable
  * .gitignore files and the original git directory/excludes; linked directories
  * use checkout-relative paths normalized by configuration loading for same-name
  * symlinks and git probes;
  * artifact/record directories are real directories.
- * Skill isolation checks project/ancestor and user Codex/shared roots, following
- * real paths. Tracked source skills and installed skills are both accepted.
+ * 技能隔离按已配置席位所用框架的适配器 isolationArgs 检查，不限制安装目录。
+ * review-spec、watch 通过工具裁剪隔离，沿用现有调用方式。
  * Missing prerequisites exit 1; unexpected probe/runtime errors exit 2.
  * Probe configured framework CLIs; optional config values show their source.
  * Invalid optional configuration exits 2, preserving existing prerequisite exits.
@@ -24,14 +24,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import { adapters } from "./dispatch/adapters.ts";
 import type { SeatSettings } from "./dispatch/adapter.ts";
 import { frameworkSettings, resolveSeat, seatNames, SeatConfigError } from "./dispatch/settings.ts";
@@ -75,13 +74,6 @@ const compactSources = (sources: Record<string, string>, fields: Record<string, 
     return [`${label}=${layer}`];
   });
   return items.length ? `；来源：${items.join("、")}` : "";
-};
-
-const within = (root: string, path: string): boolean => {
-  const rel = relative(root, path);
-  return (
-    rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith("../"))
-  );
 };
 
 const ancestors = (root: string): string[] => {
@@ -350,41 +342,6 @@ const doctor = async (values: Values): Promise<void> => {
       return triage ? "已安装 triage，说明存在" : "未安装 triage，无需分诊说明";
     },
   );
-  for (const name of ["run-spec", "setup-run-spec"]) {
-    check(
-      `技能隔离 ${name}`,
-      `把 ${name} 放在 .claude/skills 或用户 Claude Code 专用技能目录，移除共享目录副本及指向共享目录的软链接；run-spec 的来源副本和安装副本都可用。`,
-      () => {
-        const installed = locations.claude
-          .map((path) => join(path, name))
-          .filter(hasEntry);
-        const exposed = locations.shared
-          .map((path) => join(path, name))
-          .filter(hasEntry);
-        if (name === "setup-run-spec" && !installed.length && !exposed.length)
-          return "尚未安装，无需检查";
-        requireCheck(
-          exposed.length === 0,
-          `Codex 可见的目录存在此技能：${exposed.join("、")}。`,
-        );
-        requireCheck(
-          installed.some((path) => isFile(join(path, "SKILL.md"))),
-          "Claude Code 专用目录中缺少有效的 SKILL.md。",
-        );
-        const shared = locations.shared
-          .filter(existsSync)
-          .map((path) => realpathSync(path));
-        for (const path of installed) {
-          requireCheck(existsSync(path), `技能软链接失效：${path}。`);
-          requireCheck(
-            !shared.some((base) => within(base, realpathSync(path))),
-            `Claude Code 技能指向共享目录：${path}。`,
-          );
-        }
-        return installed.join("、");
-      },
-    );
-  }
   let config: DispatchConfig | undefined;
   check(
     "执行配置完整",
@@ -461,6 +418,15 @@ const doctor = async (values: Values): Promise<void> => {
         return `${detection.version ?? "版本未知"}；路径：${path}；来源：${settings.sources.path}`;
       });
     }
+    for (const [agent] of used)
+      check(`技能隔离 ${agent}`, `为 ${agent} 适配器提供屏蔽 run-spec、setup-run-spec 的 isolationArgs。`, () => {
+        const adapter = adapters[agent];
+        requireCheck(typeof adapter?.isolationArgs === "function", "适配器缺少 isolationArgs 技能隔离方式。");
+        const args = adapter.isolationArgs();
+        requireCheck(Array.isArray(args) && args.length > 0 && args.every(arg => typeof arg === "string" && arg.trim().length > 0), "适配器 isolationArgs 未提供有效的技能隔离参数。");
+        return "适配器 isolationArgs 提供 run-spec、setup-run-spec 屏蔽参数";
+      });
+    console.log("技能隔离说明：review-spec、watch 通过工具裁剪隔离，不另加技能隔离开关。");
     check("兼容配置 codexSandbox/codexConcurrency", "权限建议迁到 seats.engineering.default.permission，并发迁到 agents.codex.concurrency。", () =>
       `codexSandbox=${config!.codexSandbox}（来源：仓库旧项，仅作工程 Codex 的兼容默认）；codexConcurrency=${config!.codexConcurrency}（来源：${frameworkSettings(seats, "codex").sources.concurrency}）；建议改用 seats/agents，新席位字段优先。`);
   }
@@ -617,7 +583,9 @@ export const doctorCommand: Command = {
 Codex 路径按席位配置兼容旧 DispatchDock 配置，再查 PATH；版本未知时仍按适配器结果判断可用；
 GitHub 的 role:engineering、role:design、ready-for-human 标签、只允许 merge commit、合并后自动删除分支；
 Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签说明；
-run-spec（以及装了的 setup-run-spec）的安装位置及旧共享目录隔离检查；
+技能隔离逐个检查已配置席位所用框架的适配器 isolationArgs，须提供非空隔离参数以屏蔽 run-spec、setup-run-spec，缺少时报失败；
+两项技能装在 .claude/skills 或共享目录 .agents/skills 都正常，不按安装目录判定隔离；
+review-spec、watch 通过工具裁剪隔离，不另加技能隔离开关；
 执行配置完整；dispatchScript 不再使用，存在时提示可删除；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
 报告可选配置 codexConcurrency、prCheckCommand、verificationEnv、exclusiveVerification、disposableIgnored 的实际取值及来源；
 报告 staticCheckCommand（默认 null，未配置）、staticOnlyPaths（默认 []）的实际取值及来源；
