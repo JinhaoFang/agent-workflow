@@ -1,6 +1,6 @@
 /**
  * Read-only run-spec doctor: register doctorCommand in tickets.ts. Inspect the
- * invoking checkout, main-worktree dispatcher and Claude-only skills, GitHub
+ * invoking checkout, main-worktree dispatcher and legacy skill locations, GitHub
  * settings, documentation and configuration. Never fix or write repository
  * state. Git ignore probes use a disposable work tree with copied applicable
  * .gitignore files and the original git directory/excludes; linked directories
@@ -10,7 +10,7 @@
  * Skill isolation checks project/ancestor and user Codex/shared roots, following
  * real paths. Tracked source skills and installed skills are both accepted.
  * Missing prerequisites exit 1; unexpected probe/runtime errors exit 2.
- * Probe the Claude CLI with --version; optional config values show their source.
+ * Probe configured framework CLIs; optional config values show their source.
  * Invalid optional configuration exits 2, preserving existing prerequisite exits.
  * Check an existing checkout-root .env with git check-ignore without reading it.
  * 通过各框架适配器的 detect 复用派发的启动器解析和可用判定。
@@ -612,12 +612,12 @@ export const doctorCommand: Command = {
 优先级：参数 > 环境变量 > 仓库 > 用户 > 内置；空环境值视为未设置；框架路径和并发放 agents，报告各框架安装情况。
 权限映射损失直接取适配器 permissions，合并涉及席位提示；未接适配器也合并提示不可用。
 词表内用户未配档只提示；codexSandbox/codexConcurrency 继续兼容并建议迁移。
-检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18、claude CLI 可用；
+检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18、各席位使用的框架 CLI 可用；
 框架安装探测复用各适配器 detect，与派发共用启动器解析，支持 .cmd/.bat 包装和 Node 入口；
 Codex 路径按席位配置兼容旧 DispatchDock 配置，再查 PATH；版本未知时仍按适配器结果判断可用；
 GitHub 的 role:engineering、role:design、ready-for-human 标签、只允许 merge commit、合并后自动删除分支；
 Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签说明；
-run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；
+run-spec（以及装了的 setup-run-spec）的安装位置及旧共享目录隔离检查；
 执行配置完整；dispatchScript 不再使用，存在时提示可删除；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
 报告可选配置 codexConcurrency、prCheckCommand、verificationEnv、exclusiveVerification、disposableIgnored 的实际取值及来源；
 报告 staticCheckCommand（默认 null，未配置）、staticOnlyPaths（默认 []）的实际取值及来源；

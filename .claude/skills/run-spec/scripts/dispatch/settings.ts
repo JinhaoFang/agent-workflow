@@ -130,7 +130,7 @@ export const resolveSeat = (config: SeatConfiguration, seat = "engineering", wor
   if (!seatNames.includes(seat as typeof seatNames[number])) throw new Error(`未知席位：${seat}`);
   if (workType !== "default" && !Object.hasOwn(config.workTypes, workType)) throw new Error(`工作类型不在仓库 workTypes 词表中：${workType}`);
   for (const key of ["model", "effort"]) if (overrides[key] !== undefined && !text(overrides[key])) throw new Error(`命令参数 --${key} 必须是非空单行字符串`);
-  const builtin = { agent: ["spec-review", "watch"].includes(seat) ? "claude" : "codex", model: seat === "watch" ? "haiku" : null, effort: null, permission: ["review", "spec-review", "research"].includes(seat) ? "read-only" : "workspace-write" } as Profile;
+  const builtin = { agent: ["spec-review", "watch"].includes(seat) ? "claude" : "codex", model: seat === "watch" ? "haiku" : null, effort: null, permission: ["review", "spec-review", "research", "watch"].includes(seat) ? "read-only" : "workspace-write" } as Profile;
   type Item = { values: Profile; sources: Record<string, string> };
   const base: Item = { values: builtin, sources: Object.fromEntries(Object.keys(builtin).map(key => [key, "内置默认"])) };
   let items: Item[] = [base];

@@ -1,7 +1,7 @@
 /**
  * Read-only slots command: show live global DispatchDock records, their names,
  * start times/directories and capacity from the invoking checkout configuration.
- * Run tickets.ts slots before dispatching batch reviews outside dispatch.
+ * Only the Codex pool is displayed; other frameworks queue at dispatch entry.
  */
 import { runningDispatches } from "./dispatchdock.ts";
 import {
@@ -33,5 +33,5 @@ export const slotsCommand: Command = {
   help: `${entry} slots
 只读列出内置派发层全局记录中进程仍存活的 Codex 派发（含旧 DispatchDock）（名字、开始时间、所在目录）及空余名额。
 并发上限取 codexConcurrency（默认 2，可用 RUN_SPEC_CODEX_CONCURRENCY 覆盖）。
-按批审查不经过 dispatch，派发前先用 slots 查看名额。`,
+按批审查使用 run；slots 仅显示 Codex 名额，其他框架由派发入口按配置排队。`,
 };

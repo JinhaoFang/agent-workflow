@@ -4,8 +4,8 @@
  * --help` from a clone.
  * Register each command once; modules provide help, options, required/optional
  * numeric positional counts, optional raw `--` passthrough and a handler.
- * Shared helpers load optional configuration defaults/sources and run Claude
- * with restricted tools, no MCP/session persistence and JSON usage reporting.
+ * Shared helpers load optional configuration defaults/sources; restricted seats
+ * limit tools, disable MCP/session persistence and report structured usage.
  * Shared parsing and diagnostics dispatch commands locally so
  * copying this skill needs no repository helpers or dependencies.
  */

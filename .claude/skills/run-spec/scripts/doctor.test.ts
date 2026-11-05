@@ -290,7 +290,7 @@ test("seat doctor compacts the ticket 25 configuration into one row per configur
       "review.default：框架：codex；模型：框架默认；强度：框架默认；权限：read-only",
       "spec-review.default：框架：claude；模型：框架默认；强度：框架默认；权限：read-only",
       "research.default：框架：codex；模型：框架默认；强度：框架默认；权限：read-only",
-      "watch.default：框架：claude；模型：haiku；强度：框架默认；权限：workspace-write",
+      "watch.default：框架：claude；模型：haiku；强度：框架默认；权限：read-only",
     ]);
     assert.match(section, /提示：这些席位没有『前端』档，回落 default：review、spec-review、research、watch/);
     assert.equal(section.split("\n").filter(line => line.startsWith("框架配置 ")).length, 3);
@@ -975,7 +975,7 @@ test("doctor help lists all checks and incorrect arguments exit 2 without invoki
       "配置",
       "codexConcurrency",
       "prCheckCommand",
-      "claude",
+      "各席位使用的框架 CLI",
       "dispatchScript",
       ".codex-runs",
       "末尾斜杠",

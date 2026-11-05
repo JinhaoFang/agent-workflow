@@ -6,7 +6,7 @@ Issues and specs for this repo live as GitHub issues (`JinhaoFang/agent-workflow
 
 Spec 是一个 issue，它拆出的工单是它的 sub-issue，工单之间用原生的阻塞关系连接。除了 `to-tickets` 模板里的内容，每个工单还要有：
 
-- **执行角色标签**：三选一。`role:engineering` 派给 Codex，`role:design` 由设计负责人自己做，`ready-for-human` 只能由用户本人完成。判断标准见 `docs/roles/design.md`。
+- **执行角色标签**：三选一。`role:engineering` 按席位派给工程负责人，`role:design` 由设计负责人自己做，`ready-for-human` 只能由用户本人完成。判断标准见 `docs/roles/design.md`。
 - 正文多出三节：
   - `## 测试接缝`：从哪一层测，用 spec 里和用户确认过的接缝；不需要新测试就写"无"。
   - `## 验收产物`：交付时给设计负责人看的东西，例如命令输出、改前改后的必读体量、汇报或模板的截图。
@@ -16,7 +16,7 @@ Spec 是一个 issue，它拆出的工单是它的 sub-issue，工单之间用�
 
 spec 和工单说明目标、边界，并准确定位参照、定稿、契约和验收产物；实现位置由执行的 agent 查看后决定。spec 正文不列工单清单，拆单结果以 sub-issue 为准。
 
-spec 正文是当前决定的唯一来源，派发时 Codex 只读父 spec 的正文。设计修订直接改正文，并在末尾「修订记录」一节加一行：日期、改了什么、为什么。评论只放审查原文、讨论和修订摘要。
+spec 正文是当前决定的唯一来源，派发时执行者只读父 spec 的正文。设计修订直接改正文，并在末尾「修订记录」一节加一行：日期、改了什么、为什么。评论只放审查原文、讨论和修订摘要。
 
 两套标签并存：`ready-for-agent` 等分诊标签表示 issue 处在哪个状态，由 Matt 的技能维护；`role:*` 决定谁来执行。
 

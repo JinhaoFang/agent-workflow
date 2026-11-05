@@ -23,7 +23,7 @@ npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill se
 | `installCommand` | `<值>` | 安装命令。`dispatch` 新建 worktree 后运行，`land` 在 rebase 之后、验证之前再运行一次。安装产物会被记下，不算工单产物。 |
 | `symlinkDirectories` | `<值>` | 不进 git、但派出去的 agent 要读的目录。`dispatch` 把它们从主工作区软链接进 worktree，派发指令要求只读使用。本仓库是<说明>。 |
 | `acceptanceRoot` | `<值>` | 验收产物根目录。每张工单写到下面的 `spec-<S>/<T>/`；`land` 把它复制回主工作区，`cleanup` 整个删掉 `spec-<S>/`。其余被忽略的工单产物移到 `<仓库目录>.worktrees/.kept/<T>/`，`cleanup` 列出后删除。 |
-| `codexSandbox` | `<值>` | 工程、调研席位用 Codex 且没在 `seats` 写权限时的默认权限。<用户选它的理由> |
+| `codexSandbox` | `<值>` | 旧权限兼容项，适用席位和映射见 [seats.md](seats.md)。<用户选它的理由> |
 | `codexConcurrency` | 不写（默认 `2`） | 可选，旧项。Codex 的并发上限，新写法见 `agents`。 |
 | `workTypes` | `<名称到一句说明的对象或不写（默认 {}）>` | 仓库的工作类型词表。工单正文单独一行 `工作类型：<名称>` 选席位的对应档，规则见 [seats.md](seats.md)。 |
 | `seats` | 不写 | 仓库确有硬要求时覆盖个人的席位配置，格式见 [seats.md](seats.md)。 |
@@ -37,7 +37,7 @@ npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill se
 
 ## 执行时要知道的其他值
 
-- **框架**：各席位用到的 agent 命令行（默认 Codex 和 Claude Code）要装好并登录，`doctor` 逐个检查。
+- **框架**：各席位用到的 agent 命令行要装好并登录，`doctor` 逐个检查；配置见 [seats.md](seats.md)。
 - **本机说明**：`<开发环境文档>「本机说明」`。只在某台机器上成立的坑写在那里；派发、合并或验证报环境错误时读，平时不读。
 - **独占资源**：`<值>`。同一时间只能给一张工单用的资源（例如单张 GPU），没有写"无"。用到它的工单正文写一行「独占资源：<名称>」，`run-spec` 第 2 步一次只派一张。
 - **汇报目录**：`<值>`。汇报的写法见 `run-spec` 技能里的 `report.md`。

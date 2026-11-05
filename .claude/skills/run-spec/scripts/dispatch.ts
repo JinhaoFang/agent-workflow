@@ -20,7 +20,7 @@
  * Ticket instructions read comments; parent-spec instructions read only body.
  * Installation and dispatch inherit effective verificationEnv; exclusive
  * verification instructions route complete checks through main tickets.ts.
- * Layered repositories instruct Codex to run only related tests and static
+ * Layered repositories instruct the executor to run only related tests and static
  * checks during development, routing optional full checks through main verify.
  * Resolve workTypes/seats/agents before writes; pass effective settings and sources
  * to the built-in entry so old worktree configuration cannot override this plan.
@@ -412,7 +412,7 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
         process.exitCode = result.code ?? 2;
         return;
       }
-      queued("Codex 返回 Concurrency limit exceeded，等待账号名额");
+      queued("执行者返回 Concurrency limit exceeded，等待账号名额");
       await delay(5000);
       release = await dispatchSlot(framework.concurrency, worktree, queued, settings.agent);
     }
@@ -445,7 +445,7 @@ agents.<框架>.path/concurrency 设置可执行路径和并发；配置格式�
 用户文件缺省时取低层，文件格式错退出 2；类型、框架、模型、强度覆盖会写入派发补充说明。
 读取 docs/agents/run-spec.json，为工程工单准备或复用干净的 worktree，
 在该目录前台运行派发脚本，透传记录名、进度路径和退出码。
-一个 worktree 同时只跑一个 Codex；普通派发同样在有活着的运行或进行中的 rebase 时拒绝。
+一个 worktree 同时只跑一个 agent；普通派发同样在有活着的运行或进行中的 rebase 时拒绝。
 --allow-push 只允许把本工单分支推送到远端，不开 PR，不推送其他分支；
 不带时指令仍为「不要推送」。
 补充说明支持 UTF-8 文件；非空说明先评论到工单，标题含本次记录名，
@@ -460,9 +460,9 @@ exclusiveVerification 默认 false；开启时指令要求完整验证运行主�
 通过仓库锁排队，日志自动写入主工作区 .codex-runs；局部测试照常。
 配置 staticCheckCommand 时，指令要求开发时只跑相关测试和静态检查，不跑完整验证；
 需要完整验证时始终走主工作区 tickets.ts verify <工单>，按 exclusiveVerification 决定是否排队。
-以内置派发层全局记录及进程存活判断并发（旧 DispatchDock 运行计入 Codex 名额），codexConcurrency 默认 2，
-可用 RUN_SPEC_CODEX_CONCURRENCY 覆盖；达到上限时加锁排队，每 5 分钟最多打印一行。
-Codex 返回 Concurrency limit exceeded 时回到排队自动重试；用 slots 查看运行与空余名额。
+以内置派发层全局记录及进程存活判断并发，按所选框架的 agents.<框架>.concurrency 排队；
+旧 DispatchDock 运行计入 Codex 名额，兼容 codexConcurrency 和 RUN_SPEC_CODEX_CONCURRENCY；达到上限时加锁排队，每 5 分钟最多打印一行。
+执行者返回 Concurrency limit exceeded 时回到排队自动重试；slots 仅显示 Codex 的运行与空余名额。
 评论失败以 2 退出，不派发，已准备的 worktree 保留供重试。
 安装失败重试时沿用已有安装产物快照，只补充本次安装新建的路径。
 --dry-run 只读 GitHub 和 git 并打印计划及评论内容，不评论、不安装、

@@ -1,9 +1,9 @@
 # 追加到 .gitignore，目录名和 docs/agents/run-spec.json 保持一致。仓库已有等价的规则时跳过。
 
-# 派发记录：Codex 在 worktree 和主工作区里都会写。
+# 派发记录：派出去的 agent 在 worktree 和主工作区里都会写。
 .codex-runs/
 
-# 验收产物根目录（acceptanceRoot）。不忽略的话，Codex 写了产物后 worktree 不干净，land 会拒绝合并。
+# 验收产物根目录（acceptanceRoot）。不忽略的话，执行者写了产物后 worktree 不干净，land 会拒绝合并。
 out/
 
 # 软链接进 worktree 的目录（symlinkDirectories）。不带末尾斜杠：worktree 里它们是软链接，
@@ -11,7 +11,7 @@ out/
 references
 .agents
 
-# 本机的密钥和个人配置。Codex 有完全权限，靠这条兜住误提交。
+# 本机的密钥和个人配置。执行者有完全权限时，靠这条兜住误提交。
 .env
 .env.*
 !.env.example

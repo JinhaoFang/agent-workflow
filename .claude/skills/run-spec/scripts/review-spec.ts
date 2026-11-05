@@ -1,15 +1,15 @@
 /**
  * Independent pre-dispatch review: review-spec <spec> snapshots GitHub bodies
  * and blocker edges, or local spec/draft files, into a disposable directory.
- * A fresh shared Claude call gets only Read,Glob,Grep; the fixed prompt is also
+ * A fresh spec-review seat gets only file-reading tools; the fixed prompt is also
  * printed by --help. Successful report text is preserved verbatim in the main
  * checkout's .codex-runs/review-spec-<spec>-<sequence>.md with a JSON sidecar for
  * elapsed time, usage and a content digest. --post validates that pair and posts
  * a deterministic folded comment, checking all comment pages before any write.
  * Shared gh retries probe exact bodies after lost responses. Dry runs never
- * invoke Claude or write files/comments. Local paths resolve from the caller;
+ * invoke the reviewer or write files/comments. Local paths resolve from the caller;
  * draft directories include regular files recursively, without following links.
- * Input snapshots live under the caller's .codex-runs so Claude can read them
+ * Input snapshots live under the caller's .codex-runs so the reviewer can read them
  * without granting access to directories outside its working directory.
  * 按 spec-review 席位启动，保持默认 Claude 参数；其他框架必须支持文件工具档。
  */
@@ -71,7 +71,7 @@ const usageText = (metadata: Metadata): string => {
   return `用时：${(metadata.durationMs / 1000).toFixed(2)} 秒\n用量：${
     usage
       ? `输入 ${usage.input_tokens}，输出 ${usage.output_tokens} tokens；缓存创建 ${usage.cache_creation_input_tokens ?? "未知"}，缓存读取 ${usage.cache_read_input_tokens ?? "未知"} tokens`
-      : `未知（${metadata.usageUnavailableReason ?? "Claude 未返回有效用量"}）`
+      : `未知（${metadata.usageUnavailableReason ?? "审查席位未返回有效用量"}）`
   }${metadata.totalCostUsd === undefined ? "" : `\n费用：${metadata.totalCostUsd} USD`}`;
 };
 
