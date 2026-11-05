@@ -1,6 +1,7 @@
 /**
  * Review comment command: review <spec> --record <name> --conclusion-file <file>.
- * Prefer normalized usage from the built-in .json summary. For legacy records,
+ * Prefer normalized root usage from the built-in .json summary, while still
+ * reading root activity to detect missing children. For legacy records,
  * resolve thread.started in the main checkout's .log, then index
  * CODEX_HOME/sessions (default ~/.codex/sessions) by the first session_meta.id.
  * Read index metadata in bounded chunks with an internal 8 MiB first-line budget;
@@ -173,6 +174,7 @@ const sessionUsage = (
   child: boolean,
   seen: Set<string>,
   missing: Set<string>,
+  readTokens = true,
 ): Usage => {
   if (session.duplicate)
     reasons.push(`会话 ${session.id} 有重复文件，仅计一次`);
@@ -195,7 +197,7 @@ const sessionUsage = (
     ) {
       missing.add(payload.item.agent_thread_id);
     }
-    if (payload.type === "token_count" && payload.info !== null) {
+    if (readTokens && payload.type === "token_count" && payload.info !== null) {
       const total = payload.info?.total_token_usage;
       for (const [field, key] of [
         ["input", "input_tokens"],
@@ -219,9 +221,10 @@ const sessionUsage = (
     }
   }
   if (
-    usage.input === undefined ||
-    usage.cached === undefined ||
-    usage.output === undefined
+    readTokens &&
+    (usage.input === undefined ||
+      usage.cached === undefined ||
+      usage.output === undefined)
   )
     reasons.push(`会话 ${session.id} 缺少完整 token_count`);
   if (
@@ -327,9 +330,9 @@ const review = (values: Values, numbers: number[]): void => {
     lines.push(line(`派发 ${name}`, usages[0]));
   }
   for (const [index, session] of selected.entries()) {
-    const usage = index === 0 && summary
-      ? { ...(summary.usage ? { input: summary.usage.input, cached: summary.usage.cached, output: summary.usage.output } : {}) } as Usage
-      : sessionUsage(session, reasons, index > 0, seen, missing);
+    const usage = sessionUsage(session, reasons, index > 0, seen, missing, index > 0 || !summary);
+    if (index === 0 && summary?.usage)
+      Object.assign(usage, { input: summary.usage.input, cached: summary.usage.cached, output: summary.usage.output });
     if (index === 0) usage.minutes = minutes;
     usages.push(usage);
     lines.push(
@@ -408,6 +411,7 @@ export const reviewCommand: Command = {
   help: `${entry} review <spec> --record <review-号-批次> --conclusion-file <结论文件> [--dry-run] [--session <会话ID>]
 结论原文后附「用量」：审查和所有子代理的时长、输入（其中缓存）、输出与合计。
 派发记录读取主工作区的 .codex-runs；审查时长取进度文件，token 优先取内置派发 .json，旧记录取本机会话。
+汇总只替换根会话 token 来源，仍读取根会话检查子代理缺失；子代理用量继续计入合计。
 子代理未单独派发，时长取各自会话的已完成任务；合计为累计用时。
 会话目录默认 ~/.codex/sessions，可用 Codex 的 CODEX_HOME 环境变量更改根目录。
 索引分块仅读首行元数据，关联审查及后代后才读取对应会话全文。

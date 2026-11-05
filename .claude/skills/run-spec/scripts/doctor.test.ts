@@ -214,8 +214,8 @@ test("seat doctor reports default, user pi profiles, repository overrides and re
     const defaultResult = f.run();
     assert.equal(defaultResult.status, 0, defaultResult.stdout + defaultResult.stderr);
     assert.match(defaultResult.stdout, /用户席位配置：.*文件不存在/);
-    assert.match(defaultResult.stdout, /engineering.default：席位：engineering；工作类型：default；框架：codex/);
-    assert.match(defaultResult.stdout, /权限映射 codex\/full：参数 \["-s","danger-full-access"\]；损失：无/);
+    assert.match(defaultResult.stdout, /engineering.default：框架：codex/);
+    assert.doesNotMatch(defaultResult.stdout, /提示：权限映射损失：.*codex\//);
     capture("doctor-default.log", defaultResult);
     mkdirSync(userDirectory, { recursive: true });
     writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });
@@ -229,12 +229,13 @@ test("seat doctor reports default, user pi profiles, repository overrides and re
     f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "汇报模板等 HTML 页面", 后端: "脚本" } }));
     const userResult = f.run();
     assert.equal(userResult.status, 0, userResult.stdout + userResult.stderr);
-    assert.match(userResult.stdout, /engineering.前端：席位：engineering；工作类型：前端；框架：pi；模型：zai-coding-cn\/glm-5.3-flash/);
-    assert.match(userResult.stdout, /用户 .*seats.json.seats.engineering.前端.model/);
+    assert.match(userResult.stdout, /engineering.前端：框架：pi；模型：zai-coding-cn\/glm-5.3-flash/);
+    assert.match(userResult.stdout, /来源：框架=用户、模型=用户、强度=用户/);
     assert.match(userResult.stdout, /review.default\[1\].*框架：pi；模型：review-two/);
-    assert.match(userResult.stdout, /工作类型「后端」.*用户未配档/);
-    assert.match(userResult.stdout, /席位 engineering 未配置该档，回落到 default/);
-    assert.match(userResult.stdout, /框架 pi 尚未接入适配器，当前不可用.*无法确认强制只读/);
+    assert.match(userResult.stdout, /这些席位没有『后端』档，回落 default：engineering、review、spec-review、research、watch/);
+    if (userResult.stdout.includes("提示：适配器未接入："))
+      assert.match(userResult.stdout, /提示：适配器未接入：pi（席位：engineering、review）；当前不可用.*无法确认强制只读/);
+    else assert.match(userResult.stdout, /提示：权限映射损失：.*pi\/read-only（席位：review）/);
     assert.match(userResult.stdout, /席位框架安装 pi；pi fixture/);
     capture("doctor-user.log", userResult);
     f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "HTML" }, seats: { engineering: { default: { model: "repository-default" }, 前端: { effort: "low" } }, review: { default: [{ agent: "codex", model: "repository-review" }] } }, agents: { codex: { concurrency: 4, path: join(f.bin, "codex") } } }));
@@ -242,8 +243,8 @@ test("seat doctor reports default, user pi profiles, repository overrides and re
     assert.equal(repository.status, 0, repository.stdout + repository.stderr);
     assert.match(repository.stdout, /engineering.前端：.*框架：pi；模型：repository-default；强度：low/);
     assert.match(repository.stdout, /engineering.default：.*模型：environment-model/);
-    assert.match(repository.stdout, /环境变量 CODEX_MODEL/);
-    assert.match(repository.stdout, /"concurrency":5/);
+    assert.match(repository.stdout, /来源：框架=用户、模型=环境/);
+    assert.match(repository.stdout, /框架配置 codex：并发：5/);
     assert.match(repository.stdout, /RUN_SPEC_CODEX_CONCURRENCY/);
     assert.doesNotMatch(repository.stdout, /review.default\[1\]/);
     capture("doctor-repository-env.log", repository);
@@ -272,6 +273,65 @@ test("seat configuration rejects malformed user and repository fields with exit 
   } finally { f.cleanup(); }
 });
 
+test("seat doctor compacts the ticket 25 configuration into one row per configured profile", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { engineering: { default: { agent: "codex" }, 前端: { agent: "pi", model: "zai-coding-cn/glm-5.3-flash" } } } }));
+    writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });
+    f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "汇报模板等 HTML 页面" } }));
+    const result = f.run();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const section = result.stdout.slice(result.stdout.indexOf("用户席位配置："), result.stdout.indexOf("通过：Codex CLI 可用"));
+    assert.deepEqual(section.split("\n").filter(line => /^(engineering|review|spec-review|research|watch)\./.test(line)), [
+      "engineering.default：框架：codex；模型：框架默认；强度：框架默认；权限：full；来源：框架=用户、权限=仓库",
+      "engineering.前端：框架：pi；模型：zai-coding-cn/glm-5.3-flash；强度：框架默认；权限：workspace-write；来源：框架=用户、模型=用户",
+      "review.default：框架：codex；模型：框架默认；强度：框架默认；权限：read-only",
+      "spec-review.default：框架：claude；模型：框架默认；强度：框架默认；权限：read-only",
+      "research.default：框架：codex；模型：框架默认；强度：框架默认；权限：read-only",
+      "watch.default：框架：claude；模型：haiku；强度：框架默认；权限：workspace-write",
+    ]);
+    assert.match(section, /提示：这些席位没有『前端』档，回落 default：review、spec-review、research、watch/);
+    assert.equal(section.split("\n").filter(line => line.startsWith("框架配置 ")).length, 3);
+    assert.equal(section.split("\n").filter(line => line.startsWith("提示：权限映射损失：")).length, 1);
+    assert.ok(section.split("\n").filter(line => line.startsWith("提示：适配器未接入：")).length <= 1);
+    assert.doesNotMatch(section, /[{}]|通过：席位配置|来源：.*内置默认|seats.json\.seats/);
+    assert.ok(section.trim().split("\n").length <= 14, section);
+    if (process.env.TICKET_32_EVIDENCE) {
+      mkdirSync(process.env.TICKET_32_EVIDENCE, { recursive: true });
+      writeFileSync(join(process.env.TICKET_32_EVIDENCE, "doctor-compact.log"), result.stdout + result.stderr + `\n退出码：${result.status}\n席位部分行数：${section.trim().split("\n").length}\n`);
+    }
+  } finally { f.cleanup(); }
+});
+
+test("seat doctor ignores empty environment values for every framework and preserves fallback sources", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    const userFile = join(userDirectory, "seats.json");
+    writeFileSync(userFile, JSON.stringify({ agents: { codex: { concurrency: 3 }, claude: { concurrency: 4 }, pi: { concurrency: 5 } } }));
+    writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });
+    const env = { CODEX_MODEL: "", CODEX_EFFORT: "", CODEX_SANDBOX: "", CODEX_TIER: "", RUN_SPEC_CODEX_CONCURRENCY: "", RUN_SPEC_CLAUDE_CONCURRENCY: "", RUN_SPEC_PI_CONCURRENCY: "" };
+    for (const layer of ["repository", "user", "builtin"] as const) {
+      f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, seats: { review: { default: [{ agent: "codex" }, { agent: "claude" }, { agent: "pi" }] } }, ...(layer === "repository" ? { agents: { codex: { concurrency: 6 }, claude: { concurrency: 7 }, pi: { concurrency: 8 } } } : {}) }));
+      if (layer === "builtin") rmSync(userFile);
+      const result = f.run(["doctor"], { env });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const base = layer === "repository" ? 6 : layer === "user" ? 3 : 2;
+      for (const [index, agent] of ["codex", "claude", "pi"].entries()) {
+        assert.ok(result.stdout.includes(`框架配置 ${agent}：并发：${layer === "builtin" ? 2 : base + index}；路径：PATH${layer === "builtin" ? "" : `；来源：并发=${layer === "repository" ? "仓库" : "用户"}`}`), result.stdout);
+      }
+      assert.doesNotMatch(result.stdout, /环境变量 CODEX_|环境变量 RUN_SPEC_|=环境/);
+      if (process.env.TICKET_32_EVIDENCE) {
+        mkdirSync(process.env.TICKET_32_EVIDENCE, { recursive: true });
+        writeFileSync(join(process.env.TICKET_32_EVIDENCE, `doctor-empty-env-${layer}.log`), result.stdout + result.stderr);
+      }
+    }
+  } finally { f.cleanup(); }
+});
+
 test("seat review lists replace lower lists, typed lists fall back and null restores framework defaults", () => {
   const f = fixture();
   try {
@@ -283,7 +343,8 @@ test("seat review lists replace lower lists, typed lists fall back and null rest
     assert.equal(user.status, 0, user.stdout + user.stderr);
     assert.match(user.stdout, /review.default\[1\].*模型：two/);
     assert.match(user.stdout, /review.前端：.*模型：frontend；强度：框架默认/);
-    assert.match(user.stdout, /review.后端\[1\].*模型：two/);
+    assert.match(user.stdout, /这些席位没有『后端』档，回落 default：engineering、review、spec-review、research、watch/);
+    assert.doesNotMatch(user.stdout, /review.后端\[1\]/);
     assert.match(user.stdout, /engineering.default：.*模型：框架默认；强度：框架默认/);
     f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "HTML" }, seats: { review: { default: [{}], 前端: [{ model: "repository-type" }] } } }));
     const repository = f.run();
@@ -952,7 +1013,6 @@ test("doctor rejects malformed optional values and environment overrides with ex
     }
     f.write("docs/agents/run-spec.json", JSON.stringify(f.config));
     for (const concurrency of [
-      "",
       "0",
       "-1",
       "1.5",

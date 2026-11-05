@@ -3,6 +3,7 @@
  * 用户文件可缺省，存在但无效时拒绝运行；工作类型词表只取仓库配置。
  * 供派发入口和 doctor 使用，不写文件；来源、回落原因随设置进入派发记录。
  * 旧 DispatchDock 的模型、强度、路径仍作为兼容默认；codexSandbox 只管工程 Codex。
+ * 空环境值视为未设置，回落到下一层，不登记为环境来源。
  */
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -111,7 +112,7 @@ export const frameworkSettings = (config: SeatConfiguration, agent: string) => {
     if (settings?.path !== undefined) { path = settings.path; sources.path = `${source}.agents.${agent}.path`; }
   }
   const key = `RUN_SPEC_${agent.toUpperCase()}_CONCURRENCY`;
-  if (process.env[key] !== undefined) {
+  if (process.env[key]) {
     if (!/^[1-9]\d*$/.test(process.env[key]!) || !positive(Number(process.env[key]))) throw new Error(`配置 codexConcurrency/agents.${agent}.concurrency 的环境变量 ${key} 必须是安全范围内的正整数`);
     concurrency = Number(process.env[key]); sources.concurrency = `环境变量 ${key}`;
   }

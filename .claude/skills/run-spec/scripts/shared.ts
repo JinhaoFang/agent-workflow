@@ -329,7 +329,7 @@ export const dispatchConfig = (root: string): DispatchConfig => {
       "配置 codexConcurrency 必须是安全范围内的正整数",
     );
   const concurrency = process.env.RUN_SPEC_CODEX_CONCURRENCY;
-  if (concurrency !== undefined) {
+  if (concurrency) {
     if (
       !/^[1-9]\d*$/.test(concurrency) ||
       !Number.isSafeInteger(Number(concurrency))

@@ -202,3 +202,27 @@ test("built-in CLI records missing actual model as unknown and startup failures 
     } finally { f.cleanup(); }
   }
 });
+
+test("built-in CLI ignores empty environment overrides and falls back through repository, user and defaults", () => {
+  const f = fixture();
+  try {
+    const userFile = join(f.env.XDG_CONFIG_HOME, "agent-workflow/seats.json");
+    mkdirSync(join(userFile, ".."), { recursive: true });
+    writeFileSync(userFile, JSON.stringify({ seats: { engineering: { default: { model: "user-model", effort: "medium", permission: "workspace-write" } } }, agents: { codex: { concurrency: 3 } } }));
+    const configFile = join(f.root, "docs/agents/run-spec.json");
+    for (const layer of ["repository", "user", "builtin"] as const) {
+      if (layer === "repository") writeFileSync(configFile, JSON.stringify({ seats: { engineering: { default: { model: "repository-model", effort: "low", permission: "read-only" } } }, agents: { codex: { concurrency: 4 } } }));
+      else rmSync(configFile, { force: true });
+      if (layer === "builtin") rmSync(userFile);
+      const result = spawnSync(process.execPath, [entry, "只读列出目录", "--name", "empty-env"], { cwd: f.root, env: { ...f.env, CASE: "success", RUN_SPEC_CODEX_CONCURRENCY: "", RUN_SPEC_CLAUDE_CONCURRENCY: "", RUN_SPEC_PI_CONCURRENCY: "" }, encoding: "utf8", timeout: 10000 });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const summary = JSON.parse(readFileSync(join(f.root, ".codex-runs/empty-env.json"), "utf8"));
+      assert.equal(summary.model, layer === "builtin" ? null : `${layer}-model`);
+      assert.equal(summary.effort, layer === "repository" ? "low" : layer === "user" ? "medium" : null);
+      assert.equal(summary.permission, layer === "repository" ? "read-only" : "workspace-write");
+      assert.doesNotMatch(JSON.stringify(summary.sources), /环境变量/);
+      evidence(`empty-env-${layer}.txt`, result.stdout + result.stderr + JSON.stringify(summary, null, 2));
+      rmSync(join(f.root, ".codex-runs"), { recursive: true });
+    }
+  } finally { f.cleanup(); }
+});

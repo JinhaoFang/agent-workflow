@@ -556,3 +556,34 @@ test("review reads built-in usage without local sessions and keeps missing usage
     } else assert.match(result.stdout, /派发记录缺少完整用量/);
   }
 });
+
+for (const state of ["complete", "missing", "unflushed", "summary-only-tokens"] as const) {
+  test(`review summary keeps root child checks and normalized totals for ${state}`, () => {
+    const input = files();
+    const root = "codex home/sessions/2026/10/12/root.jsonl";
+    input[`.codex-runs/${name}.json`] = JSON.stringify({ v: 1, framework: "codex", success: true, usage: { input: 7000, cached: 5000, output: 300 } });
+    if (state === "summary-only-tokens") input[root] = meta("root") + "\n";
+    input[root] += event("event_msg", { type: "item_completed", thread_id: "root", item: { type: "SubAgentActivity", agent_thread_id: "child" } }) + "\n";
+    if (state === "missing" || state === "unflushed") {
+      delete input["codex home/sessions/2026/10/12/child.jsonl"];
+      delete input["codex home/sessions/2026/10/12/nested.jsonl"];
+      if (state === "unflushed") input["codex home/sessions/2026/10/12/child.jsonl"] = "";
+    }
+    const result = run(argumentsForReview, input);
+    assert.equal(result.status, 0, result.stderr);
+    const body = result.calls[2].body!;
+    assert.match(body, /派发 .*用时 1.5 分钟，输入 7,000（其中缓存 5,000），输出 300 tokens/);
+    if (state === "missing" || state === "unflushed") {
+      assert.match(body, /合计（已知部分；不完整）/);
+      assert.match(body, /找不到子代理会话 child/);
+      assert.match(body, /子代理（会话 child）：用时 未知/);
+    } else {
+      assert.match(body, /合计：用时 3.5 分钟，输入 9,300（其中缓存 6,200），输出 420 tokens/);
+      assert.doesNotMatch(body, /不完整|扫描受限/);
+    }
+    if (process.env.TICKET_32_EVIDENCE) {
+      mkdirSync(process.env.TICKET_32_EVIDENCE, { recursive: true });
+      writeFileSync(join(process.env.TICKET_32_EVIDENCE, `review-summary-${state}.md`), body);
+    }
+  });
+}

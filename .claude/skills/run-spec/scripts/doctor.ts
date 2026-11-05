@@ -14,6 +14,8 @@
  * Invalid optional configuration exits 2, preserving existing prerequisite exits.
  * Check an existing checkout-root .env with git check-ignore without reading it.
  * Resolve Codex through DispatchDock's configured path, then PATH, and probe its version.
+ * 席位每档一行，只列非内置来源的层名；合并回落、权限损失与未接适配器提示。
+ * TODO(design): 核对紧凑席位行和合并提示的措辞。
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -32,7 +34,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { codexVersion } from "./dispatchdock.ts";
 import { adapters } from "./dispatch/adapters.ts";
-import { describeSeat, frameworkSettings, resolveSeat, seatNames, SeatConfigError } from "./dispatch/settings.ts";
+import { frameworkSettings, resolveSeat, seatNames, SeatConfigError } from "./dispatch/settings.ts";
 import {
   CheckFailure,
   OptionalConfigError,
@@ -63,6 +65,16 @@ const hasEntry = (path: string): boolean => {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
+};
+
+const compactSources = (sources: Record<string, string>, fields: Record<string, string>): string => {
+  const items = Object.entries(fields).flatMap(([key, label]) => {
+    const source = sources[key];
+    if (!source || source.startsWith("内置默认")) return [];
+    const layer = source.startsWith("命令") ? "参数" : source.startsWith("环境") ? "环境" : source.startsWith("仓库") ? "仓库" : "用户";
+    return [`${label}=${layer}`];
+  });
+  return items.length ? `；来源：${items.join("、")}` : "";
 };
 
 const within = (root: string, path: string): boolean => {
@@ -159,10 +171,11 @@ const doctor = (values: Values): void => {
     name: string,
     repair: string,
     inspect: () => string | void,
+    quiet = false,
   ): void => {
     try {
       const detail = inspect();
-      console.log(`通过：${name}${detail ? `；${detail}` : ""}`);
+      if (!quiet) console.log(`通过：${name}${detail ? `；${detail}` : ""}`);
     } catch (error) {
       failures++;
       if (!(error instanceof CheckFailure)) runtimeErrors++;
@@ -385,33 +398,51 @@ const doctor = (values: Values): void => {
   if (config) {
     const seats = config.seatConfiguration;
     const used = new Set<string>();
+    const fallbacks = new Map<string, string[]>();
+    const losses = new Map<string, { loss: string; seats: Set<string> }>();
+    const unavailable = new Map<string, { seats: Set<string>; readOnly: boolean }>();
     console.log(`用户席位配置：${seats.userFile}；${seats.userExists ? "已读取" : "文件不存在，使用仓库和内置默认"}`);
-    console.log(`工作类型词表：${JSON.stringify(seats.workTypes)}；来源：仓库 run-spec.json.workTypes`);
-    for (const [name, description] of Object.entries(seats.workTypes)) {
-      if (!Object.values(seats.user.seats ?? {}).some(profiles => Object.hasOwn(profiles, name)))
-        console.log(`提示：工作类型「${name}」（${description}）在词表内，但用户未配档；各席位按实际配置回落到 default。`);
-    }
+    console.log(`工作类型词表：${Object.entries(seats.workTypes).map(([name, description]) => `${name}（${description}）`).join("、") || "无"}；来源：仓库`);
     for (const seat of seatNames) {
       for (const workType of ["default", ...Object.keys(seats.workTypes)]) {
         check(`席位配置 ${seat}.${workType}`, "修正 seats 分档、agents 框架配置或环境变量后重试。", () => {
           const entries = resolveSeat(seats, seat, workType, {}, workType === "default" ? "内置默认" : "仓库 workTypes");
+          if (entries[0].fallbackReason) {
+            fallbacks.set(workType, [...(fallbacks.get(workType) ?? []), seat]);
+            return;
+          }
           for (const [index, settings] of entries.entries()) {
             used.add(settings.agent);
-            console.log(`${seat}.${workType}${entries.length > 1 ? `[${index}]` : ""}：${describeSeat(settings)}`);
-            const framework = frameworkSettings(seats, settings.agent);
-            console.log(`框架配置 ${settings.agent}：${JSON.stringify(framework)}`);
+            console.log(`${seat}.${workType}${entries.length > 1 ? `[${index}]` : ""}：框架：${settings.agent}；模型：${settings.model ?? "框架默认"}；强度：${settings.effort ?? "框架默认"}；权限：${settings.permission}${compactSources(settings.sources ?? {}, { agent: "框架", model: "模型", effort: "强度", permission: "权限" })}`);
             const adapter = adapters[settings.agent];
             if (!adapter) {
-              console.log(`提示：框架 ${settings.agent} 尚未接入适配器，当前不可用；权限映射损失未知${settings.permission === "read-only" ? "，无法确认强制只读" : ""}。`);
+              const item = unavailable.get(settings.agent) ?? { seats: new Set<string>(), readOnly: false };
+              item.seats.add(seat);
+              item.readOnly ||= settings.permission === "read-only";
+              unavailable.set(settings.agent, item);
             } else {
               const mapping = adapter.permissions[settings.permission];
-              console.log(`权限映射 ${settings.agent}/${settings.permission}：参数 ${JSON.stringify(mapping.args)}；损失：${mapping.loss ?? "无"}`);
-              if (mapping.loss && settings.permission === "read-only") console.log(`提示：只读席位 ${seat} 的强制只读存在限制：${mapping.loss}`);
+              if (mapping.loss) {
+                const key = `${settings.agent}/${settings.permission}`;
+                const item = losses.get(key) ?? { loss: mapping.loss, seats: new Set<string>() };
+                item.seats.add(seat);
+                losses.set(key, item);
+              }
             }
           }
-        });
+        }, true);
       }
     }
+    for (const [workType, names] of fallbacks)
+      console.log(`提示：这些席位没有『${workType}』档，回落 default：${names.join("、")}`);
+    for (const agent of used) {
+      const settings = frameworkSettings(seats, agent);
+      console.log(`框架配置 ${agent}：并发：${settings.concurrency}；路径：${settings.path ?? "PATH"}${compactSources(settings.sources, { concurrency: "并发", path: "路径" })}`);
+    }
+    if (losses.size)
+      console.log(`提示：权限映射损失：${[...losses].map(([mapping, item]) => `${mapping}（席位：${[...item.seats].join("、")}）：${item.loss}`).join("；")}`);
+    if (unavailable.size)
+      console.log(`提示：适配器未接入：${[...unavailable].map(([agent, item]) => `${agent}（席位：${[...item.seats].join("、")}）；当前不可用，权限映射损失未知${item.readOnly ? "，无法确认强制只读" : ""}`).join("；")}`);
     for (const agent of used) {
       const settings = frameworkSettings(seats, agent);
       check(agent === "codex" ? "Codex CLI 可用" : agent === "claude" ? "claude CLI 可用" : `席位框架安装 ${agent}`, `安装 ${agent === "claude" ? "Claude Code CLI" : agent} 并加入 PATH，或配置 agents.${agent}.path。`, () => {
@@ -419,7 +450,7 @@ const doctor = (values: Values): void => {
         const path = settings.path ?? agent;
         const result = spawnSync(/\.(?:js|mjs|cjs)$/i.test(path) ? process.execPath : path, [...(/\.(?:js|mjs|cjs)$/i.test(path) ? [path] : []), "--version"], { encoding: "utf8", timeout: 10000, shell: false });
         requireCheck(!result.error && result.status === 0 && !!result.stdout.trim(), `框架 ${agent} 未安装或无法运行 ${path} --version`);
-        return `${result.stdout.trim()}；路径：${path}；来源：${settings.sources.path}${adapters[agent] ? "" : "；适配器尚未接入，派发不可用"}`;
+        return `${result.stdout.trim()}；路径：${path}；来源：${settings.sources.path}`;
       });
     }
     check("兼容配置 codexSandbox/codexConcurrency", "权限建议迁到 seats.engineering.default.permission，并发迁到 agents.codex.concurrency。", () =>
@@ -567,10 +598,11 @@ export const doctorCommand: Command = {
   execute: doctor,
   help: `${entry} doctor
 只读自检，逐项输出通过、不通过和修法，不改仓库、不改 GitHub。
-列出 seats 五个席位的 default 及 workTypes 各档实际值、逐字段来源、回落原因和 review 列表。
+席位每个已配置的档（含 default、review 列表各项）一行，列出框架、模型、强度、权限；来源仅列非内置项，用参数、环境、仓库、用户层名。
+词表内未配档的席位按类型合并提示回落 default；框架路径、并发各展示一次，默认不展开席位 JSON。
 用户文件 $XDG_CONFIG_HOME/agent-workflow/seats.json（默认 ~/.config/agent-workflow/seats.json）不存在时使用默认；格式错误退出 2。
-优先级：参数 > 环境变量 > 仓库 > 用户 > 内置；框架路径和并发放 agents，报告各框架安装情况。
-权限映射及损失直接取适配器 permissions；只读有损失时提示，未接适配器如实报告不可用。
+优先级：参数 > 环境变量 > 仓库 > 用户 > 内置；空环境值视为未设置；框架路径和并发放 agents，报告各框架安装情况。
+权限映射损失直接取适配器 permissions，合并涉及席位提示；未接适配器也合并提示不可用。
 词表内用户未配档只提示；codexSandbox/codexConcurrency 继续兼容并建议迁移。
 检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18、claude CLI 可用；
 Codex CLI 先查席位 agents.codex.path，兼容旧 DispatchDock 配置，再查 PATH，并运行 --version；失败列出查找位置；
