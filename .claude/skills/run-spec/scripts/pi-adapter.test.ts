@@ -87,6 +87,8 @@ test("tickets run reads pi effort from main records while executing in a linked 
     const tree = `${f.root}.worktrees/29`;
     const added = spawnSync("git", ["worktree", "add", "-b", "ticket/29", tree], { cwd: f.root, encoding: "utf8" });
     assert.equal(added.status, 0, added.stderr);
+    mkdirSync(join(tree, "docs/roles"), { recursive: true });
+    writeFileSync(join(tree, "docs/roles/engineering.md"), "# 角色：工程负责人\n");
     const result = spawnSync(process.execPath, [join(import.meta.dirname, "tickets.ts"), "run", task, "--seat", "research", "--agent", "pi", "--name", "sample"], {
       cwd: tree, env: { ...f.env, CASE: "session-effort" }, encoding: "utf8", timeout: 10000,
     });
