@@ -2,7 +2,8 @@
  * Review comment command: review <spec> --record <name> --conclusion-file <file>.
  * Resolve thread.started in the main checkout's DispatchDock .log, then index
  * CODEX_HOME/sessions (default ~/.codex/sessions) by the first session_meta.id.
- * Read index metadata in bounded chunks through the first newline; read full
+ * Read index metadata in bounded chunks with an internal 8 MiB first-line budget;
+ * stop at the first newline or reject oversized metadata as a scan limit. Read full
  * bodies only for selected sessions. Report scan limits apart from missing data.
  * Follow parent_thread_id, including source.subagent.thread_spawn, recursively.
  * Read each session's final cumulative token_count, never sum snapshots or use
@@ -99,11 +100,15 @@ const firstLine = (file: string): string => {
   try {
     const buffer = Buffer.alloc(4096);
     const chunks: Buffer[] = [];
+    const budget = 8 * 1024 * 1024;
+    let bytes = 0;
     for (;;) {
       const length = readSync(descriptor, buffer, 0, buffer.length, null);
       if (!length) break;
       const chunk = buffer.subarray(0, length);
       const newline = chunk.indexOf(10);
+      bytes += newline < 0 ? length : newline;
+      if (bytes > budget) throw new Error("会话元数据首行超出读取预算");
       chunks.push(Buffer.from(newline < 0 ? chunk : chunk.subarray(0, newline)));
       if (newline >= 0) break;
     }
