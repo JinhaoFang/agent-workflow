@@ -2,7 +2,7 @@
  * Cleanup command: export cleanupCommand for CLI registration. List spec-owned
  * main records, QA, worktrees, local/origin ticket branches and exact <ticket>.json
  * land journals in the common git directory before deletion. Dirty/current/
- * mismatched trees and their branches are retained, with exit 1. Ticket refs
+ * mismatched trees and their local/origin branches are retained, with exit 1. Ticket refs
  * may be unmerged and are deleted with -D; worktree removal is never forced.
  * Query origin directly for exact child refs, without fetching. Remote deletion
  * failures name the branch, allow other cleanup to proceed and exit with 1.
@@ -146,6 +146,7 @@ const cleanup = (values: Values, numbers: number[]): void => {
     } else removable.push(tree.path);
   }
   const deletable = branches.filter((branch) => !retained.has(branch));
+  const deletableRemote = remoteBranches.filter((branch) => !retained.has(branch));
   console.log(
     `清理清单：spec #${spec}${values["dry-run"] ? "（仅预览）" : ""}`,
   );
@@ -153,14 +154,14 @@ const cleanup = (values: Values, numbers: number[]): void => {
   for (const directory of kept) printKeptDirectory(directory);
   for (const tree of removable) console.log(`删除 worktree：${tree}`);
   for (const branch of deletable) console.log(`删除分支：${branch}`);
-  for (const branch of remoteBranches)
+  for (const branch of deletableRemote)
     console.log(`删除远端分支：origin/${branch}`);
   for (const message of skipped) console.log(message);
   if (
     !files.length &&
     !removable.length &&
     !deletable.length &&
-    !remoteBranches.length
+    !deletableRemote.length
   )
     console.log("没有可删除的内容。");
   if (values["no-scorecard"]) console.log("已跳过评分表检查（--no-scorecard）。");
@@ -181,7 +182,7 @@ const cleanup = (values: Values, numbers: number[]): void => {
       rmSync(file, { recursive: true, force: true });
       console.log(`已删除文件或目录：${file}`);
     }
-    for (const branch of remoteBranches) {
+    for (const branch of deletableRemote) {
       try {
         git(root, ["push", "origin", "--delete", branch]);
         console.log(`已删除远端分支：origin/${branch}`);
@@ -216,7 +217,8 @@ export const cleanupCommand: Command = {
 验证日志只匹配 .log 文件，main 和其他 spec 工单的验证日志保留。
 巡检日志只清理 watch-<spec号>.log、watch-<spec号>-*.log 和子工单号的同类日志；其他 spec 和默认名字保留。
 同时清理 review-spec-<spec号>-<序号>.md、配对的 .json，以及 review-spec-<spec号>-<随机后缀>/ 输入快照目录。
-不干净的 worktree 跳过并保留对应分支，以 1 退出；不强行删除 worktree。
+主工作区、当前工作区、分支不符、路径不存在或不干净的 worktree 跳过，
+对应本地与 origin 远端分支同时保留，预览与执行使用同一保留集合，以 1 退出；不强行删除 worktree。
 删除任何内容之前检查 spec 上的评分表评论；没有有效评论或本 spec 的台账、派发记录
 在评分表截点之后有更新时，以 1 退出且不删除任何内容，并提示 scorecard <spec> --post。
 按 branch=spec/<号>-… 和直接子工单 ticket/<号> 归属台账；其他 spec 的新记录不拦截。

@@ -4,6 +4,8 @@
  * including colliding ticket/spec prefixes and dirty trees. Run with node --test
  * on this file or pnpm verify. A local bare origin and rejecting receive hook
  * cover remote previews, exact ownership and continued cleanup after failure.
+ * Retained worktrees protect local and origin refs in both preview and execution.
+ * TICKET_18_EVIDENCE optionally saves dirty-tree CLI output and remote ref snapshots.
  * All deletion stays inside temporary fixtures.
  * Kept-directory checks cover exact child ownership, file-count previews and
  * printing the full bounded plan before the first actual deletion.
@@ -602,6 +604,9 @@ test("cleanup skips dirty trees and retains their branches without forcing delet
       const file = dirty === "untracked" ? "dirty.txt" : ".gitignore";
       writeFileSync(join(tree, file), "dirty work\n");
       if (dirty === "staged") f.git(["add", file], tree);
+      f.git(["branch", "main"]);
+      f.git(["push", "origin", "ticket/1", "ticket/2", "ticket/12", "ticket/20", "main"]);
+      const remoteBefore = f.git(["--git-dir", f.remote, "show-ref"]);
       const status = f.git(["status", "--porcelain"], tree);
       const before = f.git(["show-ref"]);
       const preview = f.run(["17", "--dry-run"]);
@@ -611,6 +616,9 @@ test("cleanup skips dirty trees and retains their branches without forcing delet
         /跳过 worktree 并保留分支：.*worktree 不干净/,
       );
       assert.equal(f.git(["show-ref"]), before);
+      assert.equal(f.git(["--git-dir", f.remote, "show-ref"]), remoteBefore);
+      assert.doesNotMatch(preview.stdout, /删除远端分支：origin\/ticket\/1\n/);
+      assert.match(preview.stdout, /删除远端分支：origin\/ticket\/2\n/);
       assert.ok(existsSync(f.artifacts));
       const result = f.run();
       assert.equal(result.status, 1, result.stderr);
@@ -620,23 +628,67 @@ test("cleanup skips dirty trees and retains their branches without forcing delet
       assert.ok(f.git(["branch", "--list", "ticket/1"]));
       assert.equal(f.git(["branch", "--list", "ticket/2"]), "");
       assert.ok(!existsSync(f.artifacts));
+      assert.deepEqual(
+        result.stdout.split("\n").filter((line) => line.startsWith("删除")),
+        preview.stdout.split("\n").filter((line) => line.startsWith("删除")),
+      );
+      const remoteAfter = f.git(["--git-dir", f.remote, "show-ref"]);
+      assert.equal(
+        remoteAfter,
+        remoteBefore.split("\n").filter((line) => !line.endsWith(" refs/heads/ticket/2")).join("\n"),
+      );
+      const directory = process.env.TICKET_18_EVIDENCE;
+      if (directory) {
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(join(directory, `${dirty}-preview.log`), preview.stdout + preview.stderr);
+        writeFileSync(join(directory, `${dirty}-execute.log`), result.stdout + result.stderr);
+        writeFileSync(join(directory, `${dirty}-refs-before.log`), remoteBefore + "\n");
+        writeFileSync(join(directory, `${dirty}-refs-after.log`), remoteAfter + "\n");
+      }
     } finally {
       f.cleanup();
     }
   }
 });
 
-test("cleanup retains the invoking checkout and mismatched ticket paths", () => {
-  for (const scenario of ["invoking", "mismatched"]) {
+test("cleanup retains local and remote refs for current, mismatched and missing worktrees", () => {
+  for (const scenario of ["invoking", "main", "mismatched", "other-child", "missing"]) {
     const f = fixture();
     try {
       const tree = f.worktrees.get(1)!;
       if (scenario === "mismatched") f.git(["switch", "-c", "other"], tree);
-      const result = f.run(["17"], scenario === "invoking" ? tree : f.root);
+      if (scenario === "other-child") f.git(["switch", "ticket/2"], tree);
+      if (scenario === "main") {
+        f.git(["switch", "--detach"]);
+        f.git(["switch", "spec/17-test"], tree);
+        f.git(["switch", "ticket/1"]);
+      }
+      if (scenario === "missing") rmSync(tree, { recursive: true });
+      f.git(["push", "origin", "ticket/1", "ticket/2", "ticket/12"]);
+      const remoteBefore = f.git(["--git-dir", f.remote, "show-ref"]);
+      const cwd = scenario === "invoking" ? tree : f.root;
+      const preview = f.run(["17", "--dry-run"], cwd);
+      assert.equal(preview.status, 1, preview.stderr);
+      assert.equal(f.git(["--git-dir", f.remote, "show-ref"]), remoteBefore);
+      const result = f.run(["17"], cwd);
       assert.equal(result.status, 1, result.stderr);
       assert.match(result.stdout, /跳过 worktree 并保留分支/);
-      assert.ok(existsSync(tree));
-      assert.ok(f.git(["branch", "--list", "ticket/1"]));
+      assert.match(result.stderr, /^出错：.*未清理/);
+      assert.deepEqual(
+        result.stdout.split("\n").filter((line) => line.startsWith("删除")),
+        preview.stdout.split("\n").filter((line) => line.startsWith("删除")),
+      );
+      const retained = scenario === "other-child" ? [1, 2] : [1];
+      for (const ticket of retained) {
+        assert.ok(f.git(["branch", "--list", `ticket/${ticket}`]));
+        assert.ok(!result.stdout.includes(`删除远端分支：origin/ticket/${ticket}\n`));
+      }
+      assert.equal(
+        f.git(["--git-dir", f.remote, "show-ref"]),
+        scenario === "other-child" ? remoteBefore :
+          remoteBefore.split("\n").filter((line) => !line.endsWith(" refs/heads/ticket/2")).join("\n"),
+      );
+      assert.equal(existsSync(tree), scenario !== "missing");
       if (scenario === "mismatched")
         assert.equal(f.git(["branch", "--show-current"], tree), "other");
     } finally {
@@ -672,6 +724,7 @@ test("cleanup help is read-only and invalid arguments exit with 2", () => {
     assert.equal(help.calls.length, 0);
     assert.match(help.stdout, /cleanup <spec>/);
     assert.match(help.stdout, /直接查询 origin/);
+    assert.match(help.stdout, /对应本地与 origin 远端分支同时保留/);
     assert.match(help.stdout, /继续其他清理，最后以 1 退出/);
     assert.match(help.stdout, /集成分支.*本命令不管/);
     for (const args of [[], ["0"], ["17", "extra"], ["17", "--unknown"]]) {
