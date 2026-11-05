@@ -462,7 +462,7 @@ exclusiveVerification 默认 false；开启时指令要求完整验证运行主�
 需要完整验证时始终走主工作区 tickets.ts verify <工单>，按 exclusiveVerification 决定是否排队。
 以内置派发层全局记录及进程存活判断并发，按所选框架的 agents.<框架>.concurrency 排队；
 旧 DispatchDock 运行计入 Codex 名额，兼容 codexConcurrency 和 RUN_SPEC_CODEX_CONCURRENCY；达到上限时加锁排队，每 5 分钟最多打印一行。
-执行者返回 Concurrency limit exceeded 时回到排队自动重试；slots 按框架显示运行与空余名额。
+派发失败且适配器认定为并发超限时回到排队自动重试（目前只有 Codex 认定）；slots 按框架显示运行与空余名额。
 评论失败以 2 退出，不派发，已准备的 worktree 保留供重试。
 安装失败重试时沿用已有安装产物快照，只补充本次安装新建的路径。
 --dry-run 只读 GitHub 和 git 并打印计划及评论内容，不评论、不安装、

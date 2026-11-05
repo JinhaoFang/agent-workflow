@@ -23,7 +23,7 @@ export const callSeat = async (options: { settings: SeatSettings; prompt: string
     const detection = settings.path ? await adapter.detect({ env: process.env, settings }) : undefined;
     if (detection && !detection.installed) throw new Error(detection.error ?? `找不到可用的 ${adapter.label} CLI`);
     const command = adapter.restrictedCommand({ root: cwd, prompt, settings, detection: detection ?? { installed: true, version: null }, env: process.env, tools: tools.length ? "files" : "none" });
-    const result = runClaude({ prompt, tools, cwd, command });
+    const result = runClaude({ cwd, command });
     const models = Object.keys(result.modelUsage ?? {});
     return { ...result, framework: settings.agent, actualModel: models.length === 1 ? models[0] : null };
   }

@@ -21,9 +21,9 @@
  * Handlers may return a promise; the CLI awaits dispatch queueing and failures.
  * Parent lookup diagnoses HTTP 404 with a link command using the current spec
  * branch when available; other gh failures retain their original diagnostic.
- * runClaude sends the prompt on stdin, restricts tools, disables MCP/session
- * persistence and reads text/usage/cost from --output-format json. Missing usage
- * carries a Chinese reason; launch failures return exitCode 2 and an error.
+ * runClaude 执行适配器生成的命令，原样传递参数和 stdin，从 JSON 读取文本、用量和费用。
+ * 受限工具、MCP 与会话持久化参数由适配器统一构造；缺用量给出中文原因，
+ * 启动失败返回 exitCode 2 和错误详情。
  * Record ownership strips known extensions, then matches the exact
  * gh-<ticket>/review-<spec> name or a hyphen suffix for land, accept and cleanup.
  * All child processes receive argument arrays; no dependencies or shell evaluation.
@@ -444,29 +444,12 @@ export type ClaudeResult = {
 };
 
 export const runClaude = (options: {
-  prompt: string;
-  tools: string[];
   cwd: string;
-  model?: string;
-  effort?: string;
-  launcher?: { executable: string; args: string[] };
-  command?: { executable: string; args: string[]; stdin: string };
+  command: { executable: string; args: string[]; stdin: string };
 }): ClaudeResult => {
-  const args = options.command?.args ?? [
-    ...(options.launcher?.args ?? []),
-    "-p",
-    "--output-format",
-    "json",
-    "--no-session-persistence",
-    "--strict-mcp-config",
-    "--tools",
-    options.tools.join(","),
-    ...(options.model ? ["--model", options.model] : []),
-    ...(options.effort ? ["--effort", options.effort] : []),
-  ];
-  const result = spawnSync(options.command?.executable ?? options.launcher?.executable ?? "claude", args, {
+  const result = spawnSync(options.command.executable, options.command.args, {
     cwd: options.cwd,
-    input: options.command?.stdin ?? options.prompt,
+    input: options.command.stdin,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
