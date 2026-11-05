@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { codexVersion } from "./dispatchdock.ts";
 import {
   CheckFailure,
@@ -345,7 +345,7 @@ const doctor = (values: Values): void => {
       return triage ? "已安装 triage，说明存在" : "未安装 triage，无需分诊说明";
     },
   );
-  for (const name of ["codex-dispatch", "run-spec", "setup-run-spec"]) {
+  for (const name of ["run-spec", "setup-run-spec"]) {
     check(
       `技能隔离 ${name}`,
       `把 ${name} 放在 .claude/skills 或用户 Claude Code 专用技能目录，移除共享目录副本及指向共享目录的软链接；run-spec 的来源副本和安装副本都可用。`,
@@ -431,14 +431,9 @@ const doctor = (values: Values): void => {
     },
   );
   check(
-    "派发脚本",
-    "安装 codex-dispatch，并让 dispatchScript 指向主工作区中存在的派发脚本文件。",
-    () => {
-      requireCheck(!!config, "执行配置未通过，无法检查派发脚本。");
-      const script = resolve(main || root, config!.dispatchScript);
-      requireCheck(isFile(script), `派发脚本不存在或不是文件：${script}。`);
-      return script;
-    },
+    "过时配置 dispatchScript",
+    "删除执行配置中的 dispatchScript；run-spec 已自带派发层。",
+    () => config?.dispatchScript === undefined ? "未配置，无需处理" : "已忽略 dispatchScript，可以删除；派发使用 run-spec 内置入口。",
   );
   const directories: [string, string, boolean][] = [
     ["派发记录目录", ".codex-runs", false],
@@ -548,8 +543,8 @@ export const doctorCommand: Command = {
 Codex CLI 先查 DispatchDock 配置 agents.codex.path，再查 PATH，并运行 --version；失败列出查找位置；
 GitHub 的 role:engineering、role:design、ready-for-human 标签、只允许 merge commit、合并后自动删除分支；
 Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签说明；
-codex-dispatch、run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；
-执行配置完整、主工作区派发脚本存在；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
+run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；
+执行配置完整；dispatchScript 不再使用，存在时提示可删除；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
 报告可选配置 codexConcurrency、prCheckCommand、verificationEnv、exclusiveVerification、disposableIgnored 的实际取值及来源；
 报告 staticCheckCommand（默认 null，未配置）、staticOnlyPaths（默认 []）的实际取值及来源；
 staticCheckCommand 为非空参数数组；staticOnlyPaths 为非空单行 gitignore 模式的数组，不能含 NUL；

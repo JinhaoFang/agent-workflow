@@ -14,7 +14,7 @@
  * Every installation attempt records ignored leaves in the private git
  * directory before dispatch, excluding configured directory symlinks.
  * Preparation retries reuse that snapshot and add only newly installed paths.
- * Global startup admission is locked until DispatchDock registers a live run;
+ * Global startup admission is locked until the built-in layer registers a live run;
  * account concurrency errors retry through the same queue with live output.
  * --resume preserves interrupted edits and rejects live runs or rebases.
  * Ticket instructions read comments; parent-spec instructions read only body.
@@ -146,9 +146,7 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
       )
     : "";
   const needsPreparation = !existing || existsSync(preparationFile);
-  const script = resolve(root, config.dispatchScript);
-  if (!existsSync(script) || !statSync(script).isFile())
-    throw new Error(`派发脚本不存在或不是文件：${script}`);
+  const script = join(import.meta.dirname, "dispatch-task.ts");
   const links = config.symlinkDirectories.map((directory) => {
     const source = join(root, directory);
     const target = join(worktree, directory);
@@ -432,7 +430,7 @@ exclusiveVerification 默认 false；开启时指令要求完整验证运行主�
 通过仓库锁排队，日志自动写入主工作区 .codex-runs；局部测试照常。
 配置 staticCheckCommand 时，指令要求开发时只跑相关测试和静态检查，不跑完整验证；
 需要完整验证时始终走主工作区 tickets.ts verify <工单>，按 exclusiveVerification 决定是否排队。
-以 DispatchDock 全局记录及进程存活判断并发，codexConcurrency 默认 2，
+以内置派发层全局记录及进程存活判断并发（旧 DispatchDock 运行计入 Codex 名额），codexConcurrency 默认 2，
 可用 RUN_SPEC_CODEX_CONCURRENCY 覆盖；达到上限时加锁排队，每 5 分钟最多打印一行。
 Codex 返回 Concurrency limit exceeded 时回到排队自动重试；用 slots 查看运行与空余名额。
 评论失败以 2 退出，不派发，已准备的 worktree 保留供重试。

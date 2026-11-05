@@ -1,12 +1,13 @@
 /**
- * Dependency-free DispatchDock integration: resolve its home/config and Codex
+ * Built-in registry with DispatchDock v1 compatibility: resolve home/config and Codex
  * launcher, fold complete registry events and count live wrapper/agent PIDs.
  * Interrupted records retain a slot while an agent is alive; ended records do
  * not. A global directory lock covers admission through startup registration,
  * including managed starts. Dead lock owners are removed by unlinking their
  * specific owner file before removing the empty directory; incomplete locks
  * recover after ten seconds. Queue messages are shared across admission/retry
- * waits and limited to one per five minutes. No DispatchDock files are rewritten.
+ * waits and limited to one per five minutes. Missing framework means Codex;
+ * capacity is counted by framework. Existing registry rows are not rewritten.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -54,6 +55,7 @@ export type RunningDispatch = {
   started: number;
   pid: number;
   agentPid?: number;
+  framework: string;
   ended?: boolean;
   interrupted?: boolean;
 };
@@ -89,6 +91,7 @@ export const runningDispatches = (): RunningDispatch[] => {
           repo: event.repo,
           started: event.started,
           pid: event.pid,
+          framework: event.framework ?? event.agent ?? "codex",
         });
     } else {
       const record = records.get(event.id);
@@ -140,6 +143,7 @@ export const dispatchSlot = async (
   limit: number,
   worktree: string,
   queued: (reason: string) => void,
+  framework = "codex",
 ): Promise<() => void> => {
   const lock = join(dispatchHome(), "run-spec-dispatch.lock");
   mkdirSync(dispatchHome(), { recursive: true });
@@ -165,7 +169,7 @@ export const dispatchSlot = async (
       process.once("exit", release);
       try {
         assertIdle(worktree);
-        const count = runningDispatches().length;
+        const count = runningDispatches().filter(run => run.framework === framework).length;
         if (count < limit) return release;
         queued(`运行 ${count}/${limit}`);
       } catch (error) {

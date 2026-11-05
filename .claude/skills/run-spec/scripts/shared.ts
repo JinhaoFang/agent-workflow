@@ -7,8 +7,8 @@
  * linked directories normalize lexically against the checkout root and dedupe
  * before any command receives them. Empty/root, absolute and parent paths fail
  * with the configured entry index and value; symlink targets are not resolved.
- * codexSandbox selects Codex permissions; dispatchScript resolves against the
- * main worktree (absolute paths also work). Missing/invalid config exits with 2.
+ * codexSandbox selects Codex permissions; dispatchScript is obsolete and ignored.
+ * The dispatcher ships with run-spec. Missing/invalid required config exits with 2.
  * Optional codexConcurrency and prCheckCommand use defaults and report sources;
  * RUN_SPEC_CODEX_CONCURRENCY overrides the validated configured concurrency.
  * verificationEnv defaults to {}, substitutes {mainRoot} in configured values
@@ -208,7 +208,7 @@ export type DispatchConfig = {
   symlinkDirectories: string[];
   acceptanceRoot: string;
   codexSandbox: string;
-  dispatchScript: string;
+  dispatchScript?: unknown;
   codexConcurrency: number;
   prCheckCommand: string[];
   verificationEnv: Record<string, string>;
@@ -258,7 +258,6 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     "symlinkDirectories",
     "acceptanceRoot",
     "codexSandbox",
-    "dispatchScript",
   ]) {
     if (!Object.hasOwn(config, key))
       throw new Error(`配置缺少 ${key}：${file}`);
@@ -299,11 +298,6 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     throw new Error(
       "配置 codexSandbox 必须是 read-only、workspace-write 或 danger-full-access",
     );
-  if (
-    typeof config.dispatchScript !== "string" ||
-    !config.dispatchScript.trim()
-  )
-    throw new Error("配置 dispatchScript 必须是派发脚本路径");
   const optionalSources = {
     codexConcurrency: Object.hasOwn(config, "codexConcurrency")
       ? "配置"

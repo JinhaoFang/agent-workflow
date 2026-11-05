@@ -60,6 +60,7 @@ console.log(${JSON.stringify(root)});
       [
         start("live", process.pid),
         start("dead", dead),
+        { ...start("other-framework", process.pid), framework: "pi", agent: "pi" },
         start("ended", process.pid),
         { v: 1, event: "end", id: "ended", exit: 0 },
         start("stopped", process.pid),
@@ -93,7 +94,7 @@ console.log(${JSON.stringify(root)});
       /名字：live；开始时间：2023-11-14T22:13:20.000Z；所在目录：\/other\/live/,
     );
     assert.match(result.stdout, /名字：orphan/);
-    assert.doesNotMatch(result.stdout, /名字：(dead|ended|stopped)/);
+    assert.doesNotMatch(result.stdout, /名字：(dead|ended|stopped|other-framework)/);
     assert.match(result.stdout, /空余名额：0\/2/);
     const overridden = run([], "3");
     assert.equal(overridden.status, 0, overridden.stderr);

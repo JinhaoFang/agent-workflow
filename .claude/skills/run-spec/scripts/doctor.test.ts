@@ -533,7 +533,7 @@ test("doctor uses repository excludes without copying or changing them", () => {
 });
 
 test("doctor rejects shared skill copies, direct and indirect shared symlinks, and broken skill links", () => {
-  for (const name of ["run-spec", "codex-dispatch", "setup-run-spec"]) {
+  for (const name of ["run-spec", "setup-run-spec"]) {
     for (const mode of ["copy", "link", "indirect", "broken"]) {
       const f = fixture();
       try {
@@ -619,7 +619,7 @@ test("doctor reports absent configuration, every missing field, invalid JSON and
   try {
     rmSync(join(f.root, "docs/agents/run-spec.json"));
     fails(f.run(), "执行配置完整", /必填项/);
-    for (const key of Object.keys(f.config)) {
+    for (const key of Object.keys(f.config).filter(key => key !== "dispatchScript")) {
       const config: Record<string, unknown> = { ...f.config };
       delete config[key];
       f.write("docs/agents/run-spec.json", JSON.stringify(config));
@@ -636,7 +636,8 @@ test("doctor reports absent configuration, every missing field, invalid JSON and
     fails(f.run(), "执行配置完整", /非空的程序和参数数组/);
     f.write("docs/agents/run-spec.json", JSON.stringify(f.config));
     rmSync(join(f.root, f.config.dispatchScript));
-    fails(f.run(), "派发脚本", /安装 codex-dispatch/);
+    assert.equal(f.run().status, 0);
+    assert.match(f.run().stdout, /已忽略 dispatchScript，可以删除/);
   } finally {
     f.cleanup();
   }
@@ -720,7 +721,7 @@ test("doctor reads configuration in ticket checkout and third-party dispatcher i
     assert.ok(!existsSync(join(worktree, f.config.dispatchScript)));
     const result = f.run(["doctor"], { cwd: worktree });
     assert.equal(result.status, 0, result.stderr);
-    assert.ok(result.stdout.includes(join(f.root, f.config.dispatchScript)));
+    assert.match(result.stdout, /已忽略 dispatchScript，可以删除/);
   } finally {
     f.cleanup();
   }
@@ -746,7 +747,7 @@ test("doctor help lists all checks and incorrect arguments exit 2 without invoki
       "codexConcurrency",
       "prCheckCommand",
       "claude",
-      "派发脚本",
+      "dispatchScript",
       ".codex-runs",
       "末尾斜杠",
       ".env",

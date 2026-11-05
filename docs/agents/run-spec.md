@@ -18,7 +18,7 @@
 | `symlinkDirectories` | `[".agents"]` | 第三方技能（Matt 的技能），Codex 要读。 |
 | `acceptanceRoot` | `"out/qa"` | 验收产物不进 git。 |
 | `codexSandbox` | `"danger-full-access"` | Codex 要联网、用 `gh` 读 issue。 |
-| `dispatchScript` | `".claude/skills/codex-dispatch/codex-task.mjs"` | DispatchDock 的派发脚本。 |
+| `dispatchScript` | 不再使用 | 已过时；派发使用 run-spec 内置入口，可删除此项。 |
 | `prCheckCommand` | `["pnpm", "ci:local", "{pr}"]` | 私有仓库的 GitHub Actions 被计费挡住，启动不了；收尾时用本机 CI 代替：在 PR 的头提交上跑验证和提交信息检查。Actions 的设定不动。 |
 
 其余可选项都不写，取默认值：本仓库的验证一次只要几分钟，并发不互相干扰，也不留下大的副产物。

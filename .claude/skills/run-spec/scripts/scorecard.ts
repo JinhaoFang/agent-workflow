@@ -5,6 +5,7 @@
  * reason 表示，missing 汇总字段路径。数据口径和兼容约定完整写在 --help。
  * Claude 用户输入排除压缩摘要，优先认 origin.kind，并关联 AskUserQuestion 问答。
  */
+import { dispatchSummary } from "./dispatch/summary.ts";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -182,7 +183,8 @@ const collect = (root: string, spec: number, tickets: Set<number>, sessions: str
       .flatMap((event) => event.payload.content ?? []).map((part: Json) => part.text ?? "")).join("\n");
     const category = item.kind === "auxiliary" ? "辅助" : item.kind === "review" ? "审查" : /这是原地续做：|--resume 原地续做/.test(prompts) ? "续做" : /这是返工派发：/.test(prompts) ? "返工" : item.name === `gh-${item.ticket}` ? "首次" : null;
     const usages = linked.map(sessionTokens);
-    const tokens = linked.length && usages.every((value) => value !== null) ? sumTokens(usages as Tokens[]) : null;
+    const summary = item.ambiguity ? null : dispatchSummary(item.files.get(".json") ?? "");
+    const tokens = summary ? (summary.usage ? { inputTokens: summary.usage.input, cachedInputTokens: summary.usage.cached, outputTokens: summary.usage.output } : null) : linked.length && usages.every((value) => value !== null) ? sumTokens(usages as Tokens[]) : null;
     const interval = span(item.start, item.end);
     const edit = linked.flatMap((session) => {
       const first = firstEdit(session);
@@ -296,7 +298,7 @@ export const scorecardCommand: Command = {
 JSON version=1；recordBindings 可选，列出本次覆盖的显式关联精确名；每个可缺字段为 {value,reason}，缺数 value=null、中文 reason；missing 列字段路径。
 cutoffAt 是最后采集记录的 UTC 时间（无记录为 null），collectedAt 是采集时间。
 输入：主工作区 .codex-runs/verification.jsonl；主工作区及直接子工单 worktree 的派发文件，
-DispatchDock runs.jsonl（CODEX_DISPATCH_HOME 或默认配置目录），CODEX_HOME/sessions（默认 ~/.codex/sessions）。
+内置派发层及旧 DispatchDock runs.jsonl（CODEX_DISPATCH_HOME 或默认配置目录），CODEX_HOME/sessions（默认 ~/.codex/sessions）。
 台账仅收 branch=spec/<号>-… 或直接子工单 ticket/<号>；派发默认收 gh-<子工单> 和 review-<spec> 的精确编号及 - 后缀。
 显式关联额外精确纳入辅助派发；同名派发副本合并，每种文件取修改时间最新者，多次实际运行歧义写缺数。
 会话优先按唯一 thread.started ID 对应并保留真实 cwd；ID 缺失时要求原有 cwd 与开始时间严格相等。
@@ -319,7 +321,7 @@ userInterventions：给定主会话的用户亲自输入消息数；一条消息
 isCompactSummary 或 isVisibleInTranscriptOnly 为真的压缩摘要不算用户输入；带 origin.kind 时以它为准，只有 human 才算。
 无 origin.kind 时识别用户文本和 AskUserQuestion 回答，排除其他工具结果、isMeta、isSynthetic、系统通知和子代理。
 failures：派发非零退出且无非空汇报、land 非零退出、验证阶段 exit=2 且 verification=null 的启动失败；需返工本身不计。
-usage：codexDispatch 包含工单与辅助，codexReview 只含审查；Codex 工程派发/审查取关联会话最后累计 token_count（不累加快照）；主会话按 message.id 去重后累加 usage；
+usage：codexDispatch 包含工单与辅助，codexReview 只含审查；工程派发/审查优先取内置派发 .json 的统一用量，旧记录取关联会话最后累计 token_count（不累加快照）；主会话按 message.id 去重后累加 usage；
 独立审查取 review-spec-<号>-<序号>.json；子代理取关联 Codex 后代会话及给定 Claude sidechain 的完整 usage。
 subagentNotifications 读取给定会话任务通知的 subagent_tokens 总数，按 task-id/uuid 去重；
 这是只有总 token 的另一种来源，可能与子代理会话重叠，不与 subagents 相加，不能拆分的输入/输出不估算。

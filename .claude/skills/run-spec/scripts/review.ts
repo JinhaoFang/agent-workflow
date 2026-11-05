@@ -1,6 +1,7 @@
 /**
  * Review comment command: review <spec> --record <name> --conclusion-file <file>.
- * Resolve thread.started in the main checkout's DispatchDock .log, then index
+ * Prefer normalized usage from the built-in .json summary. For legacy records,
+ * resolve thread.started in the main checkout's .log, then index
  * CODEX_HOME/sessions (default ~/.codex/sessions) by the first session_meta.id.
  * Read index metadata in bounded chunks with an internal 8 MiB first-line budget;
  * stop at the first newline or reject oversized metadata as a scan limit. Read full
@@ -33,6 +34,8 @@ import {
   type Command,
   type Values,
 } from "./shared.ts";
+
+import { dispatchSummary } from "./dispatch/summary.ts";
 
 type Metadata = {
   id: string;
@@ -263,6 +266,7 @@ const review = (values: Values, numbers: number[]): void => {
   const root =
     trees.status === 0 ? trees.stdout.split("\n")[0].slice(9) : process.cwd();
   const records = join(root, ".codex-runs", name);
+  const summary = dispatchSummary(`${records}.json`);
   const log = rows(
     read(`${records}.log`, reasons, "派发日志"),
     reasons,
@@ -289,10 +293,10 @@ const review = (values: Values, numbers: number[]): void => {
   const id = ids.length === 1 ? ids[0] : (override as string | undefined);
   if (ids.length === 1 && override !== undefined && override !== id)
     throw new Error("--session 与派发记录中的会话 ID 不一致");
-  if (!id) reasons.push("派发日志缺少 thread.started 会话 ID");
+  if (!id && !summary) reasons.push("派发日志缺少 thread.started 会话 ID");
   const progress = read(`${records}.progress.log`, reasons, "派发进度");
   const footer = progress.match(
-    /^=== Codex 结束：exit=-?\d+，用时 (\d+(?:\.\d+)?) 分钟，汇报在 .+ ===\r?$/m,
+    /^=== [^\r\n]+ 结束：exit=-?\d+，用时 (\d+(?:\.\d+)?) 分钟，汇报在 .+ ===\r?$/m,
   );
   const minutes = footer ? Number(footer[1]) : undefined;
   if (minutes === undefined) reasons.push("派发进度缺少结束时长");
@@ -303,7 +307,7 @@ const review = (values: Values, numbers: number[]): void => {
   );
   const selected: Session[] = [];
   if (id && sessions.has(id)) selected.push(sessions.get(id)!);
-  else if (id) reasons.push(`找不到审查会话 ${id}`);
+  else if (id && !summary) reasons.push(`找不到审查会话 ${id}`);
   const seen = new Set(selected.map((session) => session.id));
   for (let index = 0; index < selected.length; index++) {
     for (const session of sessions.values()) {
@@ -319,11 +323,13 @@ const review = (values: Values, numbers: number[]): void => {
   const line = (label: string, usage: Usage): string =>
     `- ${label}：用时 ${numberText(usage.minutes)} 分钟，输入 ${numberText(usage.input)}（其中缓存 ${numberText(usage.cached)}），输出 ${numberText(usage.output)} tokens`;
   if (!selected.length) {
-    usages.push({ minutes });
+    usages.push({ minutes, ...(summary?.usage ? { input: summary.usage.input, cached: summary.usage.cached, output: summary.usage.output } : {}) });
     lines.push(line(`派发 ${name}`, usages[0]));
   }
   for (const [index, session] of selected.entries()) {
-    const usage = sessionUsage(session, reasons, index > 0, seen, missing);
+    const usage = index === 0 && summary
+      ? { ...(summary.usage ? { input: summary.usage.input, cached: summary.usage.cached, output: summary.usage.output } : {}) } as Usage
+      : sessionUsage(session, reasons, index > 0, seen, missing);
     if (index === 0) usage.minutes = minutes;
     usages.push(usage);
     lines.push(
@@ -335,6 +341,7 @@ const review = (values: Values, numbers: number[]): void => {
       ),
     );
   }
+  if (summary && !summary.usage) reasons.push("派发记录缺少完整用量");
   for (const id of missing) {
     reasons.push(`找不到子代理会话 ${id}`);
     usages.push({});
@@ -400,7 +407,7 @@ export const reviewCommand: Command = {
   execute: review,
   help: `${entry} review <spec> --record <review-号-批次> --conclusion-file <结论文件> [--dry-run] [--session <会话ID>]
 结论原文后附「用量」：审查和所有子代理的时长、输入（其中缓存）、输出与合计。
-派发记录读取主工作区的 .codex-runs；审查时长取进度文件，token 取本机会话。
+派发记录读取主工作区的 .codex-runs；审查时长取进度文件，token 优先取内置派发 .json，旧记录取本机会话。
 子代理未单独派发，时长取各自会话的已完成任务；合计为累计用时。
 会话目录默认 ~/.codex/sessions，可用 Codex 的 CODEX_HOME 环境变量更改根目录。
 索引分块仅读首行元数据，关联审查及后代后才读取对应会话全文。

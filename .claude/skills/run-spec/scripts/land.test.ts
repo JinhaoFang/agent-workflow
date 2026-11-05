@@ -291,7 +291,13 @@ const dispatchInstallation = (
       `const fs = require("node:fs");\nfs.writeFileSync("${f.artifacts}/verification.json", "QA only");\n`,
     );
   const script = join(f.temporary, "dispatcher.cjs");
-  writeFileSync(script, "process.exitCode = 0;\n");
+  writeFileSync(script, `
+const fs = require("node:fs");
+if (process.argv.includes("--version")) console.log("codex-cli fixture");
+else { fs.readFileSync(0, "utf8"); console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:1,cached_input_tokens:0,output_tokens:1}})); }
+`);
+  mkdirSync(join(f.root, "docs/roles"), {recursive:true});
+  f.commit("docs/roles/engineering.md", "# 角色：工程负责人\n");
   f.commit(
     "docs/agents/run-spec.json",
     JSON.stringify({
@@ -324,6 +330,7 @@ const dispatchInstallation = (
         ...process.env,
         PATH: `${f.temporary}${delimiter}${process.env.PATH}`,
         CODEX_DISPATCH_HOME: join(f.temporary, "dispatch-home"),
+        CODEX_DISPATCH_TEST_AGENT: script,
         RUN_SPEC_CODEX_CONCURRENCY: undefined,
         LAND_FIXTURE_ROOT: f.temporary,
         LAND_INSTALL_EXIT: String(installExit),
@@ -764,7 +771,7 @@ test("land excludes copied ticket records and QA from both preview and retention
               "run-spec-installation.json",
             ),
           );
-        mkdirSync(join(f.worktree, ".codex-runs"));
+        mkdirSync(join(f.worktree, ".codex-runs"), { recursive: true });
         writeFileSync(
           join(f.worktree, ".codex-runs/gh-21.json"),
           "ticket record",
@@ -830,7 +837,7 @@ for (const scenario of ["changed", "missing", "blocked", "unchanged"]) {
     const f = fixture();
     try {
       dispatchInstallation(f, { artifactsOnly: true });
-      mkdirSync(join(f.worktree, ".codex-runs"));
+      mkdirSync(join(f.worktree, ".codex-runs"), { recursive: true });
       const record = ".codex-runs/gh-21.json";
       const changed = join(f.artifacts, "result.txt");
       const added = join(f.artifacts, "added.txt");

@@ -184,7 +184,9 @@ if (process.env.TEST_GATE && phase !== "install") {
   );
   writeFileSync(
     config.dispatchScript,
-    `process.argv.splice(2, 0, "codex"); require(${JSON.stringify(runner)});`,
+    `const fs = require("node:fs");
+if (process.argv.includes("--version")) console.log("codex-cli fixture");
+else { const prompt=fs.readFileSync(0,"utf8"); process.argv=[process.execPath,__filename,"codex",prompt]; require(${JSON.stringify(runner)}); }`,
   );
   writeFileSync(
     join(temporary, "gh"),
@@ -209,8 +211,10 @@ else process.exitCode = 91;
     assert.equal(result.status, 0, result.stderr);
     return result.stdout.trim();
   };
+  mkdirSync(join(root, "docs/roles"), {recursive:true});
+  writeFileSync(join(root, "docs/roles/engineering.md"), "# 角色：工程负责人\n");
   const commitConfig = () => {
-    git(["add", "docs/agents/run-spec.json", ".gitignore"]);
+    git(["add", "docs/agents/run-spec.json", ".gitignore", "docs/roles/engineering.md"]);
     git(["commit", "-m", "fixture configuration"]);
   };
   git(["init", "-b", "spec/17-test"]);
@@ -221,6 +225,7 @@ else process.exitCode = 91;
     ...process.env,
     PATH: `${temporary}${delimiter}${process.env.PATH}`,
     CODEX_DISPATCH_HOME: join(temporary, "dispatch-home"),
+    CODEX_DISPATCH_TEST_AGENT: config.dispatchScript,
     TEST_CALLS: calls,
     RUN_SPEC_VERIFICATION_INVOCATION: undefined,
     TICKET_97_ROOT: undefined,

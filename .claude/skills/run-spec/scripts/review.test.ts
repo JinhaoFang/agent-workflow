@@ -540,3 +540,19 @@ test("review empty conclusions fail and failed comments never close specs", () =
       assert.equal(existsSync(result.calls[2].args.at(-1)!), false);
   }
 });
+
+test("review reads built-in usage without local sessions and keeps missing usage incomplete", () => {
+  for (const usage of [{ input: 120, cached: 50, output: 30 }, null]) {
+    const result = run([...argumentsForReview, "--dry-run"], {
+      [`.codex-runs/${name}.progress.log`]: "=== Codex 结束：exit=0，用时 0.3 分钟，汇报在 /report.md ===\n",
+      [`.codex-runs/${name}.log`]: "\n",
+      [`.codex-runs/${name}.json`]: JSON.stringify({ v: 1, framework: "codex", success: true, usage }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.calls, []);
+    if (usage) {
+      assert.match(result.stdout, /用时 0.3 分钟，输入 120（其中缓存 50），输出 30 tokens/);
+      assert.doesNotMatch(result.stdout, /不完整|缺少.*会话/);
+    } else assert.match(result.stdout, /派发记录缺少完整用量/);
+  }
+});

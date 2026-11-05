@@ -3,6 +3,5 @@
   "installCommand": ["pnpm", "install", "--frozen-lockfile"],
   "symlinkDirectories": ["references", ".agents"],
   "acceptanceRoot": "out/qa",
-  "codexSandbox": "danger-full-access",
-  "dispatchScript": ".claude/skills/codex-dispatch/codex-task.mjs"
+  "codexSandbox": "danger-full-access"
 }

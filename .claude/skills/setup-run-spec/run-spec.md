@@ -15,7 +15,7 @@ npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill se
 
 ## 脚本读取的配置
 
-`run-spec.json` 的前六项必填，缺文件或缺项时脚本以 2 退出，并说明缺了什么。`codexConcurrency`、`prCheckCommand`、`verificationEnv`、`exclusiveVerification`、`disposableIgnored`、`staticCheckCommand`、`staticOnlyPaths` 可选，不写就取默认值，格式错误同样以 2 退出；`doctor` 报告它们的实际取值和来源。命令一律写成参数数组。
+`run-spec.json` 的前五项必填，缺文件或缺项时脚本以 2 退出，并说明缺了什么。`codexConcurrency`、`prCheckCommand`、`verificationEnv`、`exclusiveVerification`、`disposableIgnored`、`staticCheckCommand`、`staticOnlyPaths` 可选，不写就取默认值，格式错误同样以 2 退出；`doctor` 报告它们的实际取值和来源。命令一律写成参数数组。
 
 | 配置项 | 本仓库的值 | 含义 |
 |---|---|---|
@@ -24,7 +24,7 @@ npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill se
 | `symlinkDirectories` | `<值>` | 不进 git、但 Codex 要读的目录。`dispatch` 把它们从主工作区软链接进 worktree，派发指令要求只读使用。本仓库是<说明>。 |
 | `acceptanceRoot` | `<值>` | 验收产物根目录。每张工单写到下面的 `spec-<S>/<T>/`；`land` 把它复制回主工作区，`cleanup` 整个删掉 `spec-<S>/`。其余被忽略的工单产物移到 `<仓库目录>.worktrees/.kept/<T>/`，`cleanup` 列出后删除。 |
 | `codexSandbox` | `<值>` | 派发时 Codex 的权限。<用户选它的理由> |
-| `dispatchScript` | `".claude/skills/codex-dispatch/codex-task.mjs"` | DispatchDock 的派发脚本，路径相对主工作区。 |
+| `dispatchScript` | 不再使用 | 已过时；派发使用 run-spec 内置入口，可删除此项。 |
 | `codexConcurrency` | 不写（默认 `2`） | 可选。同时运行的 Codex 派发上限，`dispatch` 到上限时排队。它是账号的属性，环境变量 `RUN_SPEC_CODEX_CONCURRENCY` 优先，账号上限不同的机器各自设。 |
 | `prCheckCommand` | 不写（默认 `["gh", "pr", "checks", "{pr}", "--watch"]`） | 可选。`pr-check` 运行的 PR 检查命令，每个参数里的 `{pr}` 换成 PR 号；CI 不能用时改成本机 CI，例如 `["make", "ci-local", "PR={pr}"]`。 |
 | `verificationEnv` | `<值或不写（默认 {}）>` | 可选。验证要用的环境变量；值里的 `{mainRoot}` 换成主工作区路径，进程里已有的同名变量优先。验证、合并、PR 检查和派发都带上它，实际值写进派发记录，不放密钥。<为什么要这些变量> |

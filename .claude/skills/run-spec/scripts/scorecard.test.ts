@@ -768,3 +768,17 @@ test("显式辅助名即使命中既有日志清理前缀也保留原始文件",
     assert.equal(readFileSync(join(f.records, "verify-5-helper.log"), "utf8"), "辅助原始记录");
   } finally { f.cleanup(); }
 });
+
+test("scorecard reads built-in normalized usage before legacy session tokens and does not estimate missing usage", () => {
+  const f = fixture();
+  try {
+    for (const usage of [{ input: 120, cached: 50, output: 30 }, null]) {
+      f.write(join(f.records, "gh-5.json"), JSON.stringify({ v: 1, framework: "codex", success: true, usage }));
+      const result = f.run(["scorecard", "2"]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      const dispatch = card.dispatches.value.find((item: { record: string }) => item.record === "gh-5");
+      assert.deepEqual(dispatch.usage.value, usage ? tokens(120, 50, 30) : null);
+    }
+  } finally { f.cleanup(); }
+});

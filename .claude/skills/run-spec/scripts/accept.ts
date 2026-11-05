@@ -2,8 +2,8 @@
  * Acceptance command: export acceptCommand for CLI registration. Append one
  * verification line per gh-<ticket> dispatch from the main checkout and ticket
  * worktree, deduplicating copied records by name. Duration comes from the
- * progress footer; tokens (including cached input) come from raw .log
- * turn.completed usage. Missing/changed formats are marked incomplete.
+ * progress footer; tokens prefer the built-in .json summary and fall back
+ * to raw .log turn.completed usage for legacy records. Missing/changed formats are marked incomplete.
  * Passing acceptance requires every 7+ digit hexadecimal commit in the commits
  * field to be an ancestor of the freshly fetched origin integration branch.
  * Reuse land's parent/spec branch lookup; report unpushed, unlanded and unknown
@@ -36,6 +36,8 @@ import {
   type Command,
   type Values,
 } from "./shared.ts";
+
+import { dispatchSummary } from "./dispatch/summary.ts";
 
 const fields = ["commits", "verification", "design", "remaining"];
 
@@ -130,7 +132,7 @@ const acceptanceDispatches = (ticket: number): string[] => {
           return existsSync(file) ? readFileSync(file, "utf8") : "";
         };
         const footer = read(".progress.log").match(
-          /^=== Codex 结束：exit=-?\d+，用时 (\d+(?:\.\d+)?) 分钟，汇报在 .+ ===\r?$/m,
+          /^=== [^\r\n]+ 结束：exit=-?\d+，用时 (\d+(?:\.\d+)?) 分钟，汇报在 .+ ===\r?$/m,
         );
         const usages: Record<string, unknown>[] = [];
         let malformed = false;
@@ -144,7 +146,7 @@ const acceptanceDispatches = (ticket: number): string[] => {
             malformed = true;
           }
         }
-        const counts = [
+        let counts = [
           "input_tokens",
           "cached_input_tokens",
           "output_tokens",
@@ -163,6 +165,11 @@ const acceptanceDispatches = (ticket: number): string[] => {
           );
           return Number.isSafeInteger(total) ? total : undefined;
         });
+        const summary = dispatchSummary(join(directory, `${name}.json`));
+        if (summary) {
+          counts = [summary.usage?.input, summary.usage?.cached, summary.usage?.output];
+          malformed = false;
+        }
         const complete =
           Boolean(footer) &&
           !malformed &&
@@ -275,6 +282,7 @@ export const acceptCommand: Command = {
 --verification-file、--design-file、--remaining-file 读取 UTF-8 文件。
 同一字段的文本和文件参数不能同时使用，所有字段必填。
 自动在「验证」中附主工作区与本工单 worktree 的派发数据（含返工）。
+用量优先取内置派发 .json 的统一输入/缓存/输出；旧记录继续读取原始 .log。
 复制的同名记录只写一次；缺失用时或 token 数据时标为「不完整」。
 通过：先取 origin，核对「提交」字段每个至少 7 位的十六进制提交号
 都已在父 spec 的远端集成分支上，再评论并关闭。分支查找与 land 相同。

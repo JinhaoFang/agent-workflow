@@ -350,3 +350,19 @@ test("accept help documents merge checks, no-commits, exit codes and dry-run wit
   ])
     assert.ok(result.stdout.includes(text));
 });
+
+test("accept prefers normalized built-in usage and preserves unknown usage without estimating from old logs", (t) => {
+  const f = fixture(t);
+  const directory = join(f.root, ".codex-runs");
+  mkdirSync(directory);
+  writeFileSync(join(directory, "gh-4.progress.log"), "=== Codex 结束：exit=0，用时 0.3 分钟，汇报在 /report.md ===\n");
+  writeFileSync(join(directory, "gh-4.log"), JSON.stringify({ type: "turn.completed", usage: { input_tokens: 999, cached_input_tokens: 999, output_tokens: 999 } }) + "\n");
+  for (const usage of [{ input: 120, cached: 50, output: 30 }, null]) {
+    writeFileSync(join(directory, "gh-4.json"), JSON.stringify({ v: 1, framework: "codex", success: true, usage }));
+    const result = f.run("只读验收", { args: ["--no-commits", "--dry-run"] });
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /999/);
+    if (usage) assert.match(result.stdout, /用时 0.3 分钟，输入 120（其中缓存 50），输出 30 tokens/);
+    else assert.match(result.stdout, /输入 未知（其中缓存 未知），输出 未知 tokens；不完整/);
+  }
+});
