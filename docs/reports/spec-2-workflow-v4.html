@@ -157,9 +157,9 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
   "repo": "JinhaoFang/agent-workflow",
   "pr": {
    "number": 13,
-   "state": "待合并"
+   "state": "已合并"
   },
-  "result": "方法层收拢成五条思路，测试分层、验证台账、评分表和按六点重做的汇报模板已落地，10 张工单全部关闭，本机 CI 416 项通过。必读说明的体量没有变少（50,495 → 50,908 字节）。PR #13 待合并。",
+  "result": "方法层收拢成五条思路，测试分层、验证台账、评分表和按六点重做的汇报模板已落地，10 张工单全部关闭，本机 CI 416 项通过。必读说明的体量没有变少（50,495 → 50,908 字节）。PR #13 已合并，打了 workflow-v4 tag，三个仓库 10-31 已切换（video-studio#113、design-system#88、PathJX-01#244）。",
   "delivered": [
    {
     "what": "五条思路",
@@ -340,14 +340,13 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
    {
     "name": "汇报按六点打分",
     "unit": "",
-    "before": "v3.1：证据只有链接，约 15 分钟读完",
-    "after": "待你打分",
-    "status": "warning",
-    "statusText": "待你打分",
-    "method": "你按六点逐点回答，并记下读完看懂用了多久",
+    "before": "v3 约 10 分钟、v3.1 约 15 分钟读完",
+    "after": "约 5 分钟读完",
+    "status": "good",
+    "statusText": "达成：约 5 分钟，确认采用",
+    "method": "用户读完后反馈阅读用时和是否采用；用户决定不逐点打分",
     "evidence": {
-     "link": "https://github.com/JinhaoFang/agent-workflow/issues/2#issuecomment-6543794554",
-     "linkText": "目标核对"
+     "output": "用户 10-31：阅读约 5 分钟，效果很好，这一版保留和采用；不逐点打分。指出两个问题：风险与遗留还写着三个仓库在用 v3.1；派发明细应按思路 4 画成图（观察第 104、105 条）。"
     }
    },
    {
@@ -366,29 +365,9 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
   ],
   "asks": [
    {
-    "kind": "决定",
-    "what": "合并 PR #13",
-    "why": "10 张工单都已验收，收尾审查的 3 项都修了，本机 CI 416 项通过。合并后我打 workflow-v4 tag，在空仓库试装，在 design-system 的临时副本上试升级。",
-    "options": [
-     "合并",
-     "先看 PR 再定"
-    ],
-    "recommend": "合并"
-   },
-   {
-    "kind": "打分",
-    "what": "按六点给本页打分，并记下读完看懂用了多久",
-    "why": "这是本 spec 目标核对的第 3 项；v3 约 10 分钟，v3.1 约 15 分钟。"
-   },
-   {
-    "kind": "决定",
-    "what": "删除已合并的遗留分支和 worktree",
-    "why": "video-studio：本地和远端分支 docs/v31-evaluation（PR #111 已合并），worktree 和本地、远端分支 docs/method-split-freeze（PR #112 已合并）。agent-workflow：本地分支 chore/scaffold（PR #1 已合并，远端已删）。",
-    "options": [
-     "全部删除",
-     "保留"
-    ],
-    "recommend": "全部删除"
+    "kind": "动手",
+    "what": "产品线那台机器重装 workflow-v4 并运行 doctor",
+    "why": "三个仓库已切换，这台机器都装好了、doctor 全部通过；那台机器不重装会照旧按 v3.1 跑，也不报错。在 PathJX 根目录运行 npx -y skills add JinhaoFang/agent-workflow#workflow-v4 --skill run-spec --skill setup-run-spec -a claude-code -y，再运行 node .claude/skills/run-spec/scripts/tickets.ts doctor。"
    }
   ],
   "evidence": [
@@ -440,13 +419,13 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     "level": "warning",
     "what": "测试分层还没在真实 spec 上检验",
     "impact": "11–16 次是推算；本 spec 自己改的主要是脚本，几乎每张工单都要跑完整验证，看不出分层的效果。",
-    "next": "PathJX 升级后，看下一个 spec 的评分表（目标核对第 6 项）。"
+    "next": "PathJX 已升级（PathJX-01#244），看它下一个 spec 的评分表（目标核对第 6 项）。"
    },
    {
     "level": "warning",
-    "what": "三个仓库还在用 v3.1",
-    "impact": "合并之前，video-studio、design-system、PathJX 都照旧从 video-studio 安装 v3.1。",
-    "next": "合并后按 video-studio → design-system → PathJX 依次切换，每步合并前问你；产品线那台机器要你重装。"
+    "what": "产品线那台机器还在用 v3.1",
+    "impact": "三个仓库 10-31 已换到 v4，这台机器装好了、doctor 全部通过；那台机器重装前照旧按 v3.1 跑，不报错。",
+    "next": "你重装后运行 doctor（第 3 节）。"
    }
   ],
   "findings": [
@@ -454,7 +433,9 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
    "#3 的台账测试调用 cleanup，碰上 #5 新加的评分表拦截，land 5 第一次完整验证失败（3f4cc14 修）。并行工单互相改到对方依赖的行为，合并时才暴露。",
    "#5 用本会话的真实记录实测，才发现用户介入口径的两处漏洞：压缩摘要被算成用户输入、AskUserQuestion 的回答没算（观察第 100 条，返工后修好）。",
    "#7 的手机横向滚动检查量法有误，收尾审查才发现（观察第 102 条）。",
-   "会话在 17:47 中断，两个 Codex 作业被杀：#5 用 --resume 续做；中断后环境变量为空，第一次重派的核查没有启动。"
+   "会话在 17:47 中断，两个 Codex 作业被杀：#5 用 --resume 续做；中断后环境变量为空，第一次重派的核查没有启动。",
+   "汇报写于开 PR 时，合并、打 tag、切换之后，页首、「要你做的」、汇报目标和风险都过时了，用户读时才发现（观察第 104 条，10-31 补更新）。",
+   "派发明细只有折叠的表格，读者要比较各次派发的分钟和用量，按思路 4 应该画图（观察第 105 条，下个版本改模板）。"
   ],
   "notes": [
    {
@@ -476,6 +457,10 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
    {
     "item": "用户介入 5 次",
     "note": "包括会话开头的任务说明、中断后的\"继续当前任务\"和三次 AskUserQuestion 的回答；压缩摘要不算。"
+   },
+   {
+    "item": "本页更新",
+    "note": "10-31 三个仓库切换完成、用户读完后，更新了页首、要你做的、「汇报按六点打分」一项、风险两条和流程发现两条；评分表和其余数据仍是开 PR 时的。"
    }
   ]
  },
