@@ -47,6 +47,7 @@
 - `references/` 是参考资料，只读。
 - 调用外部程序时参数用数组传，不拼 shell 字符串。
 - 验证命令：`pnpm verify`，步骤见 `tools/verify.ts`。
+- 实测按 `docs/verification/workflow/README.md`，功能编号见同目录的 `features/`。
 
 ## 目录与归属
 
