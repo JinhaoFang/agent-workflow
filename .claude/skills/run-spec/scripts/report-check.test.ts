@@ -1,6 +1,7 @@
 /**
  * report-check 的 CLI 测试：真实临时 git 仓库、入库 HTML 样本、实际 Chromium。
  * 从命令行核对四项结果、退出码、固定 360 的量法、分段 PNG 和临时目录清理；
+ * 核对启动首行包含浏览器 PID 和临时用户目录绝对路径，成功、检查失败及启动失败后该目录均已删除。
  * 长页覆盖按序分段、每段不高于视口、手机展开折叠和延迟重排、清理后保留全部截图。
  * 延迟溢出样本覆盖视口切换后 150 毫秒才出现的窄屏失败；分段 PNG 共用一处断言。
  * 另测时间线溢出/缺失、路径优先级、Playwright 缓存/PATH 查找、参数和启动失败。
@@ -10,9 +11,9 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { test } from "node:test";
 
 const cli = join(import.meta.dirname, "tickets.ts");
@@ -61,6 +62,16 @@ const repository = () => {
 const results = (stdout: string): { name: string; passed: boolean }[] =>
   [...stdout.matchAll(/^\[(通过|失败)\] ([^：]+)：/gm)].map((match) => ({ name: match[2], passed: match[1] === "通过" }));
 
+const assertBrowserSite = (stdout: string, temporary: string): void => {
+  const matches = [...stdout.matchAll(/^浏览器现场：PID=([1-9]\d*)，用户目录=(.+)$/gm)];
+  assert.equal(matches.length, 1, stdout);
+  const [line, , profile] = matches[0];
+  assert.ok(stdout.startsWith(line + "\n"), "启动后立即输出现场位置");
+  assert.ok(isAbsolute(profile), profile);
+  assert.equal(dirname(profile), temporary);
+  assert.equal(existsSync(profile), false, "日志中的临时用户目录已删除");
+};
+
 const assertScreenshots = (
   stdout: string, directory: string,
   groups: readonly (readonly [group: string, width: number, heights: readonly (number | undefined)[]])[],
@@ -89,7 +100,7 @@ test("report-check 帮助、参数、缺失文件和缺失 Chromium 的退出码
   try {
     const help = repo.run(["report-check", "--help"]);
     assert.equal(help.status, 0, help.stderr);
-    for (const text of ["RUN_SPEC_CHROMIUM", "file://", "<= 360", '[data-slot="timeline"]', "--out", "--chromium", "chromium-headless-shell", "light-1280-01.png", "dark-1280-01.png", "mobile-360-01.png", "1280×800", "360×800", "不输出整页长图", "每组张数和目录"]) {
+    for (const text of ["RUN_SPEC_CHROMIUM", "file://", "<= 360", '[data-slot="timeline"]', "--out", "--chromium", "chromium-headless-shell", "light-1280-01.png", "dark-1280-01.png", "mobile-360-01.png", "1280×800", "360×800", "不输出整页长图", "每组张数和目录", "浏览器现场：PID=<进程号>，用户目录=<绝对路径>"]) {
       assert.ok(help.stdout.includes(text), text);
     }
     assert.match(repo.run(["--help"]).stdout, /report-check <汇报文件>/);
@@ -135,6 +146,7 @@ test("report-check 参数、环境变量、缓存和系统路径按顺序选择"
       const result = repo.run(args, overrides);
       assert.equal(result.status, 0, result.stdout + result.stderr);
       assert.ok(result.stdout.includes(`Chromium：${expected}\n`), result.stdout);
+      assert.ok(!result.stdout.includes("浏览器现场："), result.stdout);
     };
     check(explicit, [...base, "--chromium", explicit], { RUN_SPEC_CHROMIUM: environment });
     check(environment, base, { RUN_SPEC_CHROMIUM: environment });
@@ -166,6 +178,7 @@ test("report-check 启动失败以 2 退出且删除临时用户目录", () => {
     assert.equal(result.status, 2, result.stdout + result.stderr);
     assert.match(result.stderr, /出错：Chromium 启动失败（退出码 3）/);
     assert.match(result.stderr, /伪浏览器启动失败/);
+    assertBrowserSite(result.stdout, repo.temporary);
     assert.deepEqual(readdirSync(repo.temporary), []);
   } finally {
     rmSync(repo.root, { recursive: true, force: true });
@@ -191,6 +204,7 @@ for (const [name, failure] of [
         RUN_SPEC_CHROMIUM: explicit ? join(repo.root, "不可用的环境变量") : browser,
       });
       assert.equal(result.status, failure ? 1 : 0, result.stdout + result.stderr);
+      assertBrowserSite(result.stdout, repo.temporary);
       const checks = results(result.stdout);
       assert.equal(checks.length, 4, result.stdout);
       assert.deepEqual(checks.filter((item) => !item.passed).map((item) => item.name), failure ? [failure] : []);
@@ -229,6 +243,7 @@ test("report-check 长页按视口分段，手机展开折叠并等延迟重排�
       PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
     });
     assert.equal(result.status, 0, result.stdout + result.stderr);
+    assertBrowserSite(result.stdout, repo.temporary);
     assert.equal(results(result.stdout).length, 4, result.stdout);
     assert.ok(results(result.stdout).every((item) => item.passed), result.stdout);
     assert.match(result.stdout, /已展开折叠=1\/1/);
@@ -255,6 +270,7 @@ for (const absent of [false, true]) {
         PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
       });
       assert.equal(result.status, 1, result.stdout + result.stderr);
+      assertBrowserSite(result.stdout, repo.temporary);
       assert.deepEqual(results(result.stdout).filter((item) => !item.passed).map((item) => item.name), ["时间线不滚动"]);
       assert.match(result.stdout, absent ? /浅色区域=0，深色区域=0/ : /"scrollWidth":2000/);
       assert.deepEqual(readdirSync(repo.temporary), []);

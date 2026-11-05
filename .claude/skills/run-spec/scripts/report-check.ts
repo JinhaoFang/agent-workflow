@@ -5,7 +5,8 @@
  * 手机展开全部 details，以固定 360 比 scrollWidth；桌面检查模板的时间线容器。
  * 视口、配色或折叠变化后，等待至少 250 毫秒及连续三帧尺寸稳定，再测量并截图；
  * 浅色、深色、手机按 800 像素高度分段编号。
- * 不输出整页长图；结束时关闭自建浏览器并删除临时用户目录，保留截图。
+ * 不输出整页长图；启动后立即打印浏览器 PID 和临时用户目录的绝对路径，便于中断后精确清理。
+ * 结束时关闭自建浏览器并删除临时用户目录，保留截图。
  * 四项通过退出 0，检查失败退出 1，参数、环境或 CDP 运行错误退出 2；无需仓库配置。
  */
 import { spawn, type ChildProcess } from "node:child_process";
@@ -204,7 +205,7 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
     return;
   }
   mkdirSync(out, { recursive: true });
-  const profile = mkdtempSync(join(tmpdir(), "run-spec-report-check-"));
+  const profile = mkdtempSync(join(resolve(tmpdir()), "run-spec-report-check-"));
   let browser: ChildProcess | undefined;
   let client: Awaited<ReturnType<typeof connect>> | undefined;
   let exited: Promise<void> = Promise.resolve();
@@ -220,6 +221,7 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
       "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
       `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"] });
+    if (browser.pid) console.log(`浏览器现场：PID=${browser.pid}，用户目录=${profile}`);
     exited = new Promise((resolveExit) => {
       browser!.once("exit", () => resolveExit());
       browser!.once("error", () => resolveExit());
@@ -379,6 +381,7 @@ Windows %LOCALAPPDATA%/ms-playwright；先查 chromium_headless_shell-*，再查
 每组从上到下编号：light-1280-01.png、dark-1280-01.png、mobile-360-01.png 等，末段高度不超过 800。
 短页面保留一张视口截图；不输出整页长图。逐张输出绝对路径，并列出每组张数和目录，截图要亲自看。
 --out 默认 out/report-check/<文件名（不含扩展名）>/；输出绝对路径。
+启动浏览器后立即输出一行“浏览器现场：PID=<进程号>，用户目录=<绝对路径>”，中断后按此精确清理。
 结束时只关闭自建浏览器、删除临时用户目录，保留截图。
 --dry-run 只显示文件、浏览器和截图目录；--help 以 0 退出。
 四项全通过退出 0；有失败退出 1；文件不存在、找不到 Chromium、运行出错退出 2。`,
