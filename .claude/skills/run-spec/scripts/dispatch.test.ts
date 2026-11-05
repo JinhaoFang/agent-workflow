@@ -391,7 +391,7 @@ test("seat dispatch selects frontend pi, supports work type overrides, diagnoses
     const frontend = f.run(["--dry-run"], { body: "## 任务\n\n工作类型：前端\n\n页面" });
     assert.equal(frontend.status, 0, frontend.stdout + frontend.stderr);
     assert.match(frontend.stdout, /工作类型：前端；框架：pi；模型：zai-coding-cn\/glm-5.3-flash/);
-    assert.match(frontend.stdout, /框架 pi 尚未接入适配器，当前不可用/);
+    assert.doesNotMatch(frontend.stdout, /框架 pi 尚未接入适配器，当前不可用/);
     assert.match(frontend.stdout, /工单正文 工作类型/);
     const directory = process.env.TICKET_25_EVIDENCE;
     if (directory) {
@@ -413,10 +413,6 @@ test("seat dispatch selects frontend pi, supports work type overrides, diagnoses
       assert.equal(invalid.status, 2, invalid.stdout + invalid.stderr);
       assert.match(invalid.stderr, /^出错：.*工作类型/);
     }
-    const unavailable = f.run([], { body: "工作类型：前端" });
-    assert.equal(unavailable.status, 2, unavailable.stdout + unavailable.stderr);
-    assert.match(unavailable.stderr, /pi 尚未接入适配器/);
-    assert.ok(!existsSync(f.worktree));
     const actualFallback = f.run([], { body: "工作类型：后端" });
     assert.equal(actualFallback.status, 0, actualFallback.stdout + actualFallback.stderr);
     const summary = JSON.parse(readFileSync(join(f.worktree, ".codex-runs/gh-21.json"), "utf8"));

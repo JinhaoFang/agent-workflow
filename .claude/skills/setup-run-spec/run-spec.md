@@ -60,6 +60,8 @@ npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill se
 
 五个席位是 `engineering`、`review`、`spec-review`、`research`、`watch`。每个席位写 `default` 加工作类型命名档，每档字段为 `agent`（`codex`、`claude`、`pi`）、`model`、`effort`、`permission`（`read-only`、`workspace-write`、`full`）。模型与强度可为 `null`，表示交给框架默认；模型名用各框架自己的写法。`review` 还可写非空列表，`doctor` 逐项展示；单次派发入口不展开审查列表。
 
+pi 的模型写 `提供商/模型`，强度传 `--thinking`；权限损失、技能隔离和会话位置见[接入说明](../run-spec/scripts/dispatch/README.md)。
+
 按内置、用户、仓库顺序叠加，每一层先 `default` 再命名档；对象逐字段覆盖，列表整体替换，每项省略的字段取内置值；高层对象覆盖当前各项的对应字段。环境再覆盖，命令参数最高；空环境值按未设置处理，回落到下一层。并发同样按环境 > 仓库 > 用户 > 内置；环境变量为 `RUN_SPEC_CODEX_CONCURRENCY`、`RUN_SPEC_CLAUDE_CONCURRENCY`、`RUN_SPEC_PI_CONCURRENCY`。兼容 `CODEX_MODEL`、`CODEX_EFFORT`、`CODEX_TIER`、`CODEX_SANDBOX` 和旧 DispatchDock 配置；`codexSandbox` 只补工程 Codex 未配置的权限，`codexConcurrency` 作为仓库 Codex 并发，同层 `agents.codex.concurrency` 优先；`dispatchScript` 忽略并提示删除。
 
 `dispatch --work-type <名称> --agent <框架> --model <模型> --effort <强度>` 只覆盖这次派发，并写进派发补充说明。`doctor` 每个已配置档一行，来源只标非内置项的层名，不展开席位 JSON；回落、适配器 `permissions` 的映射损失、未接适配器各合并提示。安装探测照常；缺少适配器、只读能力有限、用户没配类型档只提示，启动时缺适配器会拒绝。词表外名称在派发选档时拒绝。用户文件允许保留其他仓库的类型档；仓库 `seats` 的类型名必须在自己的词表内。

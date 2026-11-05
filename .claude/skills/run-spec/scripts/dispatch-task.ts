@@ -18,6 +18,9 @@ Claude 使用 stream-json；只读为 plan 加 Read/Glob/Grep/Bash/Skill，可�
 Claude 权限模式没有操作系统沙箱；无人值守的权限提示自动拒绝，关闭 MCP、会话持久化、hooks 和自动记忆。
 Claude 用 skillOverrides 按名称关闭两项项目技能；实际模型取响应，用量取最终 result，实际强度未知时记 null。
 记录：.progress.log、.log、.events.jsonl、.md 及新增同名 .json（成败、用量、实际模型/强度）。
+pi 使用 --mode json，模型写提供商/模型；effort 传 --thinking，实际降档另记。
+pi 会话位于 .codex-runs/<记录名>.pi-sessions/；完整消息取 message_end，缺 agent_settled 判失败。
+pi 按 RPC 清单显式排除两项技能，关闭扩展和 MCP；只读保留 bash 以运行 git diff，靠任务约束且无系统沙箱。
 全局登记沿用 CODEX_DISPATCH_HOME 或 XDG_CONFIG_HOME/codex-dispatch/runs.jsonl；不修改旧记录。
 不提供 Windows 查看窗口、监控托管服务或配置写入；--watch-window 仅兼容接收。
 任务退出码保留框架非零值；适配器判定失败时即使进程退出 0 也失败；缺用量记 null。

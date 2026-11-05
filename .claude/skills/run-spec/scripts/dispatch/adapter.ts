@@ -1,7 +1,7 @@
 /**
  * 派发适配器约定：席位可承载框架、模型、强度、权限和工作类型。
  * 公共层只处理统一事件与生命周期；成败、用量和实际模型均由适配器判定。
- * 已接入框架见 adapters.ts；其他框架由对应适配器工单接入。
+ * 已接入框架见 adapters.ts；框架实现与登记分开维护，新增框架由对应适配器工单接入。
  */
 export type Event = Record<string, any>;
 export type Permission = "read-only" | "workspace-write" | "full";
