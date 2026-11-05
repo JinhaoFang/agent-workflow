@@ -174,8 +174,11 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
   "date": "2026-11-05",
   "timezone": "Asia/Shanghai",
   "repo": "JinhaoFang/agent-workflow",
-  "pr": null,
-  "result": "用户确认的 14 项处理动作已实现：方法层修复已集成，三仓库自有文字分别提交到待合并 PR，本机迁移记忆已改为历史入口。最终完整验证尚待 PR 收尾；上一轮集成 442/442，返工定向回归已通过。 workflow-v5 尚未发 tag，三个消费仓库仍安装 v4；本报告是发布前的验收快照。",
+  "pr": {
+   "number": 21,
+   "state": "待合并、待发布"
+  },
+  "result": "用户确认的 14 项处理动作已实现：方法层修复已集成，三仓库自有文字分别提交到待合并 PR，本机迁移记忆已改为历史入口。最终完整验证 445/445，提交范围检查通过。 workflow-v5 尚未发 tag，三个消费仓库仍安装 v4；本报告是发布前的验收快照。",
   "delivered": [
    {
     "what": "授权、独立审查与工单边界",
@@ -329,7 +332,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
    },
    {
     "claim": "完整集成与返工",
-    "value": "最终完整验证尚待 PR 收尾；上一轮集成 442/442，返工定向回归已通过。",
+    "value": "最终完整验证 445/445，提交范围检查通过。",
     "output": "上轮完整集成 442/442；收尾审查 Standards 1 项、Spec 1 项均接受返工。新增移址保护与损坏首行边界已有定向回归，独立增量复核确认两项关闭。"
    },
    {
@@ -341,6 +344,30 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     "claim": "本轮没有执行删除或发布",
     "value": "真实工作区与分支全部保留，workflow-v5 tag 尚未创建",
     "output": "分支删除和辅助证据保护的验证只在测试夹具中进行；没有运行真实 land/cleanup、合并 PR 或重装消费仓库。"
+   },
+   {
+    "claim": "方法层修复 PR",
+    "value": "PR #21，待合并与发布",
+    "output": "最终完整验证 445/445，提交范围检查通过。",
+    "link": "https://github.com/JinhaoFang/agent-workflow/pull/21"
+   },
+   {
+    "claim": "视频仓库自有规范",
+    "value": "PR #117，待合并",
+    "output": "锁文件和当前 v4 安装未改。本机静态检查通过，远端状态以 PR 检查为准。",
+    "link": "https://github.com/JinhaoFang/video-studio/pull/117"
+   },
+   {
+    "claim": "设计体系仓库自有规范",
+    "value": "PR #91，待合并",
+    "output": "锁文件和当前 v4 安装未改。本机静态检查通过，远端状态以 PR 检查为准。",
+    "link": "https://github.com/JinhaoFang/design-system/pull/91"
+   },
+   {
+    "claim": "PathJX 自有规范",
+    "value": "PR #252，待合并",
+    "output": "锁文件和当前 v4 安装未改。文档专项检查通过，整仓检查的本机环境限制见风险。",
+    "link": "https://github.com/JinhaoFang/PathJX-01/pull/252"
    }
   ],
   "risks": [
@@ -394,6 +421,10 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
     "note": "未提供 Claude 会话是因为当前主会话在 pi。缺数不代表零开销；没有把其它会话内容伪装成本次主会话。"
    },
    {
+    "item": "基线口径",
+    "note": "修复前 416/416 基线发生在 spec16 建立之前，直接运行 pnpm verify，没有本 spec 的台账归属。页面完整验证次数只来自现有评分表，不包含这次基线，未手补为过程数据。"
+   },
+   {
     "item": "审核依据",
     "note": "Standards 与 Spec 两轴各 1 项，均处理；增量复核分别确认关闭。完整报告和原始输出保留在本机 .codex-runs 与仓库外任务目录，关键摘要在本页。"
    }
@@ -409,8 +440,8 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
    "review-16-spec",
    "review-16-standards"
   ],
-  "cutoffAt": "2026-11-05T05:59:35.583Z",
-  "collectedAt": "2026-11-05T05:59:37.564Z",
+  "cutoffAt": "2026-11-05T06:48:11.760Z",
+  "collectedAt": "2026-11-05T06:48:14.106Z",
   "verification": {
    "value": {
     "runs": [
@@ -426,11 +457,64 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
       "queuedMinutes": 0,
       "minutes": 1.2053333333333334,
       "exitCode": 0
+     },
+     {
+      "layer": "static",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/16-workflow-v5",
+      "start": "2026-11-05T06:13:50.506Z",
+      "end": "2026-11-05T06:13:53.572Z",
+      "queuedMinutes": 0,
+      "minutes": 0.0511,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "pr",
+       "number": 21
+      },
+      "caller": "pr-check",
+      "branch": "spec/16-workflow-v5",
+      "start": "2026-11-05T06:16:51.555Z",
+      "end": "2026-11-05T06:18:04.286Z",
+      "queuedMinutes": 0,
+      "minutes": 1.2121833333333334,
+      "exitCode": 0
+     },
+     {
+      "layer": "static",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/16-workflow-v5",
+      "start": "2026-11-05T06:37:21.226Z",
+      "end": "2026-11-05T06:37:24.294Z",
+      "queuedMinutes": 0,
+      "minutes": 0.051133333333333336,
+      "exitCode": 0
+     },
+     {
+      "layer": "static",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/16-workflow-v5",
+      "start": "2026-11-05T06:48:08.690Z",
+      "end": "2026-11-05T06:48:11.756Z",
+      "queuedMinutes": 0,
+      "minutes": 0.0511,
+      "exitCode": 0
      }
     ],
-    "fullCount": 1,
-    "fullMinutes": 1.2053333333333334,
-    "staticCount": 0
+    "fullCount": 2,
+    "fullMinutes": 2.4175166666666668,
+    "staticCount": 3
    },
    "reason": null
   },
@@ -812,9 +896,25 @@ footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
       {
        "start": "2026-11-05T05:35:58.584Z",
        "end": "2026-11-05T05:37:10.904Z"
+      },
+      {
+       "start": "2026-11-05T06:13:50.506Z",
+       "end": "2026-11-05T06:13:53.572Z"
+      },
+      {
+       "start": "2026-11-05T06:16:51.555Z",
+       "end": "2026-11-05T06:18:04.286Z"
+      },
+      {
+       "start": "2026-11-05T06:37:21.226Z",
+       "end": "2026-11-05T06:37:24.294Z"
+      },
+      {
+       "start": "2026-11-05T06:48:08.690Z",
+       "end": "2026-11-05T06:48:11.756Z"
       }
      ],
-     "minutes": 1.2053333333333334
+     "minutes": 2.57085
     },
     "reason": null
    },
