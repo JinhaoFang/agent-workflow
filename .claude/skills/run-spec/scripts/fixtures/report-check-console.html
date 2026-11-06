@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- 控制台错误样本：console.error 和未捕获异常各一次；只有控制台检查应失败。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>控制台错误样本</title>
+<style>
+body { margin: 0; font: 16px/1.6 system-ui, sans-serif; }
+[data-slot="timeline"] { height: 40px; background: #3987e5; }
+</style>
+</head>
+<body>
+<h1>控制台错误</h1>
+<div data-slot="timeline" aria-label="时间线"></div>
+<script>
+{
+  console.error("汇报样本的控制台错误");
+  throw new Error("汇报样本的未捕获异常");
+}
+</script>
+</body>
+</html>

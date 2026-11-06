@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- 长汇报样本：桌面高 1732 像素，手机展开折叠后高 3332 像素，延迟重排后高 4132 像素；核对分段与页面结尾。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>长汇报样本</title>
+<style>
+:root { color-scheme: light dark; }
+body { margin: 0; font: 16px/1.6 system-ui, sans-serif; }
+h1, p { margin: 0; }
+section { box-sizing: border-box; height: 800px; padding: 16px; }
+.first { background: #206090; color: white; }
+.second { background: #609020; color: white; }
+.ending { height: 100px; }
+summary { height: 32px; line-height: 32px; }
+[data-slot="timeline"] { height: 40px; background: #3987e5; }
+</style>
+</head>
+<body>
+<main>
+<section class="first"><h1>第一段</h1><div data-slot="timeline" aria-label="时间线"></div></section>
+<section class="second"><h1>第二段</h1></section>
+<section class="ending"><p>正文末段，不能丢失。</p></section>
+</main>
+<details><summary>手机截图必须展开的验收明细</summary>
+<section class="first"><p>折叠明细第一段</p></section>
+<section class="second"><p>折叠明细第二段及页面结尾</p></section>
+</details>
+<section class="first" data-late hidden><p>尺寸切换后延迟重排的页面结尾，不能漏截。</p></section>
+<script>
+{
+  addEventListener("resize", () => {
+    if (innerWidth === 360) setTimeout(() => { document.querySelector("[data-late]").hidden = false; }, 150);
+  });
+}
+</script>
+</body>
+</html>

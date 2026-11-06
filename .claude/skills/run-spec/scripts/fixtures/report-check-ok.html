@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- 正常汇报样本：响应式时间线和可展开明细；report-check 应四项通过。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>正常汇报样本</title>
+<style>
+:root { color-scheme: light dark; }
+body { margin: 0; font: 16px/1.6 system-ui, sans-serif; }
+main { max-width: 1080px; margin: auto; padding: 16px; }
+[data-slot="timeline"] { height: 40px; background: #3987e5; }
+details { margin-top: 16px; }
+</style>
+</head>
+<body><main>
+<h1>正常汇报</h1>
+<p>完成两张工单，验证通过。</p>
+<div data-slot="timeline" aria-label="时间线"></div>
+<details><summary>验收明细</summary><p>明细随页面宽度排版。</p></details>
+</main></body>
+</html>

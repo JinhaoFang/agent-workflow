@@ -1,0 +1,1629 @@
+<!doctype html>
+<!--
+spec 汇报模板（workflow-v5 候选）：单文件，浏览器直接打开，可断网使用。用法和每节的数据见同目录 report.md。
+只替换文件末尾 data-slot="data" 的 JSON：{"report": 设计负责人填写的部分, "scorecard": tickets.ts scorecard --out 的原样输出}。
+节次按六点：做了什么和效果、目标与证明、要你做的、证据、代价与时间、风险与遗留；流程发现和数据口径折叠在最后。
+时间线、时间去向、验证卡片和用量都只读 scorecard；缺数显示"未记录"和 reason，不按零画。超过 45 分钟的空档压成竖纹。
+图按容器宽度绘制，窗口变宽变窄时重画；配色是 dataviz 默认色板的浅色、深色两套，状态色只用于状态。
+脚本在一个块作用域里，不新增全局名字。示例数据是 video-studio spec #94（评分表由 agent-workflow #9 重建）。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spec 汇报</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10); --wash: rgba(11,11,11,.04);
+  --claude: #8054bd; --pi: #0b7f9c;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --goodtext: #006300;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10); --wash: rgba(255,255,255,.05);
+    --claude: #b18cde; --pi: #4cbfdc;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --goodtext: #0ca30c;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 24px 20px 64px; }
+header { margin-bottom: 8px; }
+h1 { font-size: 24px; line-height: 1.3; margin: 4px 0 8px; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+h3 { font-size: 15px; margin: 0 0 6px; }
+p { margin: 0 0 8px; }
+a { color: var(--s1); }
+.meta, .muted { color: var(--muted); font-size: 13px; }
+.lead { font-size: 16px; color: var(--ink2); }
+section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+.banner { display: block; margin: 12px 0 4px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--serious); color: var(--ink); text-decoration: none; background: var(--wash); }
+.banner b { color: var(--ink); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.tile .v { font-size: 24px; font-weight: 600; line-height: 1.2; }
+.tile .k { color: var(--ink2); font-size: 13px; }
+.tile .n { color: var(--muted); font-size: 12px; }
+ul.plain, ol.plain { margin: 0; padding-left: 20px; }
+ul.plain li, ol.plain li { margin: 4px 0; }
+.card { border-top: 1px solid var(--grid); padding: 12px 0; }
+.card:first-child { border-top: 0; padding-top: 0; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.status { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.status i { font-style: normal; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: #fff; font-size: 11px; }
+.st-good i { background: var(--good); } .st-warning i { background: var(--warning); color: #0b0b0b; }
+.st-serious i { background: var(--serious); } .st-critical i { background: var(--critical); } .st-info i { background: var(--muted); }
+pre { margin: 6px 0 0; padding: 8px 10px; background: var(--wash); border-radius: 6px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow: auto; }
+img.thumb { max-width: 100%; max-height: 220px; border: 1px solid var(--border); border-radius: 6px; display: block; margin-top: 6px; }
+.ev { margin-top: 6px; font-size: 13px; color: var(--ink2); }
+.ev .num { font-size: 18px; color: var(--ink); font-weight: 600; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: var(--ink2); font-size: 12px; font-family: inherit; }
+svg .axis { stroke: var(--axis); stroke-width: 1; }
+svg .gridl { stroke: var(--grid); stroke-width: 1; }
+svg .lane { fill: var(--wash); }
+.chart { margin: 10px 0 18px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink2); margin: 6px 0; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); vertical-align: -1px; }
+details { margin-top: 10px; }
+summary { cursor: pointer; color: var(--ink2); font-size: 14px; }
+.tw { overflow-x: auto; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15); max-width: 280px; white-space: pre-line; }
+.empty { color: var(--muted); font-size: 14px; }
+.dispatch-chart { margin: 10px 0 18px; }
+.dispatch-item { padding: 10px 0; border-top: 1px solid var(--grid); min-width: 0; }
+.dispatch-item:first-child { border-top: 0; }
+.dispatch-heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin-bottom: 5px; }
+.dispatch-heading b { overflow-wrap: anywhere; }
+.dispatch-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 310px); gap: 12px; align-items: center; }
+.dispatch-track { height: 10px; background: var(--wash); border-radius: 3px; overflow: hidden; }
+.dispatch-fill { height: 100%; background: var(--dispatch-color); border-radius: 3px; }
+.dispatch-unknown { background: transparent; border: 1px dashed var(--axis); }
+.dispatch-meta { font-size: 12px; color: var(--ink2); overflow-wrap: anywhere; }
+.dispatch-reason { font-size: 12px; color: var(--ink2); margin-top: 4px; overflow-wrap: anywhere; }
+.dispatch-exit { color: var(--critical); font-weight: 600; }
+footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
+@media (max-width: 640px) {
+  main { padding: 16px 12px 48px; }
+  section { padding: 14px 12px; }
+  .row { grid-template-columns: 1fr; }
+  .dispatch-line { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  h1 { font-size: 20px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="meta" data-slot="meta"></p>
+    <h1 data-slot="title"></h1>
+    <p class="lead" data-slot="result"></p>
+    <a class="banner" href="#asks" data-slot="banner" hidden></a>
+  </header>
+
+  <section id="done">
+    <h2>1. 做了什么，效果如何</h2>
+    <div class="tiles" data-slot="done-tiles"></div>
+    <div data-slot="delivered"></div>
+  </section>
+
+  <section id="goals">
+    <h2>2. 目标与证明</h2>
+    <p class="muted">按 spec 问题陈述里的现状，用同一口径重测。灰点是改前，蓝点是改后，竖线是目标。</p>
+    <div data-slot="goals"></div>
+  </section>
+
+  <section id="asks">
+    <h2>3. 要你做的</h2>
+    <div data-slot="asks"></div>
+  </section>
+
+  <section id="evidence">
+    <h2>4. 证据</h2>
+    <p class="muted">可以抽查的实测值、命令输出和截图，链接只作补充。</p>
+    <div data-slot="evidence"></div>
+  </section>
+
+  <section id="cost">
+    <h2>5. 代价与时间</h2>
+    <h3>时间线</h3>
+    <p class="muted">按资源分泳道；超过 45 分钟没有活动的空档压缩成一道竖纹。</p>
+    <div class="legend" data-slot="lane-legend"></div>
+    <div class="chart" data-slot="timeline"></div>
+    <h3>时间去向</h3>
+    <div class="chart" data-slot="time-bars"></div>
+    <h3>验证与合并</h3>
+    <div class="tiles" data-slot="verify-tiles"></div>
+    <h3>用量</h3>
+    <p class="muted">输入含缓存读取；条长是输入 token。</p>
+    <div class="chart" data-slot="usage-bars"></div>
+    <p class="muted" data-slot="usage-note"></p>
+    <h3>逐次派发</h3>
+    <p class="muted">每条是一次派发，条长按分钟使用同一刻度，颜色按框架。未知时不画时长，显示原因；悬停或聚焦可查看完整字段。</p>
+    <div class="dispatch-chart" data-slot="dispatch-bars" role="group" aria-label="逐次派发的分钟与用量"></div>
+    <details><summary>派发表格（查找）</summary><div data-slot="dispatch-table"></div></details>
+    <details><summary>验证明细</summary><div data-slot="verify-table"></div></details>
+  </section>
+
+  <section id="risks">
+    <h2>6. 风险与遗留</h2>
+    <div data-slot="risks"></div>
+  </section>
+
+  <details>
+    <summary>流程发现与数据口径</summary>
+    <div data-slot="findings"></div>
+    <div data-slot="notes"></div>
+  </details>
+
+  <footer data-slot="footer"></footer>
+</main>
+<div class="tip" data-slot="tip" hidden></div>
+
+<script type="application/json" data-slot="data">
+{
+ "report": {
+  "spec": 23,
+  "title": "汇报检查与验证入口",
+  "date": "2026-11-05",
+  "timezone": "Asia/Shanghai",
+  "repo": "JinhaoFang/agent-workflow",
+  "pr": {
+   "number": 46,
+   "state": "待合并；基于 #22 的分支，#39 合并后改基到 main"
+  },
+  "result": "汇报的浏览器检查做成了随 run-spec 发布的 tickets.ts report-check，正常页面和五种问题页面结果区分得开，第 102 条的错误量法也被样本锁住。新增可选技能 verification，为本仓库生成了验证入口并实跑；维护流程能发现故意注入的漂移。必读说明比 #22 收尾时少 78 字节。",
+  "delivered": [
+   {
+    "what": "汇报检查命令 report-check",
+    "tickets": [
+     40,
+     44,
+     45
+    ],
+    "meaning": "交付汇报前跑一条命令：控制台、全局名、窄屏、时间线四项自动判定，输出三组按屏幕高度分段、能直接看清的截图；不再每次现写脚本，三个使用仓库升级后都能用。"
+   },
+   {
+    "what": "可选技能 verification",
+    "tickets": [
+     41
+    ],
+    "meaning": "想让【实测】有固定办法的仓库，装上它，派一张工单就能生成“怎么启动、怎么驱动、什么结果算证明”的验证入口；功能改了照维护流程核对。"
+   },
+   {
+    "what": "本仓库的验证入口",
+    "tickets": [
+     42,
+     43,
+     45
+    ],
+    "meaning": "docs/verification/workflow/ 有汇报页面、候选安装、各框架派发三个功能；以后改方法层时，【实测】照它跑，并引用功能编号。"
+   }
+  ],
+  "goals": [
+   {
+    "name": "汇报检查的量法",
+    "unit": "",
+    "before": "每次现写；一次量法写错（和 innerWidth 比）恒为零没人发现；脚本随清理消失",
+    "after": "随 run-spec 发布的 report-check，问题样本各只在对应一项失败",
+    "status": "good",
+    "statusText": "能分辨好坏",
+    "method": "CLI 测试样本入库：一个正常页面，横向溢出、延迟出现的溢出、控制台报错、新增全局名、缺时间线各一个问题页面；再对最新两份真实汇报各跑一次。",
+    "evidence": {
+     "output": "overflow  [失败] 窄屏不横向滚动：scrollWidth=600，设定宽度=360，innerWidth=600\nconsole   [失败] 控制台零报错：console.error=1，未捕获异常=1\nglobal    [失败] 无新增全局名：新增=1，名字=[\"reportCheckLeak\"]\nok        四项通过；spec-22、spec-16 两份真实汇报四项通过"
+    }
+   },
+   {
+    "name": "【实测】有固定入口",
+    "unit": "",
+    "before": "没有，每张工单现场摸索",
+    "after": "docs/verification/workflow/：三个功能，照它实跑过汇报和安装",
+    "status": "good",
+    "statusText": "已生成并实跑",
+    "method": "按 verification 技能的生成流程派工单生成，照入口从启动到收拾现场跑一遍，收拾后核对证据仍在。",
+    "evidence": {
+     "output": "report：四项通过，分段截图逐张查看，收拾后证据仍在；\ninstall：两个技能、两个框架入口逐文件 SHA-256 一致，doctor 通过，临时仓库已删；\ndispatch：三个框架只做预览。"
+    }
+   },
+   {
+    "name": "功能改了能发现漂移",
+    "unit": "",
+    "before": "无维护办法",
+    "after": "注入的两处漂移都被发现并正确归类",
+    "status": "good",
+    "statusText": "实跑通过",
+    "method": "在临时副本里故意改坏一页说明和一个驱动路径，按维护流程走完五步；再对真实入口维护一次。",
+    "evidence": {
+     "output": "dispatch 页错误席位 → 退出 2 → 归为说明错；\ninstall 驱动路径不存在 → ENOENT 退出 2 → 归为驱动坏；\n修正后三个功能实跑通过。真实入口查出一处说明过时并修正。"
+    }
+   },
+   {
+    "name": "必读说明体量",
+    "unit": "字节",
+    "before": 51174,
+    "after": 51096,
+    "target": "不新增必读规则",
+    "status": "good",
+    "statusText": "少 78",
+    "method": "七份文件 wc -c 合计，口径同 spec #2、#16、#22；起点取 #22 收尾时的值。",
+    "evidence": {
+     "output": "【实测】一句补上功能编号；汇报检查一句换成运行 report-check，细节放 --help。"
+    }
+   },
+   {
+    "name": "其他仓库的验收测法（video-studio #67、design-system 总览页）",
+    "unit": "",
+    "before": "没有“做到什么程度就够”",
+    "after": "工具已就绪，各仓库以后的 spec 里生成",
+    "status": "info",
+    "statusText": "不在本 spec 内",
+    "method": "spec 写明在三个使用仓库生成各自的验证入口不在本 spec 范围。",
+    "evidence": {
+     "output": "升级到 workflow-v5 后，三个仓库都能用 report-check；需要验证入口的再装 verification。"
+    }
+   }
+  ],
+  "asks": [
+   {
+    "kind": "批准",
+    "what": "审阅并合并 PR #39 和 #46",
+    "why": "spec #22、#23 都已验收、全套验证通过；#46 基于 #22 的分支，先合 #39，再把 #46 改基到 main 合并。",
+    "options": [
+     "按顺序批准两个 PR",
+     "指出要调整的具体项"
+    ],
+    "recommend": "先合 #39，再合 #46；两个都合并后，请你批准唯一一次 workflow-v5 发布。"
+   },
+   {
+    "kind": "批准",
+    "what": "批准发布 workflow-v5（含 spec #16、#22、#23）",
+    "why": "发 tag 是对外操作，要你批准。发布后我从 tag 在空仓库核验安装，再依次准备三个使用仓库的升级 PR（同时改各自文字里的工具绑定）；产品线机器由你重装。",
+    "options": [
+     "两个 PR 合并后发布",
+     "暂缓发布"
+    ],
+    "recommend": "两个 PR 合并后发布。"
+   }
+  ],
+  "evidence": [
+   {
+    "claim": "第 102 条的错误量法被样本锁住",
+    "value": "溢出样本 innerWidth=600，按设定宽度 360 判失败",
+    "output": "模拟手机时 innerWidth 会随内容变宽，旧量法 scrollWidth - innerWidth 恒为 0；report-check 固定和 360 比，测试防止退回。"
+   },
+   {
+    "claim": "测量和截图看到同一个布局",
+    "value": "延迟溢出样本修复前测试失败、修复后通过",
+    "output": "模板在 resize 后 150 毫秒才重绘；现在每次切换视口后至少等 250 毫秒，并要求连续三帧尺寸不变，之后才测量。"
+   },
+   {
+    "claim": "截图能直接看清",
+    "value": "分段截图 360×800、1280×800",
+    "output": "第一版是整页长图（手机 360×17779），在查看器里被缩小约 9 倍，验收时退回改成分段。"
+   },
+   {
+    "claim": "verification 技能能从提交安装",
+    "value": "SKILL.md、LICENSE、功能页示例三个文件齐全且内容一致",
+    "output": "从推送后的分支克隆，再 npx skills add --skill verification 装进空仓库；.claude/skills 下是指向 .agents/skills 的软链接，和 run-spec 一样。"
+   }
+  ],
+  "risks": [
+   {
+    "level": "warning",
+    "what": "尚未发布，使用仓库还用不上",
+    "impact": "report-check 和 verification 要等 workflow-v5 发布、三个仓库升级后才能用。",
+    "next": "两个 PR 合并后只发一次 workflow-v5。"
+   },
+   {
+    "level": "warning",
+    "what": "report-check 只在 Linux 实测",
+    "impact": "macOS、Windows 的 Chromium 缓存路径只按文档写入，没有实机验证；找不到时以 2 退出并说明。",
+    "next": "有人在其他系统上用时先跑一次；也可用 --chromium 指定路径。"
+   },
+   {
+    "level": "warning",
+    "what": "窄屏下的查找表要在容器内横向滑动",
+    "impact": "数据口径这类表在手机上右列需要滑动才看得到；属于模板的既有设计，report-check 判通过。",
+    "next": "以后有人反馈手机上难读再改模板。"
+   },
+   {
+    "level": "warning",
+    "what": "验证入口的派发功能只做预览",
+    "impact": "运行时隔离和用量仍靠工单里的真实派发证明，入口里没有实测值。",
+    "next": "需要时按工单要求做一次真实派发。"
+   }
+  ],
+  "findings": [
+   "两次验收拦下了“能跑但不好用”的产出：整页长截图看不清（#40 返工）；验证入口要求宽表滑动取证，却没有可复用的驱动，#43 只好现写脚本，正是第 102 条的老问题。后者靠改判定解决，没有加机制。",
+   "设计负责人的疏漏：根 .gitignore 的 references 规则把技能的示例目录一并忽略，本机看着都在（观察 124）。按批审查发现；安装功能改为从已提交的树安装（#45），以后同类问题能被这个功能查出来。",
+   "spec #23 的分支从 #22 拉出：派发脚本就在主工作区的检出里运行，从 main 拉会让派发退回 DispatchDock。"
+  ],
+  "notes": [
+   {
+    "item": "快照",
+    "note": "本汇报是合并和发布之前的验收快照；之后的状态以 PR 和路线图为准。"
+   },
+   {
+    "item": "主会话",
+    "note": "spec #23 建于 #22 执行期间，两个 spec 在同一个 Claude Code 主会话里完成。评分表按 #23 的时间段统计，所以「设计负责人」「等用户」「用户介入」与 #22 的汇报有重叠，两份的这几项不能相加；派发、验证和合并只算 #23 自己的。"
+   },
+   {
+    "item": "必读说明起点",
+    "note": "取 #22 收尾时的 51,174 字节；对 #16 收尾时的 51,175 同样没有变多。"
+   }
+  ]
+ },
+ "scorecard": {
+  "version": 2,
+  "spec": 23,
+  "mainFrameworks": [
+   "claude"
+  ],
+  "dispatchLanes": {
+   "value": [
+    {
+     "framework": "codex",
+     "time": {
+      "value": {
+       "spans": [
+        {
+         "start": "2026-11-05T13:28:31.872Z",
+         "end": "2026-11-05T13:47:17.668Z"
+        },
+        {
+         "start": "2026-11-05T13:48:28.460Z",
+         "end": "2026-11-05T14:16:51.732Z"
+        },
+        {
+         "start": "2026-11-05T14:19:44.796Z",
+         "end": "2026-11-05T14:43:12.813Z"
+        },
+        {
+         "start": "2026-11-05T14:46:12.379Z",
+         "end": "2026-11-05T15:08:57.548Z"
+        },
+        {
+         "start": "2026-11-05T15:11:12.860Z",
+         "end": "2026-11-05T15:18:13.368Z"
+        },
+        {
+         "start": "2026-11-05T15:19:59.862Z",
+         "end": "2026-11-05T15:28:38.706Z"
+        }
+       ],
+       "minutes": 109.02676666666667
+      },
+      "reason": null
+     }
+    }
+   ],
+   "reason": null
+  },
+  "recordBindings": [
+   "review-23-1",
+   "review-23-final"
+  ],
+  "cutoffAt": "2026-11-05T15:37:02.921Z",
+  "collectedAt": "2026-11-05T15:37:09.136Z",
+  "verification": {
+   "value": {
+    "runs": [
+     {
+      "layer": "full",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/23-verification",
+      "start": "2026-11-05T13:31:11.797Z",
+      "end": "2026-11-05T13:32:50.127Z",
+      "queuedMinutes": 0,
+      "minutes": 1.6388333333333334,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "ticket",
+       "number": 40
+      },
+      "caller": "land",
+      "branch": "ticket/40",
+      "start": "2026-11-05T14:17:17.729Z",
+      "end": "2026-11-05T14:18:48.224Z",
+      "queuedMinutes": 0,
+      "minutes": 1.50825,
+      "exitCode": 0
+     },
+     {
+      "layer": "static",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/23-verification",
+      "start": "2026-11-05T14:19:21.502Z",
+      "end": "2026-11-05T14:19:24.804Z",
+      "queuedMinutes": 0,
+      "minutes": 0.05503333333333333,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/23-verification",
+      "start": "2026-11-05T14:28:09.488Z",
+      "end": "2026-11-05T14:29:41.528Z",
+      "queuedMinutes": 0,
+      "minutes": 1.534,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "ticket",
+       "number": 44
+      },
+      "caller": "land",
+      "branch": "ticket/44",
+      "start": "2026-11-05T14:38:50.901Z",
+      "end": "2026-11-05T14:40:29.371Z",
+      "queuedMinutes": 0,
+      "minutes": 1.6411666666666667,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "ticket",
+       "number": 42
+      },
+      "caller": "land",
+      "branch": "ticket/42",
+      "start": "2026-11-05T14:44:01.326Z",
+      "end": "2026-11-05T14:45:36.438Z",
+      "queuedMinutes": 0,
+      "minutes": 1.5852,
+      "exitCode": 0
+     },
+     {
+      "layer": "static",
+      "target": {
+       "kind": "ticket",
+       "number": 43
+      },
+      "caller": "land",
+      "branch": "ticket/43",
+      "start": "2026-11-05T15:09:23.293Z",
+      "end": "2026-11-05T15:09:26.539Z",
+      "queuedMinutes": 0,
+      "minutes": 0.0541,
+      "exitCode": 0
+     },
+     {
+      "layer": "static",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/23-verification",
+      "start": "2026-11-05T15:19:08.109Z",
+      "end": "2026-11-05T15:19:11.659Z",
+      "queuedMinutes": 0,
+      "minutes": 0.059166666666666666,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "ticket",
+       "number": 45
+      },
+      "caller": "land",
+      "branch": "ticket/45",
+      "start": "2026-11-05T15:29:04.356Z",
+      "end": "2026-11-05T15:30:40.461Z",
+      "queuedMinutes": 0,
+      "minutes": 1.60175,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "pr",
+       "number": 46
+      },
+      "caller": "pr-check",
+      "branch": "spec/23-verification",
+      "start": "2026-11-05T15:32:20.293Z",
+      "end": "2026-11-05T15:33:57.130Z",
+      "queuedMinutes": 0,
+      "minutes": 1.61395,
+      "exitCode": 0
+     },
+     {
+      "layer": "full",
+      "target": {
+       "kind": "main"
+      },
+      "caller": "verify",
+      "branch": "spec/23-verification",
+      "start": "2026-11-05T15:35:20.066Z",
+      "end": "2026-11-05T15:36:55.157Z",
+      "queuedMinutes": 0,
+      "minutes": 1.58485,
+      "exitCode": 0
+     }
+    ],
+    "fullCount": 8,
+    "fullMinutes": 12.707999999999998,
+    "staticCount": 3
+   },
+   "reason": null
+  },
+  "merges": {
+   "value": {
+    "landCount": 6,
+    "fullVerificationFailures": 0,
+    "stops": {
+     "rebaseConflict": 0,
+     "installFailure": 0,
+     "verificationFailure": 0,
+     "pushFailure": 1,
+     "other": 0
+    }
+   },
+   "reason": null
+  },
+  "dispatches": {
+   "value": [
+    {
+     "record": "gh-40",
+     "ticket": 40,
+     "seat": "engineering",
+     "workType": "default",
+     "framework": "codex",
+     "model": null,
+     "effort": null,
+     "permission": "full",
+     "actualModel": "gpt-6.1-sol",
+     "actualEffort": "xhigh",
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-11-05T13:28:31.872Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-11-05T13:47:17.668Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 18.763266666666667,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 1590468,
+       "cachedInputTokens": 1507840,
+       "outputTokens": 30124
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-40-2",
+     "ticket": 40,
+     "seat": "engineering",
+     "workType": "default",
+     "framework": "codex",
+     "model": null,
+     "effort": null,
+     "permission": "full",
+     "actualModel": "gpt-6.1-sol",
+     "actualEffort": "xhigh",
+     "category": {
+      "value": "返工",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-11-05T13:48:28.460Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-11-05T14:16:51.732Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 28.387866666666667,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 4378933,
+       "cachedInputTokens": 4252544,
+       "outputTokens": 28830
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-42",
+     "ticket": 42,
+     "seat": "engineering",
+     "workType": "default",
+     "framework": "codex",
+     "model": null,
+     "effort": null,
+     "permission": "full",
+     "actualModel": "gpt-6.1-sol",
+     "actualEffort": "xhigh",
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-11-05T14:19:44.796Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-11-05T14:43:12.813Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 23.46695,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 2948481,
+       "cachedInputTokens": 2755840,
+       "outputTokens": 31256
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "review-23-1",
+     "ticket": null,
+     "seat": "review",
+     "workType": "default",
+     "framework": "codex",
+     "model": null,
+     "effort": null,
+     "permission": "read-only",
+     "actualModel": "gpt-6.1-sol",
+     "actualEffort": "xhigh",
+     "category": {
+      "value": "审查",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-11-05T14:19:53.583Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-11-05T14:27:41.058Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 7.79125,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 1315497,
+       "cachedInputTokens": 1232128,
+       "outputTokens": 9626
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-44",
+     "ticket": 44,
+     "seat": "engineering",
+     "workType": "default",
+     "framework": "codex",
+     "model": null,
+     "effort": null,
+     "permission": "full",
+     "actualModel": "gpt-6.1-sol",
+     "actualEffort": "xhigh",
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-11-05T14:30:42.757Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-11-05T14:38:29.596Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 7.78065,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 1052941,
+       "cachedInputTokens": 958336,
+       "outputTokens": 14534
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-43",
+     "ticket": 43,
+     "seat": "engineering",
+     "workType": "default",
+     "framework": "codex",
+     "model": null,
+     "effort": null,
+     "permission": "full",
+     "actualModel": "gpt-6.1-sol",
+     "actualEffort": "xhigh",
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-11-05T14:46:12.379Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-11-05T15:08:57.548Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 22.752816666666668,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 2315898,
+       "cachedInputTokens": 2215168,
+       "outputTokens": 27021
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "review-23-final",
+     "ticket": null,
+     "seat": "review",
+     "workType": "default",
+     "framework": "codex",
+     "model": null,
+     "effort": null,
+     "permission": "read-only",
+     "actualModel": "gpt-6.1-sol",
+     "actualEffort": "xhigh",
+     "category": {
+      "value": "审查",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-11-05T15:11:12.860Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-11-05T15:18:13.368Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 7.008466666666667,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 1156038,
+       "cachedInputTokens": 1092096,
+       "outputTokens": 9392
+      },
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-45",
+     "ticket": 45,
+     "seat": "engineering",
+     "workType": "default",
+     "framework": "codex",
+     "model": null,
+     "effort": null,
+     "permission": "full",
+     "actualModel": "gpt-6.1-sol",
+     "actualEffort": "xhigh",
+     "category": {
+      "value": "首次",
+      "reason": null
+     },
+     "start": {
+      "value": "2026-11-05T15:19:59.862Z",
+      "reason": null
+     },
+     "end": {
+      "value": "2026-11-05T15:28:38.706Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 8.6474,
+      "reason": null
+     },
+     "exitCode": {
+      "value": 0,
+      "reason": null
+     },
+     "usage": {
+      "value": {
+       "inputTokens": 932465,
+       "cachedInputTokens": 868096,
+       "outputTokens": 19436
+      },
+      "reason": null
+     }
+    }
+   ],
+   "reason": null
+  },
+  "time": {
+   "dispatchSlots": {
+    "value": {
+     "spans": [
+      {
+       "start": "2026-11-05T13:28:31.872Z",
+       "end": "2026-11-05T13:47:17.668Z"
+      },
+      {
+       "start": "2026-11-05T13:48:28.460Z",
+       "end": "2026-11-05T14:16:51.732Z"
+      },
+      {
+       "start": "2026-11-05T14:19:44.796Z",
+       "end": "2026-11-05T14:43:12.813Z"
+      },
+      {
+       "start": "2026-11-05T14:46:12.379Z",
+       "end": "2026-11-05T15:08:57.548Z"
+      },
+      {
+       "start": "2026-11-05T15:11:12.860Z",
+       "end": "2026-11-05T15:18:13.368Z"
+      },
+      {
+       "start": "2026-11-05T15:19:59.862Z",
+       "end": "2026-11-05T15:28:38.706Z"
+      }
+     ],
+     "minutes": 109.02676666666667
+    },
+    "reason": null
+   },
+   "verification": {
+    "value": {
+     "spans": [
+      {
+       "start": "2026-11-05T13:31:11.797Z",
+       "end": "2026-11-05T13:32:50.127Z"
+      },
+      {
+       "start": "2026-11-05T14:17:17.729Z",
+       "end": "2026-11-05T14:18:48.224Z"
+      },
+      {
+       "start": "2026-11-05T14:19:21.502Z",
+       "end": "2026-11-05T14:19:24.804Z"
+      },
+      {
+       "start": "2026-11-05T14:28:09.488Z",
+       "end": "2026-11-05T14:29:41.528Z"
+      },
+      {
+       "start": "2026-11-05T14:38:50.901Z",
+       "end": "2026-11-05T14:40:29.371Z"
+      },
+      {
+       "start": "2026-11-05T14:44:01.326Z",
+       "end": "2026-11-05T14:45:36.438Z"
+      },
+      {
+       "start": "2026-11-05T15:09:23.293Z",
+       "end": "2026-11-05T15:09:26.539Z"
+      },
+      {
+       "start": "2026-11-05T15:19:08.109Z",
+       "end": "2026-11-05T15:19:11.659Z"
+      },
+      {
+       "start": "2026-11-05T15:29:04.356Z",
+       "end": "2026-11-05T15:30:40.461Z"
+      },
+      {
+       "start": "2026-11-05T15:32:20.293Z",
+       "end": "2026-11-05T15:33:57.130Z"
+      },
+      {
+       "start": "2026-11-05T15:35:20.066Z",
+       "end": "2026-11-05T15:36:55.157Z"
+      }
+     ],
+     "minutes": 12.876299999999997
+    },
+    "reason": null
+   },
+   "queue": {
+    "value": {
+     "spans": [],
+     "minutes": 0
+    },
+    "reason": null
+   },
+   "designLead": {
+    "value": {
+     "spans": [
+      {
+       "start": "2026-11-05T08:14:03.416Z",
+       "end": "2026-11-05T08:19:40.331Z"
+      },
+      {
+       "start": "2026-11-05T08:32:24.821Z",
+       "end": "2026-11-05T08:42:47.190Z"
+      },
+      {
+       "start": "2026-11-05T09:01:57.610Z",
+       "end": "2026-11-05T09:39:28.779Z"
+      },
+      {
+       "start": "2026-11-05T10:00:52.690Z",
+       "end": "2026-11-05T10:13:31.327Z"
+      },
+      {
+       "start": "2026-11-05T10:23:38.008Z",
+       "end": "2026-11-05T10:27:14.835Z"
+      },
+      {
+       "start": "2026-11-05T10:41:42.264Z",
+       "end": "2026-11-05T11:33:31.598Z"
+      },
+      {
+       "start": "2026-11-05T11:46:05.950Z",
+       "end": "2026-11-05T13:34:52.683Z"
+      },
+      {
+       "start": "2026-11-05T13:47:17.812Z",
+       "end": "2026-11-05T13:48:20.787Z"
+      },
+      {
+       "start": "2026-11-05T14:16:51.835Z",
+       "end": "2026-11-05T14:46:21.424Z"
+      },
+      {
+       "start": "2026-11-05T15:08:57.671Z",
+       "end": "2026-11-05T15:37:02.921Z"
+      }
+     ],
+     "minutes": 288.9966333333333
+    },
+    "reason": null
+   },
+   "waitingUser": {
+    "value": {
+     "spans": [
+      {
+       "start": "2026-11-05T08:19:40.331Z",
+       "end": "2026-11-05T08:32:24.821Z"
+      }
+     ],
+     "minutes": 12.7415
+    },
+    "reason": null
+   }
+  },
+  "overhead": {
+   "value": [
+    {
+     "record": "gh-40",
+     "firstEditAt": {
+      "value": "2026-11-05T13:34:53.043Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 6.35285,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 164200,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-40-2",
+     "firstEditAt": {
+      "value": "2026-11-05T13:50:40.006Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 2.1924333333333332,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 118103,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-42",
+     "firstEditAt": {
+      "value": "2026-11-05T14:23:44.291Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 3.9915833333333333,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 393184,
+      "reason": null
+     }
+    },
+    {
+     "record": "review-23-1",
+     "firstEditAt": {
+      "value": null,
+      "reason": "Codex 会话中未找到成功的 apply_patch 事件"
+     },
+     "minutes": {
+      "value": null,
+      "reason": "缺少派发开始或首次成功改文件事件"
+     },
+     "inputTokens": {
+      "value": null,
+      "reason": "首次改文件之前缺少累计 token_count"
+     }
+    },
+    {
+     "record": "gh-44",
+     "firstEditAt": {
+      "value": "2026-11-05T14:32:09.575Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 1.4469666666666667,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 154347,
+      "reason": null
+     }
+    },
+    {
+     "record": "gh-43",
+     "firstEditAt": {
+      "value": "2026-11-05T14:51:44.709Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 5.538833333333334,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 337731,
+      "reason": null
+     }
+    },
+    {
+     "record": "review-23-final",
+     "firstEditAt": {
+      "value": null,
+      "reason": "Codex 会话中未找到成功的 apply_patch 事件"
+     },
+     "minutes": {
+      "value": null,
+      "reason": "缺少派发开始或首次成功改文件事件"
+     },
+     "inputTokens": {
+      "value": null,
+      "reason": "首次改文件之前缺少累计 token_count"
+     }
+    },
+    {
+     "record": "gh-45",
+     "firstEditAt": {
+      "value": "2026-11-05T15:21:58.539Z",
+      "reason": null
+     },
+     "minutes": {
+      "value": 1.97795,
+      "reason": null
+     },
+     "inputTokens": {
+      "value": 114274,
+      "reason": null
+     }
+    }
+   ],
+   "reason": null
+  },
+  "userInterventions": {
+   "value": 5,
+   "reason": null
+  },
+  "failures": {
+   "dispatchWithoutReport": {
+    "value": 0,
+    "reason": null
+   },
+   "landStops": {
+    "value": 1,
+    "reason": null
+   },
+   "verificationLaunch": {
+    "value": 0,
+    "reason": null
+   }
+  },
+  "usage": {
+   "dispatches": {
+    "value": [
+     {
+      "seat": "engineering",
+      "framework": "codex",
+      "usage": {
+       "value": {
+        "inputTokens": 13219186,
+        "cachedInputTokens": 12557824,
+        "outputTokens": 151201
+       },
+       "reason": null
+      }
+     },
+     {
+      "seat": "review",
+      "framework": "codex",
+      "usage": {
+       "value": {
+        "inputTokens": 2471535,
+        "cachedInputTokens": 2324224,
+        "outputTokens": 19018
+       },
+       "reason": null
+      }
+     }
+    ],
+    "reason": null
+   },
+   "mainSession": {
+    "value": {
+     "inputTokens": 155143342,
+     "cachedInputTokens": 154204427,
+     "outputTokens": 409638
+    },
+    "reason": null
+   },
+   "independentReview": {
+    "value": null,
+    "reason": "未记录独立审查或 JSON 用量不完整"
+   },
+   "subagents": {
+    "value": {
+     "inputTokens": 2317482,
+     "cachedInputTokens": 2096640,
+     "outputTokens": 16475
+    },
+    "reason": null
+   },
+   "subagentNotifications": {
+    "value": null,
+    "reason": "未提供 Claude 会话或任务通知没有 subagent_tokens"
+   }
+  },
+  "missing": [
+   {
+    "field": "overhead.review-23-1.firstEditAt",
+    "reason": "Codex 会话中未找到成功的 apply_patch 事件"
+   },
+   {
+    "field": "overhead.review-23-1.minutes",
+    "reason": "缺少派发开始或首次成功改文件事件"
+   },
+   {
+    "field": "overhead.review-23-1.inputTokens",
+    "reason": "首次改文件之前缺少累计 token_count"
+   },
+   {
+    "field": "overhead.review-23-final.firstEditAt",
+    "reason": "Codex 会话中未找到成功的 apply_patch 事件"
+   },
+   {
+    "field": "overhead.review-23-final.minutes",
+    "reason": "缺少派发开始或首次成功改文件事件"
+   },
+   {
+    "field": "overhead.review-23-final.inputTokens",
+    "reason": "首次改文件之前缺少累计 token_count"
+   },
+   {
+    "field": "usage.independentReview",
+    "reason": "未记录独立审查或 JSON 用量不完整"
+   },
+   {
+    "field": "usage.subagentNotifications",
+    "reason": "未提供 Claude 会话或任务通知没有 subagent_tokens"
+   }
+  ]
+ }
+}
+</script>
+<script>
+{
+  const $ = (slot) => document.querySelector(`[data-slot="${slot}"]`);
+  const el = (tag, attrs = {}, ...kids) => {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === "text") node.textContent = v;
+      else if (k === "style") node.style.cssText = v;
+      else node.setAttribute(k, v === true ? "" : v);
+    }
+    for (const kid of kids.flat()) if (kid !== null && kid !== undefined) node.append(kid);
+    return node;
+  };
+  const NS = "http://www.w3.org/2000/svg";
+  const svgEl = (tag, attrs = {}, text) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) node.setAttribute(k, v);
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const put = (slot, ...content) => $(slot).append(...content.flat(2).filter((c) => c !== null && c !== undefined));
+  const DATA = JSON.parse($("data").textContent);
+  const R = DATA.report;
+  const S = DATA.scorecard;
+  const val = (field) => (field && typeof field === "object" && "value" in field ? field.value : field);
+  const why = (field) => (field && typeof field === "object" && field.reason ? field.reason.replace(/^未记录[：:]\s*/, "") : "缺数");
+  const tz = R.timezone || undefined;
+  const fmtNum = (n, digits = 0) => (n === null || n === undefined ? "未知" : Number(n).toLocaleString("zh-CN", { maximumFractionDigits: digits }));
+  const fmtMin = (m) => {
+    if (m === null || m === undefined) return "未知";
+    if (m < 60) return `${fmtNum(m, 1)} 分钟`;
+    return `${Math.floor(m / 60)} 小时 ${Math.round(m % 60)} 分`;
+  };
+  const fmtTok = (n) => (n === null || n === undefined ? "未知" : n >= 1e4 ? `${fmtNum(n / 1e4, n >= 1e6 ? 0 : 1)} 万` : fmtNum(n));
+  const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString("zh-CN", { timeZone: tz, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "未知");
+  const fmtClock = (ms) => new Date(ms).toLocaleTimeString("zh-CN", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false });
+  const link = (text, href) => (href ? el("a", { href, text }) : document.createTextNode(text));
+  const issue = (n) => link(`#${n}`, R.repo ? `https://github.com/${R.repo}/issues/${n}` : null);
+  const status = (level, text) => {
+    const icon = { good: "✓", warning: "!", serious: "!", critical: "✕", info: "i" }[level] || "·";
+    return el("span", { class: `status st-${level}` }, el("i", { text: icon }), text);
+  };
+  const evidenceBlock = (ev) => {
+    if (!ev) return null;
+    const box = el("div", { class: "ev" });
+    if (ev.value) box.append(el("div", { class: "num", text: ev.value }));
+    if (ev.output) box.append(el("pre", { text: ev.output }));
+    if (ev.image) box.append(el("img", { class: "thumb", src: ev.image, alt: ev.imageAlt || "截图" }));
+    if (ev.link) box.append(el("div", {}, link(ev.linkText || "原始记录", ev.link)));
+    return box;
+  };
+  const tip = $("tip");
+  const showTip = (target, x, y) => {
+    if (!target) { tip.hidden = true; return; }
+    tip.textContent = target.getAttribute("data-tip");
+    tip.hidden = false;
+    tip.style.left = `${Math.max(8, Math.min(x + 12, window.innerWidth - tip.offsetWidth - 8))}px`;
+    tip.style.top = `${Math.max(8, Math.min(y + 12, window.innerHeight - tip.offsetHeight - 8))}px`;
+  };
+  document.addEventListener("pointermove", (event) => showTip(event.target.closest && event.target.closest("[data-tip]"), event.clientX, event.clientY));
+  document.addEventListener("focusin", (event) => {
+    const target = event.target.closest && event.target.closest("[data-tip]");
+    if (target) { const box = target.getBoundingClientRect(); showTip(target, box.left, box.top); }
+  });
+  document.addEventListener("focusout", () => { tip.hidden = true; });
+
+  document.title = `spec #${R.spec} 汇报：${R.title}`;
+  $("meta").textContent = [R.date, `spec #${R.spec}`, R.pr ? `PR #${R.pr.number}（${R.pr.state}）` : null].filter(Boolean).join(" · ");
+  $("title").textContent = R.title;
+  $("result").textContent = R.result;
+  const asks = R.asks || [];
+  if (asks.length) {
+    const banner = $("banner");
+    banner.hidden = false;
+    banner.append(el("b", { text: `有 ${asks.length} 件事要你做` }), "：", asks.map((a) => a.what).join("；"), " → 第 3 节");
+  }
+
+  const goals = R.goals || [];
+  const judged = goals.filter((g) => g.status !== "info");
+  const met = judged.filter((g) => g.status === "good").length;
+  const dispatches = val(S && S.dispatches) || [];
+  const tickets = new Set(dispatches.map((d) => d.ticket).filter((t) => t !== null && t !== undefined));
+  const spanStarts = [];
+  const spanEnds = [];
+  if (S) for (const lane of Object.values(S.time || {})) for (const s of (val(lane) || {}).spans || []) { spanStarts.push(Date.parse(s.start)); spanEnds.push(Date.parse(s.end)); }
+  const wall = spanStarts.length ? (Math.max(...spanEnds) - Math.min(...spanStarts)) / 60000 : null;
+  const tile = (v, k, n) => el("div", { class: "tile" }, el("div", { class: "v", text: v }), el("div", { class: "k", text: k }), n ? el("div", { class: "n", text: n }) : null);
+  put("done-tiles", 
+    tile(judged.length ? `${met}/${judged.length}` : "—", "目标达成", [judged.length - met ? `${judged.length - met} 项未完全达成` : null, goals.length - judged.length ? `另 ${goals.length - judged.length} 项只报告` : null].filter(Boolean).join("，") || null),
+    tile(String((R.delivered || []).length), "交付", S ? `派发工单 ${tickets.size} 张` : null),
+    tile(fmtMin(wall), "从开工到数据截点", S ? `截点 ${fmtTime(S.cutoffAt)}` : null),
+  );
+  const delivered = R.delivered || [];
+  put("delivered", delivered.length
+    ? el("div", { class: "tw" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { text: "交付" }), el("th", { text: "工单" }), el("th", { text: "对你的意义" }))),
+        el("tbody", {}, delivered.map((d) => el("tr", {}, el("td", { text: d.what }), el("td", {}, (d.tickets || []).flatMap((t, i) => (i ? [" ", issue(t)] : [issue(t)]))), el("td", { text: d.meaning }))))))
+    : el("p", { class: "empty", text: "无" }));
+
+  const dumbbell = (g, W) => {
+    const nums = [g.before, g.after, g.target].filter((n) => typeof n === "number");
+    if (nums.length < 2) return null;
+    const max = Math.max(...nums) * 1.08 || 1;
+    const H = 46, L = 6, Rr = 6, x = (n) => L + (n / max) * (W - L - Rr);
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${g.name}：改前 ${g.before}，改后 ${g.after}` });
+    svg.append(svgEl("line", { class: "axis", x1: L, x2: W - Rr, y1: 30, y2: 30 }));
+    if (typeof g.before === "number" && typeof g.after === "number") svg.append(svgEl("line", { x1: x(g.before), x2: x(g.after), y1: 18, y2: 18, stroke: "var(--axis)", "stroke-width": 2 }));
+    if (typeof g.target === "number") svg.append(svgEl("line", { x1: x(g.target), x2: x(g.target), y1: 8, y2: 28, stroke: "var(--ink2)", "stroke-width": 2 }));
+    const dot = (n, fill, label, anchorUp) => {
+      const group = svgEl("g", { "data-tip": `${label} ${fmtNum(n, 2)} ${g.unit || ""}` });
+      group.append(svgEl("circle", { cx: x(n), cy: 18, r: 10, fill: "transparent" }), svgEl("circle", { cx: x(n), cy: 18, r: 5, fill, stroke: "var(--surface)", "stroke-width": 2 }));
+      const px = x(n), anchor = px < 40 ? "start" : px > W - 40 ? "end" : "middle";
+      group.append(svgEl("text", { x: anchor === "start" ? Math.max(px - 4, 0) : anchor === "end" ? Math.min(px + 4, W) : px, y: anchorUp ? 8 : 44, "text-anchor": anchor }, `${label} ${fmtNum(n, 2)}`));
+      return group;
+    };
+    if (typeof g.before === "number") svg.append(dot(g.before, "var(--muted)", "改前", true));
+    if (typeof g.after === "number") svg.append(dot(g.after, "var(--s1)", "改后", false));
+    return svg;
+  };
+  const delta = (g) => (typeof g.before === "number" && typeof g.after === "number" && g.before ? `改后比改前 ${g.after >= g.before ? "+" : ""}${fmtNum((100 * (g.after - g.before)) / g.before, 1)}%` : null);
+  const drawGoals = () => {
+  const gw = Math.max(240, Math.floor(($("goals").clientWidth - 16) / (innerWidth > 640 ? 2 : 1)));
+  $("goals").replaceChildren();
+  put("goals", goals.length ? goals.map((g) => el("div", { class: "card" },
+    el("div", { class: "row" },
+      el("div", {},
+        el("h3", {}, g.name, " ", status(g.status || "warning", g.statusText || "")),
+        g.unit ? el("div", { class: "muted", text: `单位：${g.unit}${typeof g.target === "number" ? `；目标 ${fmtNum(g.target, 2)}` : ""}` }) : null,
+        dumbbell(g, gw),
+        typeof g.before !== "number" || typeof g.after !== "number" ? el("div", { class: "pair" }, el("span", { class: "muted", text: "改前 " }), String(g.before ?? "未知"), el("br"), el("span", { class: "muted", text: "改后 " }), String(g.after ?? "未知")) : null,
+        delta(g) ? el("div", { text: delta(g) }) : null,
+        g.method ? el("div", { class: "muted", text: `怎么测：${g.method}` }) : null),
+      el("div", {}, evidenceBlock(g.evidence), (g.links || []).length ? el("div", { class: "ev" }, g.links.flatMap((l, i) => (i ? [" · ", link(l.text, l.href)] : [link(l.text, l.href)]))) : null))))
+    : el("p", { class: "empty", text: "问题陈述没有可度量的现状；判断方法写在第 1 节。" }));
+  };
+
+  put("asks", asks.length ? el("ol", { class: "plain" }, asks.map((a) => el("li", {},
+    el("b", { text: `【${a.kind}】${a.what}` }),
+    a.why ? el("div", { class: "muted", text: a.why }) : null,
+    (a.options || []).length ? el("div", { text: `选项：${a.options.join(" / ")}` }) : null,
+    a.recommend ? el("div", { text: `推荐：${a.recommend}` }) : null)))
+    : el("p", { class: "empty", text: "这次没有要你做的事。" }));
+
+  const evidence = R.evidence || [];
+  put("evidence", evidence.length ? evidence.map((e) => el("div", { class: "card" }, el("div", { class: "row" }, el("div", {}, el("b", { text: e.claim })), evidenceBlock(e))))
+    : el("p", { class: "empty", text: "无" }));
+
+  const framework = (d) => d.framework || d.agent || "codex";
+  const frameworkName = (key) => ({ codex: "Codex", claude: "Claude", pi: "pi" }[key] || key);
+  const frameworkColor = (key) => ({ codex: "var(--s1)", claude: "var(--claude)", pi: "var(--pi)" }[key] || "var(--muted)");
+  const seatName = (key) => ({ engineering: "工程", review: "审查", research: "辅助", "spec-review": "独立审查", watch: "巡检" }[key] || key || "席位未记录");
+  const dispatchLanes = val(S && S.dispatchLanes) || [{ framework: "codex", time: S && (S.time.dispatchSlots || S.time.codexSlots) }];
+  const LANES = [
+    ...dispatchLanes.map((l) => [l.framework, frameworkName(l.framework), frameworkColor(l.framework), l.time]),
+    ...[["verification", "验证", "var(--s2)"], ["queue", "排队", "var(--s3)"], ["designLead", "设计负责人", "var(--s4)"], ["waitingUser", "等用户", "var(--s5)"]].map(([key, name, color]) => [key, name, color, S && S.time[key]]),
+  ];
+  put("lane-legend", LANES.map(([, name, c]) => el("span", { style: `--c:${c}`, text: name })));
+  const dispatchMinutes = (d) => {
+    const value = val(d.minutes);
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  };
+  const longestDispatch = Math.max(1, ...dispatches.map((d) => dispatchMinutes(d) ?? 0));
+  put("dispatch-bars", dispatches.length ? dispatches.map((d) => {
+    const minutes = dispatchMinutes(d), usage = val(d.usage), category = val(d.category), exit = val(d.exitCode);
+    const input = usage && typeof usage.inputTokens === "number" ? usage.inputTokens : null;
+    const details = [
+      d.record || "记录名未记录", d.ticket ? `工单 #${d.ticket}` : "无工单号",
+      `框架：${frameworkName(framework(d))}；席位：${d.seat || "未记录"}；工作类型：${d.workType || "default"}`,
+      `模型：${d.actualModel || d.model || "未记录"}；强度：${d.actualEffort || d.effort || "未记录"}`,
+      `类别：${category ?? "未记录"}`, `开始：${fmtTime(val(d.start))}`, `结束：${fmtTime(val(d.end))}`,
+      minutes === null ? `时长未记录：${why(d.minutes)}` : `时长：${fmtMin(minutes)}`,
+      `退出码：${exit ?? "未记录"}`, input === null ? `输入未记录：${why(d.usage)}` : `输入：${fmtNum(input)} token`,
+      usage ? `缓存输入：${fmtTok(usage.cachedInputTokens)}；输出：${fmtTok(usage.outputTokens)}` : null,
+    ].filter(Boolean).join("\n");
+    const track = el("div", { class: `dispatch-track${minutes === null ? " dispatch-unknown" : ""}`, "aria-hidden": "true" });
+    if (minutes !== null) track.append(el("div", { class: "dispatch-fill", style: `width:${(100 * minutes) / longestDispatch}%` }));
+    const meta = el("div", { class: "dispatch-meta" }, `${frameworkName(framework(d))} · ${category ?? "类别未记录"}${d.seat && seatName(d.seat) !== category ? ` · ${seatName(d.seat)}` : ""}${d.workType && d.workType !== "default" ? ` · ${d.workType}` : ""}`);
+    if (exit !== null && exit !== undefined && exit !== 0) meta.append(" · ", el("span", { class: "dispatch-exit", text: `退出 ${exit}` }));
+    else if (exit === null || exit === undefined) meta.append(" · 退出码未记录");
+    meta.append(input === null ? " · 输入未记录" : ` · 输入 ${fmtTok(input)}`);
+    return el("div", { class: "dispatch-item", style: `--dispatch-color:${frameworkColor(framework(d))}`, tabindex: "0", role: "group", "aria-label": details, "data-tip": details },
+      el("div", { class: "dispatch-heading" }, el("b", { text: d.record || "记录名未记录" }), el("span", { text: minutes === null ? "时长未记录" : fmtMin(minutes) })),
+      el("div", { class: "dispatch-line" }, track, meta),
+      minutes === null ? el("div", { class: "dispatch-reason", text: `未记录：${why(d.minutes)}` }) : null);
+  }) : el("p", { class: "empty", text: "没有派发记录。" }));
+  const timeline = () => {
+    if (!S) return el("p", { class: "empty", text: "没有评分表数据。" });
+    const lanes = LANES.map(([key, name, color, field]) => ({ key, name, color, field, spans: ((val(field) || {}).spans || []).map((s) => [Date.parse(s.start), Date.parse(s.end)]) }));
+    const all = lanes.flatMap((l) => l.spans).sort((a, b) => a[0] - b[0]);
+    if (!all.length) return el("p", { class: "empty", text: "评分表里没有时段。" });
+    const GAP = 45 * 60000;
+    const segs = [];
+    for (const [a, b] of all) {
+      const last = segs[segs.length - 1];
+      if (last && a - last[1] <= GAP) last[1] = Math.max(last[1], b);
+      else segs.push([a, b]);
+    }
+    const W = Math.max(240, $("timeline").clientWidth), LW = W < 600 ? 64 : 92, GW = 14, ROW = 26, TOP = 6, PAD = 4;
+    const active = segs.reduce((n, [a, b]) => n + (b - a), 0) || 1;
+    const usable = W - LW - GW * (segs.length - 1) - PAD;
+    const offsets = [];
+    let cursor = LW;
+    for (const [a, b] of segs) { offsets.push(cursor); cursor += ((b - a) / active) * usable + GW; }
+    const x = (t) => {
+      for (let i = 0; i < segs.length; i++) if (t <= segs[i][1] || i === segs.length - 1) return offsets[i] + ((Math.max(t, segs[i][0]) - segs[i][0]) / active) * usable;
+      return W;
+    };
+    const H = TOP + lanes.length * ROW + 24;
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "按资源分泳道的时间线" });
+    lanes.forEach((lane, i) => {
+      const y = TOP + i * ROW;
+      svg.append(svgEl("rect", { class: "lane", x: LW, y, width: W - LW - PAD, height: ROW - 6, rx: 3 }));
+      svg.append(svgEl("text", { x: LW - 8, y: y + 14, "text-anchor": "end" }, lane.name));
+      if (val(lane.field) === null) svg.append(svgEl("text", { x: LW + 8, y: y + 14 }, W < 600 ? "未记录" : `未记录：${why(lane.field)}`));
+      for (const [a, b] of lane.spans) {
+        const x1 = x(a), w = Math.max(x(b) - x1, 2);
+        const g = svgEl("g", { "data-tip": `${lane.name}\n${fmtClock(a)}–${fmtClock(b)}（${fmtMin((b - a) / 60000)}）` });
+        g.append(svgEl("rect", { x: x1 - 2, y, width: w + 4, height: ROW - 6, fill: "transparent" }), svgEl("rect", { x: x1, y: y + 3, width: w, height: ROW - 12, rx: 2, fill: lane.color }));
+        svg.append(g);
+      }
+    });
+    const base = TOP + lanes.length * ROW;
+    segs.forEach(([a, b], i) => {
+      if (i) {
+        const gx = offsets[i] - GW / 2;
+        svg.append(svgEl("line", { x1: gx - 2, x2: gx - 2, y1: TOP, y2: base - 6, stroke: "var(--axis)" }), svgEl("line", { x1: gx + 2, x2: gx + 2, y1: TOP, y2: base - 6, stroke: "var(--axis)" }));
+        svg.append(svgEl("g", { "data-tip": `空档 ${fmtMin((a - segs[i - 1][1]) / 60000)}` }, svgEl("rect", { x: gx - 7, y: TOP, width: 14, height: base - TOP, fill: "transparent" })));
+      }
+      const px = x(b) - x(a);
+      const step = [15, 30, 60, 120, 240, 480, 960].map((m) => m * 60000).find((s) => (s / Math.max(b - a, 1)) * px >= 70);
+      if (!step) return;
+      for (let t = Math.ceil(a / step) * step; t <= b; t += step) {
+        svg.append(svgEl("line", { class: "gridl", x1: x(t), x2: x(t), y1: base - 4, y2: base }));
+        svg.append(svgEl("text", { x: x(t), y: base + 14, "text-anchor": "middle" }, fmtClock(t)));
+      }
+    });
+    return svg;
+  };
+
+  const hbars = (rows, unitFmt, ariaLabel, W) => {
+    const max = Math.max(1, ...rows.map((r) => r.value || 0));
+    const narrow = W < 600, LW = narrow ? 98 : 150, VW = narrow ? 95 : 280, ROW = 26;
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${rows.length * ROW + 4}`, role: "img", "aria-label": ariaLabel });
+    rows.forEach((r, i) => {
+      const y = i * ROW;
+      svg.append(svgEl("text", { x: LW - 8, y: y + 16, "text-anchor": "end" }, r.label));
+      if (r.value === null || r.value === undefined) { svg.append(svgEl("text", { x: LW, y: y + 16 }, narrow ? "未记录" : `未记录：${r.reason || "缺数"}`)); return; }
+      const w = r.value > 0 ? Math.max(((W - LW - VW) * r.value) / max, 2) : 0;
+      const g = svgEl("g", { "data-tip": r.tip || `${r.label}：${r.text || unitFmt(r.value)}` });
+      g.append(svgEl("rect", { x: LW, y, width: W - LW - VW, height: ROW - 4, fill: "transparent" }), svgEl("rect", { x: LW, y: y + 5, width: w, height: ROW - 14, rx: 2, fill: r.color || "var(--s1)" }));
+      g.append(svgEl("text", { x: LW + w + 8, y: y + 16 }, (narrow ? r.short : r.text) || unitFmt(r.value)));
+      svg.append(g);
+    });
+    return svg;
+  };
+
+  const ver = val(S && S.verification);
+  const merges = val(S && S.merges);
+  const failures = S ? Object.values(S.failures || {}).map(val) : [];
+  const failureSum = failures.every((n) => typeof n === "number") ? failures.reduce((a, b) => a + b, 0) : null;
+  const overhead = (val(S && S.overhead) || []).map((o) => val(o.minutes)).filter((n) => typeof n === "number").sort((a, b) => a - b);
+  const median = overhead.length ? overhead[Math.floor(overhead.length / 2)] : null;
+  put("verify-tiles", 
+    tile(ver ? `${ver.fullCount} 次` : "未记录", "完整验证", ver ? `共 ${fmtMin(ver.fullMinutes)}` : why(S && S.verification)),
+    tile(ver ? `${ver.staticCount} 次` : "未记录", "静态检查"),
+    tile(merges ? `${merges.landCount} 次` : "未记录", "合并（land）", merges ? `完整验证失败 ${merges.fullVerificationFailures} 次` : null),
+    tile(failureSum === null ? "未知" : `${failureSum} 次`, "流程故障", "派发无汇报、land 停下、验证启动失败"),
+    tile(val(S && S.userInterventions) === null || !S ? "未知" : `${val(S.userInterventions)} 次`, "用户介入"),
+    tile(median === null ? "未知" : fmtMin(median), "开工开销（中位）", "派发到第一次改文件"),
+  );
+  if (S) {
+    const n = val(S.usage.subagentNotifications);
+    put("usage-note", n === null ? `任务通知里的子代理 token：未记录（${why(S.usage.subagentNotifications)}）。` : `任务通知报的子代理 token 合计 ${fmtTok(n)}，可和上面子代理一行互相核对。`);
+  }
+
+  const groupedUsage = val(S && S.usage.dispatches);
+  const USAGE = [
+    ...(S && S.version >= 2 ? groupedUsage ? groupedUsage.map((g) => [`${seatName(g.seat)}/${frameworkName(g.framework)}`, g.usage, frameworkColor(g.framework)]) : [["派发用量", S.usage.dispatches, "var(--muted)"]] : [["Codex 派发", S && S.usage.codexDispatch, frameworkColor("codex")], ["Codex 审查", S && S.usage.codexReview, frameworkColor("codex")]]),
+    ...[["mainSession", "主会话"], ["independentReview", "独立审查"], ["subagents", "子代理"]].map(([key, name]) => [name, S && S.usage[key], "var(--muted)"]),
+  ];
+  const drawCharts = () => {
+    drawGoals();
+    for (const slot of ["timeline", "time-bars", "usage-bars"]) $(slot).replaceChildren();
+    put("timeline", timeline());
+    const bw = Math.max(240, $("time-bars").clientWidth);
+    put("time-bars", S ? hbars(LANES.map(([, name, color, field]) => ({ label: name, color, value: (val(field) || {}).minutes ?? null, reason: why(field) })), fmtMin, "各类时间的分钟数", bw) : el("p", { class: "empty", text: "没有评分表数据。" }));
+    put("usage-bars", S ? hbars(USAGE.map(([label, field, color]) => {
+      const u = val(field);
+      return { label, color, value: u ? u.inputTokens : null, reason: why(field), short: u ? `输入 ${fmtTok(u.inputTokens)}` : null,
+        text: u ? `输入 ${fmtTok(u.inputTokens)}（缓存 ${Math.round((100 * u.cachedInputTokens) / (u.inputTokens || 1))}%）· 输出 ${fmtTok(u.outputTokens)}` : null };
+    }), fmtTok, "各来源的输入 token", bw) : el("p", { class: "empty", text: "没有评分表数据。" }));
+  };
+  drawCharts();
+  const resize = { timer: 0, width: innerWidth };
+  addEventListener("resize", () => {
+    if (innerWidth === resize.width) return;
+    resize.width = innerWidth;
+    clearTimeout(resize.timer);
+    resize.timer = setTimeout(drawCharts, 150);
+  });
+
+  const table = (head, rows) => el("div", { class: "tw" }, el("table", {}, el("thead", {}, el("tr", {}, head.map(([t, num]) => el("th", { class: num ? "num" : null, text: t })))),
+    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el("td", { class: head[i][1] ? "num" : null }, c)))))));
+  put("dispatch-table", dispatches.length ? table([["记录"], ["工单"], ["席位 / 类型"], ["框架 / 模型 / 强度"], ["类别"], ["开始"], ["分钟", 1], ["退出码", 1], ["输入", 1], ["输出", 1]],
+    dispatches.map((d) => { const u = val(d.usage); return [d.record || "", d.ticket ? issue(d.ticket) : "", `${d.seat || "未记录"} / ${d.workType || "default"}`, `${frameworkName(framework(d))} / ${d.actualModel || d.model || "未记录"} / ${d.actualEffort || d.effort || "未记录"}`, val(d.category) ?? "未知", fmtTime(val(d.start)), fmtNum(val(d.minutes), 1), String(val(d.exitCode) ?? "未知"), fmtTok(u && u.inputTokens), fmtTok(u && u.outputTokens)]; }))
+    : el("p", { class: "empty", text: "无" }));
+  const runs = (ver && ver.runs) || [];
+  put("verify-table", runs.length ? table([["层"], ["对象"], ["调用方"], ["开始"], ["排队", 1], ["运行", 1], ["退出码", 1]],
+    runs.map((r) => [r.layer === "full" ? "完整" : "静态", r.target.kind === "main" ? "主工作区" : `${r.target.kind === "pr" ? "PR" : "工单"} #${r.target.number}`, r.caller, fmtTime(r.start), fmtNum(r.queuedMinutes, 1), fmtNum(r.minutes, 1), String(r.exitCode)]))
+    : el("p", { class: "empty", text: "无" }));
+
+  const risks = R.risks || [];
+  const LEVEL = { critical: "高", serious: "中", warning: "低", good: "已处理" };
+  put("risks", risks.length ? risks.map((r) => el("div", { class: "card" },
+    el("h3", {}, status(r.level || "warning", LEVEL[r.level] || ""), " ", r.what),
+    r.impact ? el("div", { text: `影响：${r.impact}` }) : null,
+    r.next ? el("div", { class: "muted", text: `去向：${r.next}` }) : null))
+    : el("p", { class: "empty", text: "无" }));
+
+  put("findings", el("h3", { text: "流程发现" }), (R.findings || []).length ? el("ul", { class: "plain" }, R.findings.map((f) => el("li", { text: f }))) : el("p", { class: "empty", text: "无" }));
+  const notes = [...(R.notes || []).map((n) => [n.item, n.note]), ...((S && S.missing) || []).map((m) => [`评分表缺数：${m.field}`, m.reason])];
+  put("notes", el("h3", { text: "数据口径与缺项" }), notes.length ? table([["项"], ["说明"]], notes) : el("p", { class: "empty", text: "无" }));
+  $("footer").textContent = S ? `过程数据来自评分表（tickets.ts scorecard ${R.spec}），截点 ${fmtTime(S.cutoffAt)}，采集 ${fmtTime(S.collectedAt)}。目标、证据、决定和风险由设计负责人填写。` : "没有评分表数据。";
+}
+</script>
+</body>
+</html>

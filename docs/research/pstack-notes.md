@@ -26,6 +26,8 @@ pstack 用一份用户级规则文件 `~/.cursor/rules/pstack-models.mdc` 给每
 
 `create-verification-skill` 为仓库生成项目自己的验证技能（启动、自检、驱动、取证、收拾现场），配一份 feature map：每个功能一页，写用户入口、每步命令和可观察的结束状态；生成后必须照着实跑一次。`maintain-verification-skill` 对照源码和实跑修地图的漂移。原版生成到 `.cursor/skills/`，依赖 cursor-team-kit 的 `control-ui`、`control-cli`，维护时用 Cursor 子代理，所以要改造。它补的是思路 1"同一口径重测"缺少的持久载体。
 
+本仓库的做法（spec #23）：两个技能合成一个可选技能 `verification`（`.claude/skills/verification/`），生成物放中立路径 `docs/verification/<产物>/`，由 `AGENTS.md` 指向，各框架按路径读；汇报的浏览器检查不放进生成物，做成随 run-spec 发布的 `tickets.ts report-check`，所有使用仓库共用一个量法。
+
 ## 其余候选：对应已有观察，本版不做
 
 | 观察 | pstack 的可比较做法 |

@@ -14,6 +14,7 @@
 | 仓库 | 方法层从 `JinhaoFang/video-studio` 带历史抽出，单独成仓库 `JinhaoFang/agent-workflow`（私有）；只放开发流程，视频的组件、风格、工具留在 video-studio；提交尾注改为 `Refs: JinhaoFang/video-studio#号`（用户 10-31） | `README.md` |
 | 开发流程 | 角色只写职责：设计负责人是和用户对话的主会话，工程负责人由它派发，用 `run-spec` 执行 spec。用哪个框架、模型、强度和权限按席位配置，可按工作类型分档；工作类型词表属于仓库，各档用什么属于个人。内置默认等于 v4（工程、审查、调研用 Codex，独立审查用 Claude，巡检用 haiku）；`run-spec` 自带派发层，不再需要 DispatchDock；本版支持 Codex、Claude Code、pi（用户 11-05，spec #22） | `AGENTS.md`、`docs/roles/`、`setup-run-spec/seats.md` |
 | 借鉴 pstack | 按情况三选一：单一主题的技能原样安装；想法有用但绑定 Cursor 的改成自己的；和已定冲突的不用。本版做席位配置（spec #22）和验证技能（spec #23），playbook 等第一个对应的 spec 再改（用户 11-05） | `docs/research/pstack-notes.md` |
+| 汇报检查与验证入口 | 汇报交付前运行 `tickets.ts report-check`，随 run-spec 发布，所有使用仓库共用一个量法；想让【实测】有固定办法的仓库装可选技能 `verification`，生成物放 `docs/verification/<产物>/`，由 `AGENTS.md` 指向（spec #23） | `.claude/skills/verification/`、`run-spec/report.md` |
 | 版本 | 沿用 `workflow-v<N>` 的命名，旧版本 v1～v3.1 的 tag 一起带过来；拆分后的第一个版本是 `workflow-v4`（用户 10-31） | `README.md`，各版本的问题和改法见 `docs/research/run-spec-migration.md` |
 | 方法层怎么改 | 放方法和思路，不放写死的规范；问题先记成观察，经过分析和评估再决定加不加、用什么形式；"汇报给人"由用户打分（用户 10-31） | `AGENTS.md`「怎么改方法层」，评估见 `docs/reports/workflow-v3-1-evaluation.html` |
 | 方法层的组织 | 判断集中写成五条思路，技能正文的步骤和机制指回思路（spec #2） | `.claude/skills/run-spec/principles.md` |
@@ -26,8 +27,8 @@
 
 ## 下一步
 
-**统一发布与安装**：spec #16 已合入 `main`；spec #22（按席位配置框架和模型）的 PR 待用户合并；接着执行 spec #23（验证技能）。三个 spec 一起只发一次 `workflow-v5`，三个仓库和产品线机器各重装一次，按 `README.md` 进行；各仓库自有文字里的工具绑定在升级 PR 里改。测试分层的真实效果仍等 PathJX 下一个业务 spec 的评分表，按 `docs/research/run-spec-migration.md`「用过以后再评估」补上结果。
+**统一发布与安装**：spec #16 已合入 `main`；spec #22（按席位配置框架和模型）和 spec #23（汇报检查与验证入口）的 PR 待用户合并。合并后只发一次 `workflow-v5`，三个仓库和产品线机器各重装一次，按 `README.md` 进行；各仓库自有文字里的工具绑定在升级 PR 里改。测试分层的真实效果仍等 PathJX 下一个业务 spec 的评分表，按 `docs/research/run-spec-migration.md`「用过以后再评估」补上结果。
 
 ## 待定
 
-- **必读说明没有变少**：v3.1 50,495 字节，v4 50,908 字节（spec #2），v5 候选 51,174 字节（spec #16 后 51,175，spec #22 持平）。下个版本用过以后，按 `docs/research/run-spec-migration.md`「用过以后再评估」看哪些机制没用上，再定删什么。
+- **必读说明没有变少**：v3.1 50,495 字节，v4 50,908 字节（spec #2），v5 候选 51,096 字节（spec #16 后 51,175，spec #22 持平，spec #23 少 78）。下个版本用过以后，按 `docs/research/run-spec-migration.md`「用过以后再评估」看哪些机制没用上，再定删什么。
