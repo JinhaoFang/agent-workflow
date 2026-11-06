@@ -8,8 +8,6 @@
 
 ## 安装
 
-`main` 上正在准备 `workflow-v5`，tag 发布前下面的命令还不能用，稳定版本仍是 `workflow-v4`。
-
 在目标仓库的根目录运行：
 
 ```bash
@@ -32,18 +30,17 @@ npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill se
 | `workflow-v3` | 按 PathJX 第一阶段的真实使用改进：派发排队与续做、`verify` `pr-check` `watch` `review-spec` 子命令 | `docs/reports/spec-77-workflow-v3.html` |
 | `workflow-v3.1` | 判定标准第二版、验证环境与验证排队、可直接删除的被忽略文件、`accept` 核对提交、收尾目标核对 | `docs/reports/spec-94-workflow-v3-1.html`，效果评估 `docs/reports/workflow-v3-1-evaluation.html` |
 | `workflow-v4` | 从 video-studio 抽出后的第一版：收拢成五条思路，测试分层、验证台账、评分表，汇报模板按六点重做 | `docs/reports/spec-2-workflow-v4.html` |
-| `workflow-v5`（待发布） | 按全流程核查修正授权边界和规则漂移；独立审查由用户选择；嵌套验证按实际执行统计，辅助派发显式关联，审查索引按需读取，派发明细可视化。角色与工具解绑：按席位和工作类型配置框架与模型，自带派发层支持 Codex、Claude Code、pi。汇报检查做成 `report-check` 命令；新增可选的 `verification` 技能 | `docs/reports/spec-16-workflow-v5.html` |
+| `workflow-v5` | 按全流程核查修正授权边界和规则漂移；独立审查由用户选择；嵌套验证按实际执行统计，辅助派发显式关联，审查索引按需读取，派发明细可视化。角色与工具解绑：按席位和工作类型配置框架与模型，自带派发层支持 Codex、Claude Code、pi。汇报检查做成 `report-check` 命令；新增可选的 `verification` 技能 | `docs/reports/spec-16-workflow-v5.html`、`docs/reports/spec-22-agent-seats.html`、`docs/reports/spec-23-verification.html` |
 
 v3.1 及以前的版本发布在 `JinhaoFang/video-studio`，同名 tag 两边都有，内容相同；已经从 video-studio 安装的仓库照常可用，换到本仓库只需要把命令里的仓库名改掉。
 
 ## 从 v4 升级到 v5
 
-1. **一次重装**：tag 发布后，三个消费仓库和 PathJX 产品线机器各运行上面的安装命令，跑 `doctor`，再核对并提交两个技能的锁文件项。发布前不提前改已安装版本。
+1. **一次重装**：三个消费仓库和 PathJX 产品线机器各运行上面的安装命令，跑 `doctor`，再核对并提交两个技能的锁文件项。
 2. **仓库自己的文字**：角色、工单约定和流程图同步用户已定；派发前独立审查由用户选择，普通恢复按已有授权判断；明确授权时执行者可只推本工单分支。实现位置交执行者，参照和产物准确定位。
 3. **统计按实际执行**：旧台账保留；新调用有父子身份，嵌套包装不重复计完整验证。排队和合并调用仍保留，旧行不按时间重叠猜关系。
 4. **辅助派发也计入**：`scorecard <S> --record <精确记录名>` 可重复，正常运行保存关联，重跑和 `cleanup` 自动沿用。辅助记录缺失时标缺数；新增关联后重发评分表，关联本身不授权删除原始记录。
 5. **单次派发可比较**：汇报模板新增分钟横条，按框架着色，显示类别、非零退出码、输入用量和未知原因，明细表折叠保留。已有 HTML 是独立快照，不会因重装自动改变。
-
 6. **角色与工具解绑**：各席位（工程、审查、独立审查、调研、巡检）用哪个框架和模型写在个人的 `~/.config/agent-workflow/seats.json`，格式见 `setup-run-spec` 的 `seats.md`；仓库只在 `run-spec.json` 写工作类型词表 `workTypes` 和硬要求。不配置时行为和 v4 相同。工单正文写一行 `工作类型：<名称>` 选对应档。
 7. **不再需要 DispatchDock**：派发层随 `run-spec` 自带，`codex-dispatch` 可以卸掉，`run-spec.json` 的 `dispatchScript` 删掉；按批审查和辅助派发改用 `tickets.ts run`。过渡期旧 DispatchDock 正在跑的派发照常占 Codex 名额。
 8. **装到会用的框架**：设计负责人会在 Codex 或 pi 里跑的，安装命令加 `-a codex`；评分表 `--session` 认 Claude Code、Codex、pi 三种主会话。
