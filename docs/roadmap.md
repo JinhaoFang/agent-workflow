@@ -23,12 +23,12 @@
 | 切换顺序 | video-studio → design-system → PathJX 依次改为从本仓库安装，每步合并前问用户；PathJX 产品线那台机器由用户重装（用户 10-31） | `README.md`「从 v3.1 升级到 v4」 |
 | CI | GitHub Actions 的设定不动；私有仓库启动不了，用本机 CI 代替（用户 10-31） | `docs/agents/run-spec.md` |
 | 派发前独立审查 | 是否启动由用户选择，不按任务或 spec 类型自动作为开工门槛（用户 11-05） | `run-spec` 第 2 步、角色模板 |
-| 核查后修复 | C01/C02、D01/D03—D06、E01/E04/E05、F01/G01 和观察 105 一起准备 workflow-v5；D02 按用户选择；消费仓库自有文字分别修，tag 只发布一次；合并后 tag 暂缓，和下一项优化一起发（用户 11-05） | spec #16，`docs/research/run-spec-migration.md` 第 106—114 条 |
+| 核查后修复 | C01/C02、D01/D03—D06、E01/E04/E05、F01/G01 和观察 105 一起准备 workflow-v5；D02 按用户选择；消费仓库自有文字分别修，tag 只发布一次；合并后 tag 暂缓，和下一项优化一起发（用户 11-05）；11-06 和 spec #22、#23 一起发布为 `workflow-v5` | spec #16，`docs/research/run-spec-migration.md` 第 106—114 条 |
 
 ## 下一步
 
-**统一发布与安装**：spec #16 已合入 `main`；spec #22（按席位配置框架和模型）和 spec #23（汇报检查与验证入口）的 PR 待用户合并。合并后只发一次 `workflow-v5`，三个仓库和产品线机器各重装一次，按 `README.md` 进行；各仓库自有文字里的工具绑定在升级 PR 里改。测试分层的真实效果仍等 PathJX 下一个业务 spec 的评分表，按 `docs/research/run-spec-migration.md`「用过以后再评估」补上结果。
+**安装 v5**：`workflow-v5` 已于 11-06 发布（含 spec #16、#22、#23）。三个消费仓库各开一个升级 PR，合并前问用户；PathJX 产品线机器由用户重装；各仓库自有文字里的工具绑定在升级 PR 里改。测试分层和席位配置的真实效果，等消费仓库下一个业务 spec 的评分表，按 `docs/research/run-spec-migration.md`「用过以后再评估」补上结果。
 
 ## 待定
 
-- **必读说明没有变少**：v3.1 50,495 字节，v4 50,908 字节（spec #2），v5 候选 51,096 字节（spec #16 后 51,175，spec #22 持平，spec #23 少 78）。下个版本用过以后，按 `docs/research/run-spec-migration.md`「用过以后再评估」看哪些机制没用上，再定删什么。
+- **必读说明没有变少**：v3.1 50,495 字节，v4 50,908 字节（spec #2），v5 51,096 字节（spec #16 后 51,175，spec #22 持平，spec #23 少 78）。下个版本用过以后，按 `docs/research/run-spec-migration.md`「用过以后再评估」看哪些机制没用上，再定删什么。
