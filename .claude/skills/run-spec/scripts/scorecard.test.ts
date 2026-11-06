@@ -1,6 +1,6 @@
 /**
  * 评分表 CLI 测试：真实临时 git 仓库和 bare origin、持久化假的 gh，固定台账、
- * 派发/进度/Codex/Claude 记录；完整比较预期 JSON，检查缺数、时段并集、归属、
+ * 派发/进度与三框架会话记录；完整比较预期 JSON，检查缺数、时段并集、归属、
  * Claude 摘要与来源过滤、AskUserQuestion 问答、更新同一评论和 cleanup 删除前拦截。
  * SCORECARD_EVIDENCE 可指定输出
  * 固定输入、预期/实际 JSON、手算过程和测试命令记录的验收目录。
@@ -244,17 +244,17 @@ test("verify 和 scorecard 帮助写明启动失败与合并失败的统计口�
 
 const expected = (collectedAt: string) => {
   const spans = (...bounds: [number, number][]) => ({ spans: bounds.map(([a, b]) => ({ start: at(a), end: at(b) })), minutes: bounds.reduce((sum, [a, b]) => sum + b - a, 0) });
-  const dispatch = (record: string, ticket: number | null, category: string, start: number, end: number, usage: ReturnType<typeof tokens>) => ({ record, ticket, category: value(category), start: value(at(start)), end: value(at(end)), minutes: value(end - start), exitCode: value(0), usage: value(usage) });
+  const dispatch = (record: string, ticket: number | null, category: string, start: number, end: number, usage: ReturnType<typeof tokens>) => ({ record, ticket, seat: ticket ? "engineering" : "review", workType: "default", framework: "codex", model: null, effort: null, permission: null, actualModel: null, actualEffort: null, category: value(category), start: value(at(start)), end: value(at(end)), minutes: value(end - start), exitCode: value(0), usage: value(usage) });
   const reasons = ["Codex 会话中未找到成功的 apply_patch 事件", "缺少派发开始或首次成功改文件事件", "首次改文件之前缺少累计 token_count"];
-  return { version: 1, spec: 2, cutoffAt: at(51), collectedAt, verification: value({ runs: [
+  return { version: 2, spec: 2, mainFrameworks: ["claude"], dispatchLanes: value([{ framework: "codex", time: value(spans([0, 20])) }]), cutoffAt: at(51), collectedAt, verification: value({ runs: [
     { layer: "full", target: { kind: "ticket", number: 5 }, caller: "land", branch: "ticket/5", start: at(3), end: at(8), queuedMinutes: 2, minutes: 5, exitCode: 1 },
     { layer: "static", target: { kind: "main" }, caller: "verify", branch: "spec/2-test", start: at(9), end: at(10), queuedMinutes: 0, minutes: 1, exitCode: 0 },
   ], fullCount: 1, fullMinutes: 5, staticCount: 1 }), merges: value({ landCount: 2, fullVerificationFailures: 1, stops: { rebaseConflict: 0, installFailure: 0, verificationFailure: 1, pushFailure: 0, other: 0 } }),
     dispatches: value([dispatch("gh-5", 5, "首次", 0, 20, tokens(1000, 800, 50)), dispatch("review-2-batch", null, "审查", 5, 15, tokens(200, 100, 20))]),
-    time: { codexSlots: value(spans([0, 20])), verification: value(spans([3, 8], [9, 10])), queue: value(spans([1, 3])), designLead: value(spans([0, 21], [45, 50])), waitingUser: value(spans([21, 45])) },
+    time: { dispatchSlots: value(spans([0, 20])), verification: value(spans([3, 8], [9, 10])), queue: value(spans([1, 3])), designLead: value(spans([0, 21], [45, 50])), waitingUser: value(spans([21, 45])) },
     overhead: value([{ record: "gh-5", firstEditAt: value(at(4)), minutes: value(4), inputTokens: value(100) }, { record: "review-2-batch", firstEditAt: value(null, reasons[0]), minutes: value(null, reasons[1]), inputTokens: value(null, reasons[2]) }]),
     userInterventions: value(4), failures: { dispatchWithoutReport: value(0), landStops: value(1), verificationLaunch: value(0) },
-    usage: { codexDispatch: value(tokens(1000, 800, 50)), codexReview: value(tokens(200, 100, 20)), mainSession: value(tokens(150, 20, 10)), independentReview: value(tokens(10, 2, 4)), subagents: value(tokens(26, 12, 6)), subagentNotifications: value(99) },
+    usage: { dispatches: value([{ seat: "engineering", framework: "codex", usage: value(tokens(1000, 800, 50)) }, { seat: "review", framework: "codex", usage: value(tokens(200, 100, 20)) }]), mainSession: value(tokens(150, 20, 10)), independentReview: value(tokens(10, 2, 4)), subagents: value(tokens(26, 12, 6)), subagentNotifications: value(99) },
     missing: ["firstEditAt", "minutes", "inputTokens"].map((field, index) => ({ field: `overhead.review-2-batch.${field}`, reason: reasons[index] })),
   };
 };
@@ -305,7 +305,7 @@ test("缺台账、Codex、Claude 时写 null 和原因；输出文件与 dry-run
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout, "");
     const card = JSON.parse(readFileSync(output, "utf8"));
-    for (const metric of [card.verification, card.merges, card.dispatches.value[0].usage, card.time.designLead, card.time.waitingUser, card.userInterventions, card.usage.codexDispatch]) {
+    for (const metric of [card.verification, card.merges, card.dispatches.value[0].usage, card.time.designLead, card.time.waitingUser, card.userInterventions, card.usage.dispatches.value[0].usage]) {
       assert.equal(metric.value, null); assert.ok(metric.reason);
     }
     const preview = join(f.temporary, "preview.json");
@@ -617,8 +617,9 @@ test("显式辅助关联持久幂等，精确名隔离，跨 spec 冲突和缺�
     assert.equal(auxiliary.ticket, null);
     assert.equal(auxiliary.category.value, "辅助");
     assert.deepEqual(auxiliary.usage.value, tokens(30, 10, 4));
-    assert.deepEqual(card.usage.codexDispatch.value, tokens(1030, 810, 54));
-    assert.deepEqual(card.usage.codexReview.value, tokens(200, 100, 20));
+    assert.deepEqual(card.usage.dispatches.value.find((g: { seat: string }) => g.seat === "engineering").usage.value, tokens(1000, 800, 50));
+    assert.deepEqual(card.usage.dispatches.value.find((g: { seat: string }) => g.seat === "research").usage.value, tokens(30, 10, 4));
+    assert.deepEqual(card.usage.dispatches.value.find((g: { seat: string }) => g.seat === "review").usage.value, tokens(200, 100, 20));
     assert.equal(card.dispatches.value.length, 3);
     const conflict = f.run(["scorecard", "3", "--record", name]);
     assert.notEqual(conflict.status, 0);
@@ -628,7 +629,7 @@ test("显式辅助关联持久幂等，精确名隔离，跨 spec 冲突和缺�
     assert.equal(missing.status, 0, missing.stderr);
     const absent = JSON.parse(missing.stdout);
     assert.ok(absent.missing.some((item: { field: string }) => item.field === "dispatches.missing-work.start"));
-    assert.equal(absent.usage.codexDispatch.value, null);
+    assert.equal(absent.usage.dispatches.value.find((g: { seat: string }) => g.seat === "research").usage.value, null);
   } finally { f.cleanup(); }
 });
 
@@ -766,5 +767,178 @@ test("显式辅助名即使命中既有日志清理前缀也保留原始文件",
     const cleaned = f.run(["cleanup", "2"]);
     assert.equal(cleaned.status, 0, cleaned.stderr);
     assert.equal(readFileSync(join(f.records, "verify-5-helper.log"), "utf8"), "辅助原始记录");
+  } finally { f.cleanup(); }
+});
+
+test("scorecard reads built-in normalized usage before legacy session tokens and does not estimate missing usage", () => {
+  const f = fixture();
+  try {
+    for (const usage of [{ input: 120, cached: 50, output: 30 }, null]) {
+      f.write(join(f.records, "gh-5.json"), JSON.stringify({ v: 1, framework: "codex", success: true, usage }));
+      const result = f.run(["scorecard", "2"]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      const dispatch = card.dispatches.value.find((item: { record: string }) => item.record === "gh-5");
+      assert.deepEqual(dispatch.usage.value, usage ? tokens(120, 50, 30) : null);
+    }
+  } finally { f.cleanup(); }
+});
+
+test("三种脱敏主会话从 CLI 识别，时间和介入口径一致，用量不重复累计", () => {
+  const f = fixture();
+  try {
+    for (const framework of ["claude", "codex", "pi"]) {
+      const source = join(import.meta.dirname, "fixtures", `main-${framework}.jsonl`);
+      const renamed = join(f.temporary, "arbitrary-name.jsonl");
+      cpSync(source, renamed);
+      const result = f.run(["scorecard", "2", "--session", source, "--session", renamed, "--session", source]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.deepEqual(card.mainFrameworks, [framework]);
+      assert.equal(card.time.designLead.value.minutes, 10);
+      assert.deepEqual(card.time.waitingUser.value, { spans: [{ start: at(5), end: at(30) }], minutes: 25 });
+      assert.equal(card.userInterventions.value, 2);
+      assert.deepEqual(card.usage.mainSession.value, framework === "codex" ? tokens(200, 50, 20) : tokens(30, 4, 8));
+    }
+    const result = f.run(["scorecard", "2", ...["claude", "codex", "pi"].flatMap((name) => ["--session", join(import.meta.dirname, "fixtures", `main-${name}.jsonl`)])]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.equal(card.userInterventions.value, 6);
+    assert.equal(card.time.designLead.value.minutes, 10);
+    assert.equal(card.time.waitingUser.value.minutes, 25);
+    assert.deepEqual(card.usage.mainSession.value, tokens(260, 58, 36));
+  } finally { f.cleanup(); }
+});
+
+test("Codex 提问回答过滤空答案、异步回执、注入和摘要；累计快照只取最后一个", () => {
+  const f = fixture();
+  try {
+    const path = join(f.temporary, "main.jsonl");
+    for (const end of [10, 11]) {
+      f.lines(path, [
+        { type: "session_meta", timestamp: at(0), payload: { id: "main", cwd: f.root } },
+        { type: "response_item", timestamp: at(0), payload: { type: "function_call", call_id: "ask", name: "functions.request_user_input", arguments: "{}" } },
+        { type: "response_item", timestamp: at(2), payload: { type: "message", role: "user", content: [{ type: "input_text", text: "# AGENTS.md instructions for /sample" }] } },
+        { type: "response_item", timestamp: at(3), payload: { type: "compaction", summary: "摘要" } },
+        { type: "response_item", timestamp: at(4), payload: { type: "function_call_output", call_id: "ask", output: '{"answers":{"choice":{"answers":[]}}}' } },
+        { type: "response_item", timestamp: at(end), payload: { type: "function_call_output", call_id: "ask", output: '{"answers":{"choice":{"answers":["继续"]}}}' } },
+        { type: "token_usage_record", timestamp: at(end), payload: { thread_token_usage: { input_tokens: 100, cached_input_tokens: 60, output_tokens: 8 } } },
+      ]);
+      const result = f.run(["scorecard", "2", "--session", path]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.equal(card.userInterventions.value, 1);
+      assert.equal(card.time.waitingUser.value.minutes, end === 10 ? 0 : 11);
+      assert.deepEqual(card.usage.mainSession.value, tokens(100, 60, 8));
+    }
+    f.lines(path, [
+      { type: "session_meta", timestamp: at(0), payload: { id: "async", cwd: f.root } },
+      { type: "response_item", timestamp: at(0), payload: { type: "function_call", call_id: "async", name: "functions.request_user_input_async" } },
+      { type: "response_item", timestamp: at(1), payload: { type: "function_call_output", call_id: "async", output: '{"id":"pending"}' } },
+      { type: "response_item", timestamp: at(20), payload: { type: "message", role: "user", content: [{ type: "input_text", text: "继续" }] } },
+    ]);
+    const card = JSON.parse(f.run(["scorecard", "2", "--session", path]).stdout);
+    assert.equal(card.userInterventions.value, 1);
+    assert.equal(card.time.waitingUser.value.minutes, 20);
+    assert.equal(card.usage.mainSession.value, null);
+    assert.ok(card.usage.mainSession.reason);
+  } finally { f.cleanup(); }
+});
+
+test("pi 普通工具结果、系统消息和压缩不算用户介入；缺用量与未知格式写明确原因", () => {
+  const f = fixture();
+  try {
+    const path = join(f.temporary, "main.jsonl");
+    for (const end of [10, 11]) {
+      f.lines(path, [
+        { type: "session", version: 3, id: "pi-main", timestamp: at(0), cwd: f.root },
+        { type: "message", id: "reply", timestamp: at(0), message: { role: "assistant", content: [{ type: "text", text: "请确认" }] } },
+        { type: "message", id: "system", timestamp: at(1), message: { role: "system", content: "系统" } },
+        { type: "compaction", id: "summary", timestamp: at(2), summary: "摘要" },
+        { type: "message", id: "result", timestamp: at(3), message: { role: "toolResult", content: [{ type: "text", text: "普通结果" }] } },
+        { type: "message", id: "custom", timestamp: at(4), message: { role: "custom", content: "通知" } },
+        { type: "message", id: "user", timestamp: at(end), message: { role: "user", content: [{ type: "text", text: "继续" }] } },
+      ]);
+      const result = f.run(["scorecard", "2", "--session", path]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.equal(card.userInterventions.value, 1);
+      assert.equal(card.time.waitingUser.value.minutes, end === 10 ? 0 : 11);
+      assert.equal(card.usage.mainSession.value, null);
+      assert.ok(card.usage.mainSession.reason);
+    }
+    f.lines(path, [{ type: "unknown", timestamp: at(0) }]);
+    const card = JSON.parse(f.run(["scorecard", "2", "--session", path]).stdout);
+    for (const metric of [card.time.designLead, card.time.waitingUser, card.userInterventions, card.usage.mainSession]) {
+      assert.equal(metric.value, null); assert.match(metric.reason, /缺少可解析/);
+    }
+    f.lines(path, [
+      { type: "session", version: 3, id: "tool", timestamp: at(0), cwd: f.root },
+      { type: "message", id: "call", timestamp: at(0), message: { role: "assistant", content: [{ type: "text", text: "读文件" }, { type: "toolCall", id: "tool", name: "read" }], usage: { input: 10, output: 2 } } },
+      { type: "message", id: "user", timestamp: at(20), message: { role: "user", content: "继续" } },
+    ]);
+    const tool = JSON.parse(f.run(["scorecard", "2", "--session", path]).stdout);
+    assert.equal(tool.time.waitingUser.value.minutes, 0);
+    assert.equal(tool.userInterventions.value, 1);
+  } finally { f.cleanup(); }
+});
+
+test("仅有全局登记的新派发读取框架、席位和统一用量，不回落到旧 Codex 会话", () => {
+  const f = fixture();
+  try {
+    const file = join(f.dispatch, "runs.jsonl");
+    const rows = readFileSync(file, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    for (const row of rows) if (row.id === "engineering") Object.assign(row, { seat: "engineering", agent: "pi", framework: "pi", workType: "前端", model: "provider/model", effort: "high", actualModel: "provider/actual", actualEffort: "medium", ...(row.event === "end" ? { usage: { input: 80, cached: 30, output: 5 } } : {}) });
+    f.lines(file, rows);
+    const card = JSON.parse(f.run(["scorecard", "2"]).stdout);
+    const dispatch = card.dispatches.value.find((row: { record: string }) => row.record === "gh-5");
+    assert.equal(dispatch.framework, "pi");
+    assert.equal(dispatch.seat, "engineering");
+    assert.equal(dispatch.actualModel, "provider/actual");
+    assert.deepEqual(dispatch.usage.value, tokens(80, 30, 5));
+    assert.deepEqual(card.usage.dispatches.value.find((group: { seat: string }) => group.seat === "engineering").usage.value, tokens(80, 30, 5));
+    assert.ok(card.dispatchLanes.value.some((group: { framework: string }) => group.framework === "pi"));
+  } finally { f.cleanup(); }
+});
+
+test("多框架派发按席位和框架分组，保留配置与实际模型并隔离缺用量", () => {
+  const f = fixture();
+  try {
+    for (const [name, seat, framework, input] of [["gh-5", "engineering", "pi", 100], ["gh-5-second", "engineering", "pi", 20], ["review-2-batch", "review", "claude", 200]] as const) {
+      f.write(join(f.records, `${name}.json`), JSON.stringify({ v: 1, framework, agent: framework, seat, workType: "前端", model: "configured", effort: "high", actualModel: "actual", actualEffort: "medium", permission: "read-only", success: true, usage: { input, cached: 10, output: 5 }, started: at(0), at: at(20), exit: 0 }));
+    }
+    const result = f.run(["scorecard", "2"]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.deepEqual(card.usage.dispatches.value, [{ seat: "engineering", framework: "pi", usage: value(tokens(120, 20, 10)) }, { seat: "review", framework: "claude", usage: value(tokens(200, 10, 5)) }]);
+    assert.deepEqual(card.dispatchLanes.value.map((g: { framework: string }) => g.framework), ["claude", "pi"]);
+    const dispatch = card.dispatches.value.find((row: { record: string }) => row.record === "gh-5-second");
+    assert.equal(dispatch.minutes.value, 20);
+    for (const [key, expected] of Object.entries({ seat: "engineering", framework: "pi", workType: "前端", model: "configured", effort: "high", actualModel: "actual", actualEffort: "medium", permission: "read-only" })) assert.equal(dispatch[key], expected);
+    f.write(join(f.records, "gh-5-second.json"), JSON.stringify({ v: 1, framework: "pi", seat: "engineering", success: true, usage: null }));
+    const incomplete = JSON.parse(f.run(["scorecard", "2"]).stdout);
+    assert.equal(incomplete.usage.dispatches.value[0].usage.value, null);
+    assert.ok(incomplete.usage.dispatches.value[0].usage.reason);
+    assert.deepEqual(incomplete.usage.dispatches.value[1].usage.value, tokens(200, 10, 5));
+  } finally { f.cleanup(); }
+});
+
+test("cleanup 接受新旧两版评分表，post 原位升级旧评论且重复新旧评论拦截", () => {
+  const f = fixture();
+  try {
+    assert.equal(f.run(["scorecard", "2", "--post"]).status, 0);
+    const comments = JSON.parse(readFileSync(f.comments, "utf8"));
+    assert.match(comments[0].body, /^<!-- run-spec-scorecard:v2 -->/);
+    assert.equal(f.run(["cleanup", "2", "--dry-run"]).status, 0);
+    comments[0].body = comments[0].body.replace("scorecard:v2", "scorecard:v1").replace('"version": 2', '"version": 1');
+    f.write(f.comments, JSON.stringify(comments));
+    assert.equal(f.run(["cleanup", "2", "--dry-run"]).status, 0);
+    assert.equal(f.run(["scorecard", "2", "--post"]).status, 0);
+    const updated = JSON.parse(readFileSync(f.comments, "utf8"));
+    assert.equal(updated.length, 1);
+    assert.equal(updated[0].id, comments[0].id);
+    assert.match(updated[0].body, /^<!-- run-spec-scorecard:v2 -->/);
+    f.write(f.comments, JSON.stringify([...comments, { ...updated[0], id: 102 }]));
+    assert.equal(f.run(["scorecard", "2", "--post"]).status, 1);
   } finally { f.cleanup(); }
 });

@@ -239,7 +239,7 @@ test("review comments original conclusion with root, nested agents and cumulativ
     assert.ok(body.startsWith(conclusion + "\n## 用量\n"));
     assert.match(
       body,
-      /派发 review-17-batch-2（会话 root）：用时 1.5 分钟，输入 1,000（其中缓存 800），输出 50 tokens/,
+      /派发 review-17-batch-2（框架 codex；模型 未知）（会话 root）：用时 1.5 分钟，输入 1,000（其中缓存 800），输出 50 tokens/,
     );
     assert.match(
       body,
@@ -539,4 +539,83 @@ test("review empty conclusions fail and failed comments never close specs", () =
     if (index === 2)
       assert.equal(existsSync(result.calls[2].args.at(-1)!), false);
   }
+});
+
+test("review reads built-in usage without local sessions and keeps missing usage incomplete", () => {
+  for (const usage of [{ input: 120, cached: 50, output: 30 }, null]) {
+    const result = run([...argumentsForReview, "--dry-run"], {
+      [`.codex-runs/${name}.progress.log`]: "=== Codex 结束：exit=0，用时 0.3 分钟，汇报在 /report.md ===\n",
+      [`.codex-runs/${name}.log`]: "\n",
+      [`.codex-runs/${name}.json`]: JSON.stringify({ v: 1, framework: "codex", success: true, usage }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.calls, []);
+    if (usage) {
+      assert.match(result.stdout, /用时 0.3 分钟，输入 120（其中缓存 50），输出 30 tokens/);
+      assert.doesNotMatch(result.stdout, /不完整|缺少.*会话/);
+    } else assert.match(result.stdout, /派发记录缺少完整用量/);
+  }
+});
+
+for (const state of ["complete", "missing", "unflushed", "summary-only-tokens", "missing-root"] as const) {
+  test(`review summary keeps root child checks and normalized totals for ${state}`, () => {
+    const input = files();
+    const root = "codex home/sessions/2026/10/12/root.jsonl";
+    input[`.codex-runs/${name}.json`] = JSON.stringify({ v: 1, framework: "codex", success: true, usage: { input: 7000, cached: 5000, output: 300 } });
+    if (state === "summary-only-tokens") input[root] = meta("root") + "\n";
+    input[root] += event("event_msg", { type: "item_completed", thread_id: "root", item: { type: "SubAgentActivity", agent_thread_id: "child" } }) + "\n";
+    if (state === "missing-root") delete input[root];
+    if (state === "missing" || state === "unflushed") {
+      delete input["codex home/sessions/2026/10/12/child.jsonl"];
+      delete input["codex home/sessions/2026/10/12/nested.jsonl"];
+      if (state === "unflushed") input["codex home/sessions/2026/10/12/child.jsonl"] = "";
+    }
+    const result = run(argumentsForReview, input);
+    assert.equal(result.status, 0, result.stderr);
+    const body = result.calls[2].body!;
+    assert.match(body, /派发 .*用时 1.5 分钟，输入 7,000（其中缓存 5,000），输出 300 tokens/);
+    if (state === "missing" || state === "unflushed") {
+      assert.match(body, /合计（已知部分；不完整）/);
+      assert.match(body, /找不到子代理会话 child/);
+      assert.match(body, /子代理（会话 child）：用时 未知/);
+    } else if (state === "missing-root") {
+      assert.match(body, /子代理 \/root\/child（会话 child）：用时 1 分钟，输入 2,000（其中缓存 1,000），输出 100 tokens/);
+      assert.match(body, /子代理 \/root\/nested（会话 nested）：用时 1 分钟，输入 300（其中缓存 200），输出 20 tokens/);
+      assert.match(body, /合计（已知部分；不完整）：用时 3.5 分钟，输入 9,300（其中缓存 6,200），输出 420 tokens/);
+      assert.match(body, /找不到审查会话 root/);
+      assert.doesNotMatch(body, /合计：|unrelated|9,999/);
+    } else {
+      assert.match(body, /合计：用时 3.5 分钟，输入 9,300（其中缓存 6,200），输出 420 tokens/);
+      assert.doesNotMatch(body, /不完整|扫描受限/);
+    }
+    if (process.env.TICKET_32_EVIDENCE) {
+      mkdirSync(process.env.TICKET_32_EVIDENCE, { recursive: true });
+      writeFileSync(join(process.env.TICKET_32_EVIDENCE, `review-summary-${state}.md`), body);
+    }
+    if (state === "missing-root" && process.env.RUN_SPEC_TEST_EVIDENCE) {
+      mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
+      writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, "review-summary-missing-root.md"), body);
+    }
+  });
+}
+
+test("review batch keeps known totals and all model labels when one member has no usage", () => {
+  const first = `${name}-1-claude`;
+  const second = `${name}-2-pi`;
+  const input = {
+    [`.codex-runs/${name}.batch.json`]: JSON.stringify({ version: 1, seat: "review", spec: 17, prefix: name, records: [first, second] }),
+    [`.codex-runs/${first}.json`]: JSON.stringify({ v: 1, framework: "claude", success: true, minutes: 1, actualModel: "actual-claude", usage: { input: 120, cached: 50, output: 30 } }),
+    [`.codex-runs/${second}.json`]: JSON.stringify({ v: 1, framework: "pi", success: false, minutes: 2, actualModel: "actual-pi", usage: null }),
+  };
+  const result = run([...argumentsForReview, "--dry-run"], input, []);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /模型 actual-claude/);
+  assert.match(result.stdout, /模型 actual-pi/);
+  assert.match(result.stdout, /合计（已知部分；不完整）：用时 3 分钟，输入 120（其中缓存 50），输出 30 tokens/);
+  assert.match(result.stdout, /缺少完整用量/);
+  assert.match(result.stdout, /未成功结束/);
+  assert.doesNotMatch(result.stdout, /扫描限制|thread.started/);
+  const malformed = run([...argumentsForReview, "--dry-run"], { [`.codex-runs/${name}.batch.json`]: JSON.stringify({ version: 1, seat: "review", spec: 17, prefix: name, records: ["../escape"] }) }, []);
+  assert.equal(malformed.status, 2);
+  assert.deepEqual(malformed.calls, []);
 });

@@ -362,18 +362,26 @@ test("shared command passthrough preserves help, flags, whitespace and shell cha
 });
 
 const claudeFixture = `
+const { claude } = await import(${JSON.stringify(pathToFileURL(join(import.meta.dirname, "dispatch/claude.ts")).href)});
 runCommands({fixture: {
-  help: "fixture [--model <模型>] -- <工具>…",
-  options: {model: {type: "string"}}, positionals: 0, passthrough: true,
+  help: "fixture [--model <模型>] [--effort <强度>] -- <工具>…",
+  options: {model: {type: "string"}, effort: {type: "string"}}, positionals: 0, passthrough: true,
   execute: (values, numbers, tools) => {
-    const result = runClaude({prompt: "prompt with spaces\\n$(literal)", tools, model: values.model, cwd: process.cwd()});
+    const cwd = process.cwd();
+    const command = claude.restrictedCommand({
+      root: cwd, prompt: "prompt with spaces\\n$(literal)", env: process.env,
+      settings: {seat: "spec-review", workType: "default", agent: "claude", model: values.model ?? null,
+        effort: values.effort ?? null, permission: "read-only", tier: null, path: null},
+      detection: {installed: true, version: null}, tools: tools.length ? "files" : "none",
+    });
+    const result = runClaude({cwd, command});
     console.log(JSON.stringify(result));
     process.exitCode = result.exitCode;
   },
 }});
 `;
 
-test("shared Claude invocation restricts argv and returns text, tokens and cost from JSON", () => {
+test("shared Claude 调用使用适配器生成的受限参数并解析文本、用量和费用", () => {
   const usage = {
     input_tokens: 120,
     output_tokens: 45,
@@ -381,10 +389,15 @@ test("shared Claude invocation restricts argv and returns text, tokens and cost 
     cache_read_input_tokens: 80,
   };
   const modelUsage = { "claude-haiku": { inputTokens: 120, outputTokens: 45 } };
-  for (const tools of [[], ["Read", "Glob", "Grep"]]) {
+  for (const [tools, effort] of [
+    [[], null],
+    [["Read", "Glob", "Grep"], null],
+    [[], "low"],
+    [["Read", "Glob", "Grep"], "low"],
+  ] as const) {
     const result = runShared(
       claudeFixture,
-      ["fixture", "--model", "haiku", "--", ...tools],
+      ["fixture", "--model", "haiku", ...(effort ? ["--effort", effort] : []), "--", ...tools],
       {
         output: JSON.stringify({
           type: "result",
@@ -407,6 +420,7 @@ test("shared Claude invocation restricts argv and returns text, tokens and cost 
         tools.join(","),
         "--model",
         "haiku",
+        ...(effort ? ["--effort", effort] : []),
       ],
       input: "prompt with spaces\n$(literal)",
       cwd: result.directory,

@@ -1,19 +1,21 @@
 /**
  * Read-only run-spec doctor: register doctorCommand in tickets.ts. Inspect the
- * invoking checkout, main-worktree dispatcher and Claude-only skills, GitHub
+ * invoking checkout, main-worktree dispatcher and skill locations, GitHub
  * settings, documentation and configuration. Never fix or write repository
  * state. Git ignore probes use a disposable work tree with copied applicable
  * .gitignore files and the original git directory/excludes; linked directories
  * use checkout-relative paths normalized by configuration loading for same-name
  * symlinks and git probes;
  * artifact/record directories are real directories.
- * Skill isolation checks project/ancestor and user Codex/shared roots, following
- * real paths. Tracked source skills and installed skills are both accepted.
+ * 技能隔离按已配置席位所用框架的适配器 isolationArgs 检查，不限制安装目录。
+ * review-spec、watch 通过工具裁剪隔离，沿用现有调用方式。
  * Missing prerequisites exit 1; unexpected probe/runtime errors exit 2.
- * Probe the Claude CLI with --version; optional config values show their source.
+ * Probe configured framework CLIs; optional config values show their source.
  * Invalid optional configuration exits 2, preserving existing prerequisite exits.
  * Check an existing checkout-root .env with git check-ignore without reading it.
- * Resolve Codex through DispatchDock's configured path, then PATH, and probe its version.
+ * 通过各框架适配器的 detect 复用派发的启动器解析和可用判定。
+ * 席位每档一行，只列非内置来源的层名；合并回落、权限损失与未接适配器提示。
+ * TODO(design): 核对紧凑席位行和合并提示的措辞。
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -22,15 +24,16 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { codexVersion } from "./dispatchdock.ts";
+import { dirname, join } from "node:path";
+import { adapters } from "./dispatch/adapters.ts";
+import type { SeatSettings } from "./dispatch/adapter.ts";
+import { frameworkSettings, resolveSeat, seatNames, SeatConfigError } from "./dispatch/settings.ts";
 import {
   CheckFailure,
   OptionalConfigError,
@@ -63,11 +66,14 @@ const hasEntry = (path: string): boolean => {
   }
 };
 
-const within = (root: string, path: string): boolean => {
-  const rel = relative(root, path);
-  return (
-    rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith("../"))
-  );
+const compactSources = (sources: Record<string, string>, fields: Record<string, string>): string => {
+  const items = Object.entries(fields).flatMap(([key, label]) => {
+    const source = sources[key];
+    if (!source || source.startsWith("内置默认")) return [];
+    const layer = source.startsWith("命令") ? "参数" : source.startsWith("环境") ? "环境" : source.startsWith("仓库") ? "仓库" : "用户";
+    return [`${label}=${layer}`];
+  });
+  return items.length ? `；来源：${items.join("、")}` : "";
 };
 
 const ancestors = (root: string): string[] => {
@@ -148,7 +154,7 @@ const ignored = (root: string, directory: string, link: boolean): boolean => {
   }
 };
 
-const doctor = (values: Values): void => {
+const doctor = async (values: Values): Promise<void> => {
   if (values["dry-run"] !== undefined)
     throw usageError("doctor 始终只读，不接受 --dry-run。", doctorCommand.help);
   let failures = 0;
@@ -156,12 +162,13 @@ const doctor = (values: Values): void => {
   const check = (
     name: string,
     repair: string,
-    inspect: () => string | void,
-  ): void => {
-    try {
-      const detail = inspect();
-      console.log(`通过：${name}${detail ? `；${detail}` : ""}`);
-    } catch (error) {
+    inspect: () => string | void | Promise<string | void>,
+    quiet = false,
+  ): void | Promise<void> => {
+    const pass = (detail: string | void): void => {
+      if (!quiet) console.log(`通过：${name}${detail ? `；${detail}` : ""}`);
+    };
+    const fail = (error: unknown): void => {
       failures++;
       if (!(error instanceof CheckFailure)) runtimeErrors++;
       const message =
@@ -169,6 +176,13 @@ const doctor = (values: Values): void => {
           ? error.message
           : "检查运行出错，请检查文件权限和运行环境。";
       console.error(`出错：不通过：${name}；${message}\n修法：${repair}`);
+    };
+    try {
+      const detail = inspect();
+      if (detail instanceof Promise) return detail.then(pass, fail);
+      pass(detail);
+    } catch (error) {
+      fail(error);
     }
   };
   const cwd = process.cwd();
@@ -208,23 +222,6 @@ const doctor = (values: Values): void => {
     );
     return process.versions.node;
   });
-  check(
-    "Codex CLI 可用",
-    "安装 Codex CLI 并加入 PATH，或在 DispatchDock 的 config.json 配置 agents.codex.path 为可执行程序或 Node 入口的绝对路径。",
-    codexVersion,
-  );
-  check(
-    "claude CLI 可用",
-    "安装 Claude Code CLI，并确保 claude 在 PATH 上可执行。",
-    () => {
-      const result = spawnSync("claude", ["--version"], { encoding: "utf8" });
-      requireCheck(
-        !result.error && result.status === 0 && !!result.stdout?.trim(),
-        "无法运行 claude --version，请检查 claude 是否存在且可执行。",
-      );
-      return result.stdout.trim();
-    },
-  );
   check("gh 版本", "安装或升级 GitHub CLI 到 2.83.0 或更新版本。", () => {
     const result = ghResult(["--version"]);
     const match = /gh version (\d+)\.(\d+)\.(\d+)/.exec(result.stdout ?? "");
@@ -345,41 +342,6 @@ const doctor = (values: Values): void => {
       return triage ? "已安装 triage，说明存在" : "未安装 triage，无需分诊说明";
     },
   );
-  for (const name of ["codex-dispatch", "run-spec", "setup-run-spec"]) {
-    check(
-      `技能隔离 ${name}`,
-      `把 ${name} 放在 .claude/skills 或用户 Claude Code 专用技能目录，移除共享目录副本及指向共享目录的软链接；run-spec 的来源副本和安装副本都可用。`,
-      () => {
-        const installed = locations.claude
-          .map((path) => join(path, name))
-          .filter(hasEntry);
-        const exposed = locations.shared
-          .map((path) => join(path, name))
-          .filter(hasEntry);
-        if (name === "setup-run-spec" && !installed.length && !exposed.length)
-          return "尚未安装，无需检查";
-        requireCheck(
-          exposed.length === 0,
-          `Codex 可见的目录存在此技能：${exposed.join("、")}。`,
-        );
-        requireCheck(
-          installed.some((path) => isFile(join(path, "SKILL.md"))),
-          "Claude Code 专用目录中缺少有效的 SKILL.md。",
-        );
-        const shared = locations.shared
-          .filter(existsSync)
-          .map((path) => realpathSync(path));
-        for (const path of installed) {
-          requireCheck(existsSync(path), `技能软链接失效：${path}。`);
-          requireCheck(
-            !shared.some((base) => within(base, realpathSync(path))),
-            `Claude Code 技能指向共享目录：${path}。`,
-          );
-        }
-        return installed.join("、");
-      },
-    );
-  }
   let config: DispatchConfig | undefined;
   check(
     "执行配置完整",
@@ -388,7 +350,7 @@ const doctor = (values: Values): void => {
       try {
         config = dispatchConfig(root);
       } catch (error) {
-        if (error instanceof OptionalConfigError) throw error;
+        if (error instanceof OptionalConfigError || error instanceof SeatConfigError) throw error;
         if (error instanceof SyntaxError)
           throw new CheckFailure("执行配置不是有效的 JSON。");
         if (error instanceof Error && /缺少|必须是/.test(error.message))
@@ -397,6 +359,77 @@ const doctor = (values: Values): void => {
       }
     },
   );
+  if (config) {
+    const seats = config.seatConfiguration;
+    const used = new Map<string, SeatSettings>();
+    const fallbacks = new Map<string, string[]>();
+    const losses = new Map<string, { loss: string; seats: Set<string> }>();
+    const unavailable = new Map<string, { seats: Set<string>; readOnly: boolean }>();
+    console.log(`用户席位配置：${seats.userFile}；${seats.userExists ? "已读取" : "文件不存在，使用仓库和内置默认"}`);
+    console.log(`工作类型词表：${Object.entries(seats.workTypes).map(([name, description]) => `${name}（${description}）`).join("、") || "无"}；来源：仓库`);
+    for (const seat of seatNames) {
+      for (const workType of ["default", ...Object.keys(seats.workTypes)]) {
+        check(`席位配置 ${seat}.${workType}`, "修正 seats 分档、agents 框架配置或环境变量后重试。", () => {
+          const entries = resolveSeat(seats, seat, workType, {}, workType === "default" ? "内置默认" : "仓库 workTypes");
+          if (entries[0].fallbackReason) {
+            fallbacks.set(workType, [...(fallbacks.get(workType) ?? []), seat]);
+            return;
+          }
+          for (const [index, settings] of entries.entries()) {
+            used.set(settings.agent, settings);
+            console.log(`${seat}.${workType}${entries.length > 1 ? `[${index}]` : ""}：框架：${settings.agent}；模型：${settings.model ?? "框架默认"}；强度：${settings.effort ?? "框架默认"}；权限：${settings.permission}${compactSources(settings.sources ?? {}, { agent: "框架", model: "模型", effort: "强度", permission: "权限" })}`);
+            const adapter = adapters[settings.agent];
+            if (!adapter) {
+              const item = unavailable.get(settings.agent) ?? { seats: new Set<string>(), readOnly: false };
+              item.seats.add(seat);
+              item.readOnly ||= settings.permission === "read-only";
+              unavailable.set(settings.agent, item);
+            } else {
+              const mapping = adapter.permissions[settings.permission];
+              if (mapping.loss) {
+                const key = `${settings.agent}/${settings.permission}`;
+                const item = losses.get(key) ?? { loss: mapping.loss, seats: new Set<string>() };
+                item.seats.add(seat);
+                losses.set(key, item);
+              }
+            }
+          }
+        }, true);
+      }
+    }
+    for (const [workType, names] of fallbacks)
+      console.log(`提示：这些席位没有『${workType}』档，回落 default：${names.join("、")}`);
+    for (const [agent] of used) {
+      const settings = frameworkSettings(seats, agent);
+      console.log(`框架配置 ${agent}：并发：${settings.concurrency}；路径：${settings.path ?? "PATH"}${compactSources(settings.sources, { concurrency: "并发", path: "路径" })}`);
+    }
+    if (losses.size)
+      console.log(`提示：权限映射损失：${[...losses].map(([mapping, item]) => `${mapping}（席位：${[...item.seats].join("、")}）：${item.loss}`).join("；")}`);
+    if (unavailable.size)
+      console.log(`提示：适配器未接入：${[...unavailable].map(([agent, item]) => `${agent}（席位：${[...item.seats].join("、")}）；当前不可用，权限映射损失未知${item.readOnly ? "，无法确认强制只读" : ""}`).join("；")}`);
+    for (const [agent, seat] of used) {
+      const settings = frameworkSettings(seats, agent);
+      await check(agent === "codex" ? "Codex CLI 可用" : agent === "claude" ? "claude CLI 可用" : `席位框架安装 ${agent}`, `安装 ${agent === "claude" ? "Claude Code CLI" : agent} 并加入 PATH，或配置 agents.${agent}.path。`, async () => {
+        const adapter = adapters[agent];
+        requireCheck(!!adapter, `框架 ${agent} 尚未接入适配器，当前不可用`);
+        const detection = await adapter.detect({ env: process.env, settings: seat });
+        requireCheck(detection.installed, detection.error ?? `框架 ${agent} 未安装或无法运行 ${settings.path ?? agent} --version`);
+        const path = detection.launcher ? [detection.launcher.executable, ...detection.launcher.args].join(" ") : settings.path ?? "PATH";
+        return `${detection.version ?? "版本未知"}；路径：${path}；来源：${settings.sources.path}`;
+      });
+    }
+    for (const [agent] of used)
+      check(`技能隔离 ${agent}`, `为 ${agent} 适配器提供屏蔽 run-spec、setup-run-spec 的 isolationArgs。`, () => {
+        const adapter = adapters[agent];
+        requireCheck(typeof adapter?.isolationArgs === "function", "适配器缺少 isolationArgs 技能隔离方式。");
+        const args = adapter.isolationArgs();
+        requireCheck(Array.isArray(args) && args.length > 0 && args.every(arg => typeof arg === "string" && arg.trim().length > 0), "适配器 isolationArgs 未提供有效的技能隔离参数。");
+        return "适配器 isolationArgs 提供 run-spec、setup-run-spec 屏蔽参数";
+      });
+    console.log("技能隔离说明：review-spec、watch 通过工具裁剪隔离，不另加技能隔离开关。");
+    check("兼容配置 codexSandbox/codexConcurrency", "权限建议迁到 seats.engineering.default.permission，并发迁到 agents.codex.concurrency。", () =>
+      `codexSandbox=${config!.codexSandbox ?? "未配置，工程权限取席位配置"}（来源：仓库旧项，仅作工程 Codex 的兼容默认）；codexConcurrency=${config!.codexConcurrency}（来源：${frameworkSettings(seats, "codex").sources.concurrency}）；建议改用 seats/agents，新席位字段优先。`);
+  }
   for (const key of [
     "codexConcurrency",
     "prCheckCommand",
@@ -431,14 +464,9 @@ const doctor = (values: Values): void => {
     },
   );
   check(
-    "派发脚本",
-    "安装 codex-dispatch，并让 dispatchScript 指向主工作区中存在的派发脚本文件。",
-    () => {
-      requireCheck(!!config, "执行配置未通过，无法检查派发脚本。");
-      const script = resolve(main || root, config!.dispatchScript);
-      requireCheck(isFile(script), `派发脚本不存在或不是文件：${script}。`);
-      return script;
-    },
+    "过时配置 dispatchScript",
+    "删除执行配置中的 dispatchScript；run-spec 已自带派发层。",
+    () => config?.dispatchScript === undefined ? "未配置，无需处理" : "已忽略 dispatchScript，可以删除；来源：仓库 run-spec.json.dispatchScript；派发使用 run-spec 内置入口。",
   );
   const directories: [string, string, boolean][] = [
     ["派发记录目录", ".codex-runs", false],
@@ -544,12 +572,22 @@ export const doctorCommand: Command = {
   execute: doctor,
   help: `${entry} doctor
 只读自检，逐项输出通过、不通过和修法，不改仓库、不改 GitHub。
-检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18、claude CLI 可用；
-Codex CLI 先查 DispatchDock 配置 agents.codex.path，再查 PATH，并运行 --version；失败列出查找位置；
+席位每个已配置的档（含 default、review 列表各项）一行，列出框架、模型、强度、权限；来源仅列非内置项，用参数、环境、仓库、用户层名。
+词表内未配档的席位按类型合并提示回落 default；框架路径、并发各展示一次，默认不展开席位 JSON。
+用户文件 $XDG_CONFIG_HOME/agent-workflow/seats.json（默认 ~/.config/agent-workflow/seats.json）不存在时使用默认；格式错误退出 2。
+优先级：参数 > 环境变量 > 仓库 > 用户 > 内置；空环境值视为未设置；框架路径和并发放 agents，报告各框架安装情况。
+权限映射损失直接取适配器 permissions，合并涉及席位提示；未接适配器也合并提示不可用。
+词表内用户未配档只提示；codexSandbox/codexConcurrency 继续兼容并建议迁移。
+codexSandbox 可省略；未配置时须在仓库或用户 seats.engineering.default.permission 配置工程权限，缺少时退出 2 并指出配置位置。
+检查 git 可用性与仓库属主、gh 认证与仓库访问、gh >= 2.83、Node >= 22.18、各席位使用的框架 CLI 可用；
+框架安装探测复用各适配器 detect，与派发共用启动器解析，支持 .cmd/.bat 包装和 Node 入口；
+Codex 路径按席位配置兼容旧 DispatchDock 配置，再查 PATH；版本未知时仍按适配器结果判断可用；
 GitHub 的 role:engineering、role:design、ready-for-human 标签、只允许 merge commit、合并后自动删除分支；
 Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签说明；
-codex-dispatch、run-spec（以及装了的 setup-run-spec）的 Claude Code 专用位置及 Codex 共享目录隔离；
-执行配置完整、主工作区派发脚本存在；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
+技能隔离逐个检查已配置席位所用框架的适配器 isolationArgs，须提供非空隔离参数以屏蔽 run-spec、setup-run-spec，缺少时报失败；
+两项技能装在 .claude/skills 或共享目录 .agents/skills 都正常，不按安装目录判定隔离；
+review-spec、watch 通过工具裁剪隔离，不另加技能隔离开关；
+执行配置完整；dispatchScript 不再使用，存在时提示可删除；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
 报告可选配置 codexConcurrency、prCheckCommand、verificationEnv、exclusiveVerification、disposableIgnored 的实际取值及来源；
 报告 staticCheckCommand（默认 null，未配置）、staticOnlyPaths（默认 []）的实际取值及来源；
 staticCheckCommand 为非空参数数组；staticOnlyPaths 为非空单行 gitignore 模式的数组，不能含 NUL；

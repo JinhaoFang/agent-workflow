@@ -227,7 +227,7 @@ export const cleanupCommand: Command = {
 同时清理 review-spec-<spec号>-<序号>.md、配对的 .json，以及 review-spec-<spec号>-<随机后缀>/ 输入快照目录。
 主工作区、当前工作区、分支不符、路径不存在或不干净的 worktree 跳过，
 对应本地与 origin 远端分支同时保留，预览与执行使用同一保留集合，以 1 退出；不强行删除 worktree。
-删除任何内容之前检查 spec 上的评分表评论；没有有效评论或本 spec 的台账、派发记录
+删除任何内容之前检查 spec 上的评分表评论（接受 run-spec-scorecard:v1/v2）；没有有效评论或本 spec 的台账、派发记录
 在评分表截点之后有更新时，以 1 退出且不删除任何内容，并提示 scorecard <spec> --post。
 评分表还须覆盖当前全部显式 --record 关联集合；新关联旧文件也须重新发布评分表。
 关联文件和辅助记录不纳入删除范围；按实际待删除 worktree（含移址路径）及 .kept 清单检查辅助证据；

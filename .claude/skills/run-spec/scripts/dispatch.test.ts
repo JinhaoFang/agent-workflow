@@ -76,17 +76,24 @@ process.exitCode = Number(process.env.INSTALL_FIXTURE_EXIT || 0);`,
 const fs = require("node:fs");
 const cp = require("node:child_process");
 const path = require("node:path");
-const args = process.argv.slice(2);
+let args = process.argv.slice(2);
+if (args.includes("--version")) { console.log("codex-cli fixture"); process.exit(0); }
+const prompt = fs.readFileSync(0, "utf8");
+const task = prompt.slice(prompt.indexOf("任务：\\n") + 4);
+const boundary = task.indexOf("\\n你在 git worktree");
+const reportPath = args[args.indexOf("-o") + 1];
+const requestedName = path.basename(reportPath, ".md");
+args = [task.slice(0, boundary), task.slice(boundary + 1), "--role", "engineering", "--name", requestedName, "--sandbox", args[args.indexOf("-s") + 1]];
 const requested = args[args.indexOf("--name") + 1];
 fs.mkdirSync(".codex-runs", {recursive:true});
 let name = requested;
-for (let i = 2; fs.existsSync(path.join(".codex-runs", name + ".progress.log")); i++) name = requested + "-" + i;
+
 const progress = path.resolve(".codex-runs", name + ".progress.log");
-fs.writeFileSync(progress, "=== 开始 ===\\n");
-console.log("记录名：" + name + "\\n进度：" + progress);
+
+
 const commentLog = path.join(process.env.DISPATCH_FIXTURE_ROOT, "gh-comments.jsonl");
 const comments = fs.existsSync(commentLog) ? fs.readFileSync(commentLog, "utf8").trim().split("\\n").map(JSON.parse) : [];
-fs.writeFileSync(path.join(".codex-runs", name + ".json"), JSON.stringify({cwd:process.cwd(), args, comments}));
+fs.writeFileSync(path.join(".codex-runs", name + ".request.json"), JSON.stringify({cwd:process.cwd(), args, comments}));
 fs.writeFileSync(path.join(".codex-runs", name + ".md"), "工程汇报");
 const code = Number(process.env.DISPATCH_FIXTURE_EXIT || 0);
 fs.writeFileSync(name + ".txt", name);
@@ -94,7 +101,7 @@ for (const gitArgs of [["add", name + ".txt"], ["commit", "-m", "fixture dispatc
   const result = cp.spawnSync("git", gitArgs, {encoding:"utf8"});
   if (result.status !== 0) throw new Error(result.stderr);
 }
-fs.appendFileSync(progress, "=== Codex 结束：exit=" + code + " ===\\n");
+console.log(JSON.stringify({type:"turn.completed", usage:{input_tokens:100,cached_input_tokens:40,output_tokens:20}}));
 console.log("exit=" + code);
 process.exitCode = code;
 if (process.env.DISPATCH_FIXTURE_RELEASE) {
@@ -118,6 +125,11 @@ if (process.env.DISPATCH_FIXTURE_RELEASE) {
   ]);
   git(["commit", "-m", "initial fixture"]);
   git(["branch", "spec/17-test"]);
+  mkdirSync(join(root, "docs/roles"), {recursive:true});
+  writeFileSync(join(root, "docs/roles/engineering.md"), "# 角色：工程负责人\n");
+  git(["add", "docs/roles/engineering.md"]);
+  git(["commit", "-m", "fixture role"]);
+  git(["branch", "-f", "spec/17-test"]);
   const ghFile = join(temporary, "gh");
   writeFileSync(
     ghFile,
@@ -216,6 +228,8 @@ process.stdout.write(JSON.stringify(response.value));
       installExit?: number;
       commentError?: boolean;
       cwd?: string;
+      body?: string;
+      env?: NodeJS.ProcessEnv;
     } = {},
   ) => {
     rmSync(join(temporary, "gh-calls.jsonl"), { force: true });
@@ -231,9 +245,10 @@ process.stdout.write(JSON.stringify(response.value));
     const expected = responses(
       options.state,
       options.engineering,
-      Boolean(note) && !args.includes("--dry-run"),
+      (Boolean(note) || args.some(arg => ["--work-type", "--agent", "--model", "--effort"].includes(arg))) && !args.includes("--dry-run"),
       options.commentError,
     );
+    Object.assign(expected[1].value, { body: options.body ?? "" });
     writeFileSync(join(temporary, "responses.json"), JSON.stringify(expected));
     const result = spawnSync(
       process.execPath,
@@ -246,9 +261,12 @@ process.stdout.write(JSON.stringify(response.value));
           ...process.env,
           PATH: `${temporary}${delimiter}${process.env.PATH}`,
           CODEX_DISPATCH_HOME: join(temporary, "dispatch-home"),
+          XDG_CONFIG_HOME: join(temporary, "xdg"),
           DISPATCH_FIXTURE_ROOT: temporary,
+          CODEX_DISPATCH_TEST_AGENT: join(root, "fake-dispatch.cjs"),
           DISPATCH_FIXTURE_EXIT: String(options.exit ?? 0),
           INSTALL_FIXTURE_EXIT: String(options.installExit ?? 0),
+          ...options.env,
         },
       },
     );
@@ -300,7 +318,9 @@ process.stdout.write(JSON.stringify(response.value));
           ...process.env,
           PATH: `${temporary}${delimiter}${process.env.PATH}`,
           CODEX_DISPATCH_HOME: join(temporary, "dispatch-home"),
+          XDG_CONFIG_HOME: join(temporary, "xdg"),
           DISPATCH_FIXTURE_ROOT: temporary,
+          CODEX_DISPATCH_TEST_AGENT: join(root, "fake-dispatch.cjs"),
           DISPATCH_FIXTURE_EXIT: "0",
           DISPATCH_FIXTURE_RELEASE: release,
         },
@@ -309,6 +329,131 @@ process.stdout.write(JSON.stringify(response.value));
     },
   };
 };
+
+test("dispatch 未配置 codexSandbox 时接受仓库或用户工程权限，缺少时指出配置位置并退出 2", () => {
+  const f = fixture();
+  try {
+    const { codexSandbox, ...config } = f.config;
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    const userFile = join(userDirectory, "seats.json");
+    mkdirSync(userDirectory, { recursive: true });
+    for (const agent of ["codex", "claude", "pi"]) {
+      for (const source of ["仓库", "用户"]) {
+        const seats = { engineering: { default: { agent, permission: "read-only" } } };
+        writeFileSync(f.configFile, JSON.stringify({ ...config, ...(source === "仓库" ? { seats } : {}) }));
+        writeFileSync(userFile, JSON.stringify(source === "用户" ? { seats } : {}));
+        const result = f.run(["--dry-run"], { env: { CODEX_SANDBOX: "" } });
+        assert.equal(result.status, 0, result.stdout + result.stderr);
+        assert.ok(result.stdout.includes(`框架：${agent}；模型：框架默认；强度：框架默认；权限：read-only`), result.stdout);
+        evidence(`dispatch-no-sandbox-${agent}-${source === "仓库" ? "repository" : "user"}.log`, result.stdout + result.stderr);
+      }
+    }
+    writeFileSync(f.configFile, JSON.stringify(config));
+    writeFileSync(userFile, "{}");
+    const legacyDirectory = join(f.temporary, "dispatch-home");
+    mkdirSync(legacyDirectory, { recursive: true });
+    writeFileSync(join(legacyDirectory, "config.json"), JSON.stringify({ v: 1, agents: { codex: { sandbox: "danger-full-access" } } }));
+    const missing = f.run(["--dry-run"], { env: { CODEX_SANDBOX: "" } });
+    assert.equal(missing.status, 2, missing.stdout + missing.stderr);
+    assert.match(missing.stderr, /出错：工程席位缺少权限/);
+    for (const location of ["docs/agents/run-spec.json", userFile, "seats.engineering.default.permission", "codexSandbox"])
+      assert.ok(missing.stderr.includes(location), missing.stderr);
+    assert.ok(!existsSync(f.worktree));
+    evidence("dispatch-no-sandbox-missing.log", missing.stdout + missing.stderr);
+  } finally { f.cleanup(); }
+});
+
+test("seat dispatch CLI resolves builtin/user/repository/environment/command layers and records effective sources", () => {
+  const f = fixture();
+  try {
+    const settings = (result: ReturnType<typeof f.run>) => {
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const args: string[] = JSON.parse(result.stdout.split("\n").find(line => line.startsWith("派发参数："))!.slice("派发参数：".length));
+      return JSON.parse(args[args.indexOf("--settings") + 1]);
+    };
+    const builtin = settings(f.run(["--dry-run"]));
+    assert.equal(builtin.agent, "codex");
+    assert.equal(builtin.model, null);
+    assert.equal(builtin.permission, "full");
+    assert.match(builtin.sources.permission, /codexSandbox/);
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { engineering: { default: { model: "user-model", effort: "high", permission: "read-only" } } }, agents: { codex: { concurrency: 3 } } }));
+    const user = f.run(["--dry-run"]);
+    assert.equal(settings(user).model, "user-model");
+    assert.match(settings(user).sources.model, /用户 .*seats.json/);
+    assert.match(user.stdout, /并发上限：3/);
+    writeFileSync(f.configFile, JSON.stringify({ ...f.config, seats: { engineering: { default: { model: "repo-model" } } }, agents: { codex: { concurrency: 4 } } }));
+    const repository = f.run(["--dry-run"]);
+    assert.equal(settings(repository).model, "repo-model");
+    assert.equal(settings(repository).effort, "high");
+    assert.match(settings(repository).sources.model, /仓库 run-spec.json/);
+    assert.match(repository.stdout, /并发上限：4/);
+    const env = { CODEX_MODEL: "env-model", CODEX_EFFORT: "low", RUN_SPEC_CODEX_CONCURRENCY: "5" };
+    const environment = f.run(["--dry-run"], { env });
+    assert.equal(settings(environment).model, "env-model");
+    assert.match(settings(environment).sources.model, /环境变量 CODEX_MODEL/);
+    assert.match(environment.stdout, /并发上限：5/);
+    const command = f.run(["--dry-run", "--agent", "codex", "--model", "command-model", "--effort", "medium"], { env });
+    assert.equal(settings(command).model, "command-model");
+    assert.equal(settings(command).effort, "medium");
+    assert.match(settings(command).sources.model, /命令参数 --model/);
+    assert.match(command.stdout, /评论预览：[\s\S]*本次派发参数覆盖/);
+    assert.ok(!existsSync(f.worktree));
+    const actual = f.run(["--model", "command-model", "--effort", "medium"], { env });
+    assert.equal(actual.status, 0, actual.stdout + actual.stderr);
+    const summary = JSON.parse(readFileSync(join(f.worktree, ".codex-runs/gh-21.json"), "utf8"));
+    assert.equal(summary.model, "command-model");
+    assert.equal(summary.effort, "medium");
+    assert.equal(summary.permission, "read-only");
+    assert.match(summary.sources.model, /命令参数 --model/);
+    assert.match(actual.comments[0].body, /本次派发参数覆盖/);
+    const registry = readFileSync(join(f.temporary, "dispatch-home/runs.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line));
+    assert.deepEqual(registry[0].sources, summary.sources);
+    assert.deepEqual(registry.at(-1).sources, summary.sources);
+  } finally { f.cleanup(); }
+});
+
+test("seat dispatch selects frontend pi, supports work type overrides, diagnoses fallback and rejects unknown types", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { engineering: { default: { agent: "codex" }, 前端: { agent: "pi", model: "zai-coding-cn/glm-5.3-flash" } } } }));
+    writeFileSync(f.configFile, JSON.stringify({ ...f.config, workTypes: { 前端: "汇报模板等 HTML 页面", 后端: "脚本" } }));
+    const frontend = f.run(["--dry-run"], { body: "## 任务\n\n工作类型：前端\n\n页面" });
+    assert.equal(frontend.status, 0, frontend.stdout + frontend.stderr);
+    assert.match(frontend.stdout, /工作类型：前端；框架：pi；模型：zai-coding-cn\/glm-5.3-flash/);
+    assert.doesNotMatch(frontend.stdout, /框架 pi 尚未接入适配器，当前不可用/);
+    assert.match(frontend.stdout, /工单正文 工作类型/);
+    const directory = process.env.TICKET_25_EVIDENCE;
+    if (directory) {
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, "dispatch-frontend-dry-run.log"), frontend.stdout + frontend.stderr);
+    }
+    const overridden = f.run(["--dry-run", "--work-type", "前端"], { body: "工作类型：后端" });
+    assert.equal(overridden.status, 0, overridden.stdout + overridden.stderr);
+    assert.match(overridden.stdout, /工作类型：前端；框架：pi/);
+    assert.match(overridden.stdout, /命令参数 --work-type/);
+    for (const [args, body] of [[[], "工作类型：后端"], [["--work-type", "后端"], "工作类型：前端"]] as const) {
+      const fallback = f.run(["--dry-run", ...args], { body });
+      assert.equal(fallback.status, 0, fallback.stdout + fallback.stderr);
+      assert.match(fallback.stdout, /工作类型「后端」.*回落到 default/);
+      assert.match(fallback.stdout, /工作类型：后端；框架：codex/);
+    }
+    for (const [args, body] of [[[], "工作类型：拼错"], [["--work-type", "拼错"], ""], [[], "工作类型："], [[], "工作类型：前端\n工作类型：后端"]] as const) {
+      const invalid = f.run(["--dry-run", ...args], { body });
+      assert.equal(invalid.status, 2, invalid.stdout + invalid.stderr);
+      assert.match(invalid.stderr, /^出错：.*工作类型/);
+    }
+    const actualFallback = f.run([], { body: "工作类型：后端" });
+    assert.equal(actualFallback.status, 0, actualFallback.stdout + actualFallback.stderr);
+    const summary = JSON.parse(readFileSync(join(f.worktree, ".codex-runs/gh-21.json"), "utf8"));
+    assert.equal(summary.workType, "后端");
+    assert.match(summary.fallbackReason, /回落到 default/);
+    if (directory) writeFileSync(join(directory, "dispatch-fallback-summary.json"), JSON.stringify(summary, null, 2));
+  } finally { f.cleanup(); }
+});
 
 test("layered dispatch prompts restrict development to related tests/static checks and route full checks through main verify", () => {
   for (const configured of [false, true]) {
@@ -402,7 +547,7 @@ test("dispatch creates worktree, links and installs, then forwards prompt and re
       { cwd: f.worktree, args: ["literal argument"] },
     );
     const record = JSON.parse(
-      readFileSync(join(f.worktree, ".codex-runs/gh-21.json"), "utf8"),
+      readFileSync(join(f.worktree, ".codex-runs/gh-21.request.json"), "utf8"),
     );
     assert.equal(record.cwd, f.worktree);
     assert.deepEqual(record.comments, result.comments);
@@ -535,7 +680,7 @@ test("dispatch reuses a clean worktree, reads note-file, skips install and makes
       "preserved",
     );
     const record = JSON.parse(
-      readFileSync(join(f.worktree, ".codex-runs/gh-21-2.json"), "utf8"),
+      readFileSync(join(f.worktree, ".codex-runs/gh-21-2.request.json"), "utf8"),
     );
     assert.match(record.args[1], /另起提交/);
     assert.match(record.args[1], /返工原因\n保留换行/);
@@ -611,7 +756,7 @@ test("dispatch retries incomplete preparation after install failure before dispa
       })),
     );
     const record = JSON.parse(
-      readFileSync(join(f.worktree, ".codex-runs/gh-21.json"), "utf8"),
+      readFileSync(join(f.worktree, ".codex-runs/gh-21.request.json"), "utf8"),
     );
     assert.ok(!record.args[1].includes("这是返工派发"));
     assert.equal(
@@ -723,7 +868,7 @@ test("dispatch normalizes linked directories when creating and reusing worktrees
         install,
       );
       const record = JSON.parse(
-        readFileSync(join(f.worktree, ".codex-runs/gh-21-2.json"), "utf8"),
+        readFileSync(join(f.worktree, ".codex-runs/gh-21-2.request.json"), "utf8"),
       );
       assert.ok(record.args[1].includes(`只读使用：${directory}、.agents。`));
       assert.match(record.args[1], /这是返工派发/);
@@ -754,7 +899,7 @@ test("dispatch handles each normalized linked directory only once", () => {
       assert.equal(result.stdout.match(/已接好只读软链接：/g)?.length, 2);
       const name = index === 0 ? "gh-21" : "gh-21-2";
       const record = JSON.parse(
-        readFileSync(join(f.worktree, `.codex-runs/${name}.json`), "utf8"),
+        readFileSync(join(f.worktree, `.codex-runs/${name}.request.json`), "utf8"),
       );
       assert.ok(record.args[1].includes("只读使用：references、.agents。"));
     }
@@ -810,7 +955,7 @@ test("dispatch reports missing config and every missing field as usage/runtime e
     assert.equal(result.status, 2);
     assert.match(result.stderr, /^出错：缺少本仓库配置：/);
     assert.equal(result.calls.length, 0);
-    for (const key of Object.keys(f.config)) {
+    for (const key of Object.keys(f.config).filter(key => !["dispatchScript", "codexSandbox"].includes(key))) {
       const config: Record<string, unknown> = { ...f.config };
       delete config[key];
       writeFileSync(f.configFile, JSON.stringify(config));
@@ -826,7 +971,7 @@ test("dispatch reports missing config and every missing field as usage/runtime e
       { ...f.config, symlinkDirectories: ["../outside"] },
       { ...f.config, acceptanceRoot: "../outside" },
       { ...f.config, codexSandbox: "invalid" },
-      { ...f.config, dispatchScript: "" },
+      { ...f.config, codexSandbox: null },
     ]) {
       writeFileSync(f.configFile, JSON.stringify(config));
       result = f.run();
@@ -862,7 +1007,7 @@ test("dispatch dry-run prints complete plan without modifying git, creating arti
       "gh-21",
       "补充说明",
       "out/qa/spec-17/21",
-      join(f.root, "fake-dispatch.cjs"),
+      join(import.meta.dirname, "dispatch-task.ts"),
     ])
       assert.ok(result.stdout.includes(text), text);
     assert.ok(!existsSync(`${f.root}.worktrees`));
@@ -939,7 +1084,7 @@ test("dispatch only grants ticket branch push permission with --allow-push and s
       assert.deepEqual(result.comments, []);
       const name = index === 0 ? "gh-21" : `gh-21-${index + 1}`;
       const record = JSON.parse(
-        readFileSync(join(f.worktree, `.codex-runs/${name}.json`), "utf8"),
+        readFileSync(join(f.worktree, `.codex-runs/${name}.request.json`), "utf8"),
       );
       if (args.includes("--allow-push")) {
         assert.match(
@@ -1031,7 +1176,7 @@ test("dispatch dry-run previews file notes and exact rework names including reco
       `## 派发补充说明：gh-21-3\n\n${note}`,
     );
     const record = JSON.parse(
-      readFileSync(join(f.worktree, ".codex-runs/gh-21-3.json"), "utf8"),
+      readFileSync(join(f.worktree, ".codex-runs/gh-21-3.request.json"), "utf8"),
     );
     assert.equal(record.args[record.args.indexOf("--name") + 1], "gh-21-3");
     assert.deepEqual(record.comments, actual.comments);
@@ -1049,7 +1194,7 @@ test("dispatch help documents push permission, comments, failure handling and dr
     for (const text of [
       "--allow-push",
       "--resume",
-      "slots",
+      "slots 按框架显示运行与空余名额",
       "排队",
       "每 5 分钟最多打印一行",
       "不要推送",
@@ -1063,6 +1208,8 @@ test("dispatch help documents push permission, comments, failure handling and dr
       "不派发",
     ])
       assert.ok(result.stdout.includes(text), text);
+    assert.doesNotMatch(result.stdout, /slots 仅显示 Codex/);
+    evidence("dispatch-help.txt", result.stdout);
   } finally {
     f.cleanup();
   }
@@ -1114,7 +1261,7 @@ test("dispatch resumes original dirty worktree, preserves edits, comments notes 
     assert.equal(result.comments.length, 1);
     assert.equal(readFileSync(file, "utf8"), "previous interrupted edits");
     const record = JSON.parse(
-      readFileSync(join(f.worktree, ".codex-runs/gh-21-2.json"), "utf8"),
+      readFileSync(join(f.worktree, ".codex-runs/gh-21-2.request.json"), "utf8"),
     );
     assert.match(record.args[1], /上次派发中断.*未提交的改动是上次执行写的/);
     assert.doesNotMatch(record.args[1], /返工派发|另起提交/);
@@ -1200,9 +1347,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const home = process.env.CODEX_DISPATCH_HOME;
 const args = process.argv.slice(2);
-const name = args[args.indexOf("--name") + 1];
-const id = name + "-" + process.pid;
-const log = event => fs.appendFileSync(path.join(home, "runs.jsonl"), JSON.stringify({v:1,id,...event}) + "\\n");
+if (args.includes("--version")) { console.log("codex-cli fixture"); process.exit(0); }
+fs.readFileSync(0, "utf8");
+const name = path.basename(args[args.indexOf("-o") + 1], ".md").match(/^gh-[0-9]+/)[0];
+const log = () => {};
 const attemptFile = path.join(home, "attempt-" + name);
 const attempt = fs.existsSync(attemptFile) ? Number(fs.readFileSync(attemptFile)) + 1 : 1;
 fs.writeFileSync(attemptFile, String(attempt));
@@ -1243,6 +1391,7 @@ if (process.env.HOLD_DISPATCH) {
           PATH: `${f.temporary}${delimiter}${process.env.PATH}`,
           CODEX_DISPATCH_HOME: home,
           RUN_SPEC_CODEX_CONCURRENCY: undefined,
+          CODEX_DISPATCH_TEST_AGENT: join(f.root, "fake-dispatch.cjs"),
           ...extraEnv,
         },
       },
@@ -1279,6 +1428,12 @@ if (process.env.HOLD_DISPATCH) {
     waitFor,
     cleanup: async () => {
       for (const job of jobs) job.child.kill();
+      if (existsSync(join(home, "runs.jsonl"))) {
+        for (const line of readFileSync(join(home, "runs.jsonl"), "utf8").trim().split("\n")) {
+          const row = JSON.parse(line);
+          if (row.event === "spawned" && row.agentPid) { try { process.kill(row.agentPid); } catch {} }
+        }
+      }
       await Promise.all(jobs.map((job) => job.done));
       f.cleanup();
     },
@@ -1290,6 +1445,7 @@ test("dispatch queues behind two live global runs, ignores dead records and star
   try {
     startRecord(f.home, "external-1", process.pid, "/external/one");
     startRecord(f.home, "external-2", process.pid, "/external/two");
+    registryLine(f.home, { event: "start", id: "other-frame", name: "other-frame", pid: process.pid, repo: "/external/pi", started: 1700000000000, framework: "pi" });
     startRecord(
       f.home,
       "dead",
@@ -1299,10 +1455,10 @@ test("dispatch queues behind two live global runs, ignores dead records and star
     const job = f.launch();
     await f.waitFor(() => job.output.stdout.includes("排队中"));
     assert.ok(!existsSync(f.worktree));
-    assert.doesNotMatch(job.output.stdout, /已启动/);
+    assert.doesNotMatch(job.output.stdout, /记录名：/);
     registryLine(f.home, { event: "end", id: "external-1", exit: 0 });
     assert.equal(await job.done, 0, job.output.stderr);
-    assert.match(job.output.stdout, /已启动：gh-21/);
+    assert.match(job.output.stdout, /记录名：gh-21/);
     evidence("queue.txt", job.output.stdout + job.output.stderr);
   } finally {
     await f.cleanup();
@@ -1329,18 +1485,18 @@ test("dispatch admits only one of two waiters into a freed slot and recovers a d
     );
     registryLine(f.home, { event: "end", id: "external-1", exit: 0 });
     await f.waitFor(() =>
-      jobs.some((job) => job.output.stdout.includes("已启动")),
+      jobs.some((job) => job.output.stdout.includes("记录名：")),
     );
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    const started = jobs.filter((job) => job.output.stdout.includes("已启动"));
+    const started = jobs.filter((job) => job.output.stdout.includes("记录名："));
     assert.equal(started.length, 1);
     const winner = started[0];
-    const name = winner.output.stdout.match(/已启动：(gh-\d+)/)![1];
+    const name = winner.output.stdout.match(/记录名：(gh-\d+)/)![1];
     writeFileSync(join(f.home, "release-" + name), "");
     assert.equal(await winner.done, 0, winner.output.stderr);
     const other = jobs.find((job) => job !== winner)!;
-    await f.waitFor(() => other.output.stdout.includes("已启动"));
-    const otherName = other.output.stdout.match(/已启动：(gh-\d+)/)![1];
+    await f.waitFor(() => other.output.stdout.includes("记录名："));
+    const otherName = other.output.stdout.match(/记录名：(gh-\d+)/)![1];
     writeFileSync(join(f.home, "release-" + otherName), "");
     assert.equal(await other.done, 0, other.output.stderr);
     evidence(
@@ -1362,14 +1518,32 @@ test("dispatch retries account concurrency failures through the queue and finall
   try {
     const job = f.launch(21, { LIMIT_FAILURES: "1" });
     assert.equal(await job.done, 0, job.output.stderr);
-    assert.match(job.output.stderr, /Concurrency limit exceeded/);
+    assert.match(job.output.stdout, /Concurrency limit exceeded/);
     assert.match(job.output.stdout, /排队中/);
-    assert.match(job.output.stdout, /已完成：gh-21/);
+    assert.match(job.output.stdout, /exit=0 report=/);
     assert.equal(readFileSync(join(f.home, "attempt-gh-21"), "utf8"), "2");
     evidence("queue-retry.txt", job.output.stdout + job.output.stderr);
   } finally {
     await f.cleanup();
   }
+});
+
+test("dispatch 使用新登记适配器的自定义限流样本重排队", async () => {
+  const f = queueFixture();
+  try {
+    const preload = join(f.temporary, "custom-adapter.mjs");
+    const module = new URL("./dispatch/adapters.ts", import.meta.url).href;
+    writeFileSync(preload, `import { adapters } from ${JSON.stringify(module)}; adapters.fixture = { ...adapters.codex, id: "fixture", label: "测试框架", isConcurrencyLimit: output => output.includes("fixture capacity") };`);
+    const fake = join(f.root, "fake-dispatch.cjs");
+    writeFileSync(fake, readFileSync(fake, "utf8").replace("Concurrency limit exceeded for account", "fixture capacity"));
+    writeFileSync(f.configFile, JSON.stringify({ ...f.config, seats: { engineering: { default: { agent: "fixture", permission: "read-only" } } } }));
+    const job = f.launch(21, { LIMIT_FAILURES: "1", NODE_OPTIONS: `--import=${JSON.stringify(preload)}` });
+    assert.equal(await job.done, 0, job.output.stdout + job.output.stderr);
+    assert.match(job.output.stdout, /测试框架 返回并发超限，等待账号名额/);
+    assert.match(job.output.stdout + job.output.stderr, /fixture capacity/);
+    assert.equal(readFileSync(join(f.home, "attempt-gh-21"), "utf8"), "2");
+    evidence("queue-custom-adapter.log", job.output.stdout + job.output.stderr);
+  } finally { await f.cleanup(); }
 });
 
 test("dispatch prints at most six queue lines during thirty simulated minutes", async () => {
@@ -1452,7 +1626,7 @@ test("dispatch releases startup lock after registration so two free slots run co
       f.launch(22, { HOLD_DISPATCH: "1" }),
     ];
     await f.waitFor(() =>
-      jobs.every((job) => job.output.stdout.includes("已启动")),
+      jobs.every((job) => job.output.stdout.includes("记录名：")),
     );
     for (const ticket of [21, 22])
       writeFileSync(join(f.home, "release-gh-" + ticket), "");

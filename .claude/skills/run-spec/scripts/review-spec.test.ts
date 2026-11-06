@@ -71,6 +71,7 @@ const fixture = () => {
 const fs = require("node:fs");
 const path = require("node:path");
 const base = process.env.REVIEW_SPEC_FIXTURE;
+if (process.argv.includes('--version')) { console.log('fixture claude'); process.exit(0); }
 const prompt = fs.readFileSync(0, "utf8");
 const manifest = prompt.match(/本次审查材料清单：([^\\n]+)/)[1];
 const directory = path.dirname(manifest);
@@ -151,6 +152,7 @@ if (args[0] === "repo") {
         ...process.env,
         PATH: `${bin}${delimiter}${process.env.PATH}`,
         REVIEW_SPEC_FIXTURE: temporary,
+        XDG_CONFIG_HOME: join(temporary, "xdg"),
       },
       encoding: "utf8",
       timeout: 15000,
@@ -450,4 +452,25 @@ test("invalid arguments, missing files and modified/mismatched report pairs fail
   } finally {
     f.dispose();
   }
+});
+
+test("review-spec uses configured Claude path/model/effort while retaining the file-only tool set", () => {
+  const f = fixture();
+  try {
+    const directory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "seats.json"), JSON.stringify({
+      seats: { "spec-review": { default: { agent: "claude", model: "custom-review", effort: "low", permission: "full" } } },
+      agents: { claude: { path: join(f.temporary, "bin/claude") } },
+    }));
+    const result = f.run(["77"]);
+    assert.equal(result.status, 0, result.stderr);
+    const [call] = f.claude();
+    assert.equal(call.args[call.args.indexOf("--model") + 1], "custom-review");
+    assert.equal(call.args[call.args.indexOf("--effort") + 1], "low");
+    assert.equal(call.args[call.args.indexOf("--tools") + 1], "Read,Glob,Grep");
+    assert.ok(!call.args.includes("--settings"));
+    assert.ok(!call.args.includes("--permission-mode"));
+    assert.equal(JSON.parse(readFileSync(f.output.replace(/\.md$/, ".json"), "utf8")).framework, "claude");
+  } finally { f.dispose(); }
 });

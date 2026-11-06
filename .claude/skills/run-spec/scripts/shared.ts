@@ -7,21 +7,23 @@
  * linked directories normalize lexically against the checkout root and dedupe
  * before any command receives them. Empty/root, absolute and parent paths fail
  * with the configured entry index and value; symlink targets are not resolved.
- * codexSandbox selects Codex permissions; dispatchScript resolves against the
- * main worktree (absolute paths also work). Missing/invalid config exits with 2.
+ * Optional codexSandbox selects engineering Codex permissions; otherwise seats
+ * must supply engineering permissions. dispatchScript is obsolete and ignored.
+ * The dispatcher ships with run-spec. Missing/invalid required config exits with 2.
  * Optional codexConcurrency and prCheckCommand use defaults and report sources;
  * RUN_SPEC_CODEX_CONCURRENCY overrides the validated configured concurrency.
  * verificationEnv defaults to {}, substitutes {mainRoot} in configured values
  * and preserves existing process values; exclusiveVerification defaults false.
  * disposableIgnored defaults to [] and accepts one gitignore pattern per string.
  * Commands retain required numeric positionals, may add optionalPositionals,
+ * or use textPositionals to receive task text in the handler's args array.
  * and may opt into passthrough for untouched arguments after the first `--`.
  * Handlers may return a promise; the CLI awaits dispatch queueing and failures.
  * Parent lookup diagnoses HTTP 404 with a link command using the current spec
  * branch when available; other gh failures retain their original diagnostic.
- * runClaude sends the prompt on stdin, restricts tools, disables MCP/session
- * persistence and reads text/usage/cost from --output-format json. Missing usage
- * carries a Chinese reason; launch failures return exitCode 2 and an error.
+ * runClaude 执行适配器生成的命令，原样传递参数和 stdin，从 JSON 读取文本、用量和费用。
+ * 受限工具、MCP 与会话持久化参数由适配器统一构造；缺用量给出中文原因，
+ * 启动失败返回 exitCode 2 和错误详情。
  * Record ownership strips known extensions, then matches the exact
  * gh-<ticket>/review-<spec> name or a hyphen suffix for land, accept and cleanup.
  * All child processes receive argument arrays; no dependencies or shell evaluation.
@@ -29,11 +31,14 @@
  * probe; comments compare exact bodies across all pages before a second write.
  * Failed probes preserve the original diagnostic and prevent unsafe rewrites.
  * Optional staticCheckCommand/staticOnlyPaths enable path-based verification layers.
+ * seatConfiguration keeps immutable raw layers for seats/agents/workTypes;
+ * XDG user settings, legacy defaults and per-field sources live in dispatch/settings.ts.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { frameworkSettings, loadSeatConfiguration, type SeatConfiguration } from "./dispatch/settings.ts";
 
 export type Issue = {
   id: number;
@@ -52,6 +57,7 @@ export type Command = {
   options: Options;
   positionals: number;
   optionalPositionals?: number;
+  textPositionals?: boolean;
   passthrough?: boolean;
   normalizeArgs?: (args: string[]) => string[];
   execute: (
@@ -191,7 +197,7 @@ export const github = (dryRun: boolean) => {
 
 export const recordName = (file: string): string =>
   file.replace(
-    /(?:\.progress\.log|\.events\.jsonl|\.(?:json|jsonl|md|log))$/,
+    /(?:\.progress\.log|\.events\.jsonl|\.batch\.json|\.(?:json|jsonl|md|log))$/,
     "",
   );
 
@@ -201,14 +207,15 @@ export const matchesRecord = (file: string, prefix: string): boolean => {
 };
 
 export type DispatchConfig = {
+  seatConfiguration: SeatConfiguration;
   verificationCommand: string[];
   staticCheckCommand: string[] | null;
   staticOnlyPaths: string[];
   installCommand: string[];
   symlinkDirectories: string[];
   acceptanceRoot: string;
-  codexSandbox: string;
-  dispatchScript: string;
+  codexSandbox?: string;
+  dispatchScript?: unknown;
   codexConcurrency: number;
   prCheckCommand: string[];
   verificationEnv: Record<string, string>;
@@ -257,8 +264,6 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     "installCommand",
     "symlinkDirectories",
     "acceptanceRoot",
-    "codexSandbox",
-    "dispatchScript",
   ]) {
     if (!Object.hasOwn(config, key))
       throw new Error(`配置缺少 ${key}：${file}`);
@@ -292,6 +297,7 @@ export const dispatchConfig = (root: string): DispatchConfig => {
   if (!localPath(config.acceptanceRoot))
     throw new Error("配置 acceptanceRoot 必须是仓库内相对目录");
   if (
+    Object.hasOwn(config, "codexSandbox") &&
     !["read-only", "workspace-write", "danger-full-access"].includes(
       config.codexSandbox,
     )
@@ -299,11 +305,7 @@ export const dispatchConfig = (root: string): DispatchConfig => {
     throw new Error(
       "配置 codexSandbox 必须是 read-only、workspace-write 或 danger-full-access",
     );
-  if (
-    typeof config.dispatchScript !== "string" ||
-    !config.dispatchScript.trim()
-  )
-    throw new Error("配置 dispatchScript 必须是派发脚本路径");
+  const seatConfiguration = loadSeatConfiguration(root, config);
   const optionalSources = {
     codexConcurrency: Object.hasOwn(config, "codexConcurrency")
       ? "配置"
@@ -330,7 +332,7 @@ export const dispatchConfig = (root: string): DispatchConfig => {
       "配置 codexConcurrency 必须是安全范围内的正整数",
     );
   const concurrency = process.env.RUN_SPEC_CODEX_CONCURRENCY;
-  if (concurrency !== undefined) {
+  if (concurrency) {
     if (
       !/^[1-9]\d*$/.test(concurrency) ||
       !Number.isSafeInteger(Number(concurrency))
@@ -414,6 +416,11 @@ export const dispatchConfig = (root: string): DispatchConfig => {
       );
   } else config.staticOnlyPaths = [];
   config.optionalSources = optionalSources;
+  config.seatConfiguration = seatConfiguration;
+  const framework = frameworkSettings(seatConfiguration, "codex");
+  config.codexConcurrency = framework.concurrency;
+  if (framework.sources.concurrency.startsWith("用户") || framework.sources.concurrency.includes(".agents."))
+    optionalSources.codexConcurrency = framework.sources.concurrency;
   return config;
 };
 
@@ -437,24 +444,12 @@ export type ClaudeResult = {
 };
 
 export const runClaude = (options: {
-  prompt: string;
-  tools: string[];
   cwd: string;
-  model?: string;
+  command: { executable: string; args: string[]; stdin: string };
 }): ClaudeResult => {
-  const args = [
-    "-p",
-    "--output-format",
-    "json",
-    "--no-session-persistence",
-    "--strict-mcp-config",
-    "--tools",
-    options.tools.join(","),
-    ...(options.model ? ["--model", options.model] : []),
-  ];
-  const result = spawnSync("claude", args, {
+  const result = spawnSync(options.command.executable, options.command.args, {
     cwd: options.cwd,
-    input: options.prompt,
+    input: options.command.stdin,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -593,7 +588,9 @@ export const runCommands = (
   ) {
     throw usageError("缺少必需参数或有多余位置参数。", definition.help);
   }
-  return definition.execute(values, positionals.map(issueNumber), args);
+  return definition.textPositionals
+    ? definition.execute(values, [], positionals)
+    : definition.execute(values, positionals.map(issueNumber), args);
 };
 
 export const entry = "node .claude/skills/run-spec/scripts/tickets.ts";

@@ -16,6 +16,8 @@
  * second and report at most once per five minutes. No external dependencies.
  * Results include command timestamps and actual lock-wait minutes measured in
  * the acquiring worker; bypassed/inherited locks have zero wait minutes.
+ * Linux proc stat reads treat ENOENT/ESRCH as an exited process; other read
+ * failures propagate without changing lock scheduling or ownership.
  */
 import { spawn, spawnSync, type SpawnOptions } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -48,7 +50,8 @@ const processIdentity = (pid: number): string | undefined => {
       if (["Z", "X"].includes(fields[0])) return undefined;
       return `${readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim()}:${fields[19]}`;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? ""))
+        return undefined;
       throw error;
     }
   }
@@ -112,7 +115,8 @@ const groupAlive = (group: number, exclude?: number): boolean => {
         if (Number(fields[2]) === group && !["Z", "X"].includes(fields[0]))
           return true;
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? ""))
+          throw error;
       }
     }
     return false;

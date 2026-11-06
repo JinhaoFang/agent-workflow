@@ -8,10 +8,12 @@
  * direct version/auth probes exercise the same bounded gh retry as API calls.
  * A fake Claude CLI makes availability checks independent of the host install;
  * optional configuration covers defaults, configured/env sources and exit 2.
- * Codex probes cover DispatchDock's explicit Node/wrapper path, PATH fallback
- * and missing executables with isolated PATH/config directories.
+ * 各框架的 Node/.cmd/.bat 路径与派发入口对照，覆盖空版本、失败探测和无效路径；
+ * Codex 兼容旧配置的包装路径及隔离 PATH 中缺少可执行文件的情况。
  * Verification options report substituted effective values and per-variable
  * sources; TICKET_97_EVIDENCE captures default/configured doctor output.
+ * 技能可从 Claude 或共享目录安装；CLI 预加载临时移除隔离成员验证失败，
+ * TICKET_34_EVIDENCE 保存隔离检查的实际输出，不改源码或适配器文件。
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -134,6 +136,7 @@ console.log("codex-cli 0.1.0 (fixture)");
       oldNode?: boolean;
       concurrency?: string;
       isolatedPath?: boolean;
+      preload?: string;
       env?: NodeJS.ProcessEnv;
     } = {},
   ) => {
@@ -149,6 +152,7 @@ console.log("codex-cli 0.1.0 (fixture)");
           ...args,
         ]
       : [cli, ...args];
+    if (options.preload) command.unshift("--import", options.preload);
     const result = spawnSync(process.execPath, command, {
       cwd: options.cwd ?? root,
       encoding: "utf8",
@@ -159,6 +163,7 @@ console.log("codex-cli 0.1.0 (fixture)");
           ? bin
           : `${bin}${delimiter}${process.env.PATH}`,
         CODEX_DISPATCH_HOME: join(temporary, "dispatch-home"),
+        XDG_CONFIG_HOME: join(temporary, "xdg"),
         CLAUDE_CONFIG_DIR: join(temporary, "user-claude"),
         RUN_SPEC_CODEX_CONCURRENCY: options.concurrency,
         DOCTOR_CALLS: ghCalls,
@@ -198,6 +203,278 @@ console.log("codex-cli 0.1.0 (fixture)");
     cleanup: () => rmSync(temporary, { recursive: true, force: true }),
   };
 };
+
+test("doctor 未配置 codexSandbox 时报告仓库或用户工程权限，缺少时退出 2", () => {
+  const f = fixture();
+  try {
+    const { codexSandbox, ...config } = f.config;
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    const userFile = join(userDirectory, "seats.json");
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });
+    const capture = (name: string, result: ReturnType<typeof f.run>) => {
+      if (!process.env.RUN_SPEC_TEST_EVIDENCE) return;
+      mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
+      writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, name), result.stdout + result.stderr + `\n退出码：${result.status}\n`);
+    };
+    for (const agent of ["codex", "claude", "pi"]) {
+      for (const source of ["仓库", "用户"]) {
+        const seats = { engineering: { default: { agent, permission: "read-only" } } };
+        f.write("docs/agents/run-spec.json", JSON.stringify({ ...config, ...(source === "仓库" ? { seats } : {}) }));
+        writeFileSync(userFile, JSON.stringify(source === "用户" ? { seats } : {}));
+        const result = f.run(["doctor"], { env: { CODEX_SANDBOX: "" } });
+        assert.equal(result.status, 0, result.stdout + result.stderr);
+        assert.ok(result.stdout.includes(`engineering.default：框架：${agent}；模型：框架默认；强度：框架默认；权限：read-only；来源：框架=${source}、权限=${source}`), result.stdout);
+        assert.match(result.stdout, /codexSandbox=未配置，工程权限取席位配置/);
+        capture(`doctor-no-sandbox-${agent}-${source === "仓库" ? "repository" : "user"}.log`, result);
+      }
+    }
+    writeFileSync(userFile, "{}");
+    f.write("docs/agents/run-spec.json", JSON.stringify(config));
+    const missing = f.run(["doctor"], { env: { CODEX_SANDBOX: "" } });
+    assert.equal(missing.status, 2, missing.stdout + missing.stderr);
+    assert.match(missing.stderr, /席位配置 engineering.default；工程席位缺少权限/);
+    for (const location of ["docs/agents/run-spec.json", userFile, "seats.engineering.default.permission", "codexSandbox"])
+      assert.ok(missing.stderr.includes(location), missing.stderr);
+    capture("doctor-no-sandbox-missing.log", missing);
+    for (const [sandbox, permission] of [["read-only", "read-only"], ["workspace-write", "workspace-write"], ["danger-full-access", "full"]]) {
+      f.write("docs/agents/run-spec.json", JSON.stringify({ ...config, codexSandbox: sandbox }));
+      const legacy = f.run(["doctor"], { env: { CODEX_SANDBOX: "" } });
+      assert.equal(legacy.status, 0, legacy.stdout + legacy.stderr);
+      assert.ok(legacy.stdout.includes(`权限：${permission}；来源：权限=仓库`), legacy.stdout);
+    }
+  } finally { f.cleanup(); }
+});
+
+test("seat doctor reports default, user pi profiles, repository overrides and review lists with sources", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    const userFile = join(userDirectory, "seats.json");
+    const evidence = process.env.TICKET_25_EVIDENCE;
+    const capture = (name: string, result: ReturnType<typeof f.run>) => {
+      if (!evidence) return;
+      mkdirSync(evidence, { recursive: true });
+      writeFileSync(join(evidence, name), result.stdout + result.stderr + `\n退出码：${result.status}\n`);
+    };
+    const defaultResult = f.run();
+    assert.equal(defaultResult.status, 0, defaultResult.stdout + defaultResult.stderr);
+    assert.match(defaultResult.stdout, /用户席位配置：.*文件不存在/);
+    assert.match(defaultResult.stdout, /engineering.default：框架：codex/);
+    assert.doesNotMatch(defaultResult.stdout, /提示：权限映射损失：.*codex\//);
+    capture("doctor-default.log", defaultResult);
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });
+    writeFileSync(userFile, JSON.stringify({
+      seats: {
+        engineering: { default: { agent: "codex", model: "user-default" }, 前端: { agent: "pi", model: "zai-coding-cn/glm-5.3-flash", effort: "high" } },
+        review: { default: [{ agent: "codex", model: "review-one" }, { agent: "pi", model: "review-two" }] },
+      },
+      agents: { pi: { path: join(f.bin, "pi"), concurrency: 3 }, codex: { concurrency: 3 } },
+    }));
+    f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "汇报模板等 HTML 页面", 后端: "脚本" } }));
+    const userResult = f.run();
+    assert.equal(userResult.status, 0, userResult.stdout + userResult.stderr);
+    assert.match(userResult.stdout, /engineering.前端：框架：pi；模型：zai-coding-cn\/glm-5.3-flash/);
+    assert.match(userResult.stdout, /来源：框架=用户、模型=用户、强度=用户/);
+    assert.match(userResult.stdout, /review.default\[1\].*框架：pi；模型：review-two/);
+    assert.match(userResult.stdout, /这些席位没有『后端』档，回落 default：engineering、review、spec-review、research、watch/);
+    if (userResult.stdout.includes("提示：适配器未接入："))
+      assert.match(userResult.stdout, /提示：适配器未接入：pi（席位：engineering、review）；当前不可用.*无法确认强制只读/);
+    else assert.match(userResult.stdout, /提示：权限映射损失：.*pi\/read-only（席位：review）/);
+    assert.match(userResult.stdout, /席位框架安装 pi；pi fixture/);
+    for (const agent of ["codex", "claude", "pi"])
+      assert.match(userResult.stdout, new RegExp(`通过：技能隔离 ${agent}；适配器 isolationArgs`));
+    capture("doctor-user.log", userResult);
+    f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "HTML" }, seats: { engineering: { default: { model: "repository-default" }, 前端: { effort: "low" } }, review: { default: [{ agent: "codex", model: "repository-review" }] } }, agents: { codex: { concurrency: 4, path: join(f.bin, "codex") } } }));
+    const repository = f.run(["doctor"], { concurrency: "5", env: { CODEX_MODEL: "environment-model" } });
+    assert.equal(repository.status, 0, repository.stdout + repository.stderr);
+    assert.match(repository.stdout, /engineering.前端：.*框架：pi；模型：repository-default；强度：low/);
+    assert.match(repository.stdout, /engineering.default：.*模型：environment-model/);
+    assert.match(repository.stdout, /来源：框架=用户、模型=环境/);
+    assert.match(repository.stdout, /框架配置 codex：并发：5/);
+    assert.match(repository.stdout, /RUN_SPEC_CODEX_CONCURRENCY/);
+    assert.doesNotMatch(repository.stdout, /review.default\[1\]/);
+    capture("doctor-repository-env.log", repository);
+  } finally { f.cleanup(); }
+});
+
+test("seat configuration rejects malformed user and repository fields with exit 2", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    const userFile = join(userDirectory, "seats.json");
+    for (const value of ["{", "[]", "null", JSON.stringify({ seats: { unknown: {} } }), JSON.stringify({ seats: { engineering: { default: [] } } }), JSON.stringify({ seats: { review: { default: [] } } }), JSON.stringify({ seats: { watch: { default: { permission: "danger-full-access" } } } }), JSON.stringify({ seats: { engineering: { default: { agent: "other" } } } }), JSON.stringify({ agents: { pi: { path: "relative" } } }), JSON.stringify({ agents: { pi: { concurrency: 0 } } }), JSON.stringify({ workTypes: { 前端: "HTML" } })]) {
+      writeFileSync(userFile, value);
+      const result = f.run();
+      assert.equal(result.status, 2, value + result.stdout + result.stderr);
+      assert.match(result.stderr, /出错：.*用户配置|出错：.*seats.json/);
+    }
+    rmSync(userFile);
+    for (const patch of [{ workTypes: [] }, { workTypes: { default: "reserved" } }, { workTypes: { 前端: "" } }, { seats: { engineering: { 拼错: { agent: "codex" } } } }, { seats: { research: { default: { unexpected: true } } } }, { agents: { other: {} } }]) {
+      f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, ...patch }));
+      const result = f.run();
+      assert.equal(result.status, 2, result.stdout + result.stderr);
+      assert.match(result.stderr, /出错：.*仓库配置/);
+    }
+  } finally { f.cleanup(); }
+});
+
+test("seat doctor compacts the ticket 25 configuration into one row per configured profile", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { engineering: { default: { agent: "codex" }, 前端: { agent: "pi", model: "zai-coding-cn/glm-5.3-flash" } } } }));
+    writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });
+    f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "汇报模板等 HTML 页面" } }));
+    const result = f.run();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const section = result.stdout.slice(result.stdout.indexOf("用户席位配置："), result.stdout.indexOf("通过：Codex CLI 可用"));
+    assert.deepEqual(section.split("\n").filter(line => /^(engineering|review|spec-review|research|watch)\./.test(line)), [
+      "engineering.default：框架：codex；模型：框架默认；强度：框架默认；权限：full；来源：框架=用户、权限=仓库",
+      "engineering.前端：框架：pi；模型：zai-coding-cn/glm-5.3-flash；强度：框架默认；权限：workspace-write；来源：框架=用户、模型=用户",
+      "review.default：框架：codex；模型：框架默认；强度：框架默认；权限：read-only",
+      "spec-review.default：框架：claude；模型：框架默认；强度：框架默认；权限：read-only",
+      "research.default：框架：codex；模型：框架默认；强度：框架默认；权限：read-only",
+      "watch.default：框架：claude；模型：haiku；强度：框架默认；权限：read-only",
+    ]);
+    assert.match(section, /提示：这些席位没有『前端』档，回落 default：review、spec-review、research、watch/);
+    assert.equal(section.split("\n").filter(line => line.startsWith("框架配置 ")).length, 3);
+    assert.equal(section.split("\n").filter(line => line.startsWith("提示：权限映射损失：")).length, 1);
+    assert.ok(section.split("\n").filter(line => line.startsWith("提示：适配器未接入：")).length <= 1);
+    assert.doesNotMatch(section, /[{}]|通过：席位配置|来源：.*内置默认|seats.json\.seats/);
+    assert.ok(section.trim().split("\n").length <= 14, section);
+    if (process.env.TICKET_32_EVIDENCE) {
+      mkdirSync(process.env.TICKET_32_EVIDENCE, { recursive: true });
+      writeFileSync(join(process.env.TICKET_32_EVIDENCE, "doctor-compact.log"), result.stdout + result.stderr + `\n退出码：${result.status}\n席位部分行数：${section.trim().split("\n").length}\n`);
+    }
+  } finally { f.cleanup(); }
+});
+
+test("seat doctor ignores empty environment values for every framework and preserves fallback sources", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    const userFile = join(userDirectory, "seats.json");
+    writeFileSync(userFile, JSON.stringify({ agents: { codex: { concurrency: 3 }, claude: { concurrency: 4 }, pi: { concurrency: 5 } } }));
+    writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });
+    const env = { CODEX_MODEL: "", CODEX_EFFORT: "", CODEX_SANDBOX: "", CODEX_TIER: "", RUN_SPEC_CODEX_CONCURRENCY: "", RUN_SPEC_CLAUDE_CONCURRENCY: "", RUN_SPEC_PI_CONCURRENCY: "" };
+    for (const layer of ["repository", "user", "builtin"] as const) {
+      f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, seats: { review: { default: [{ agent: "codex" }, { agent: "claude" }, { agent: "pi" }] } }, ...(layer === "repository" ? { agents: { codex: { concurrency: 6 }, claude: { concurrency: 7 }, pi: { concurrency: 8 } } } : {}) }));
+      if (layer === "builtin") rmSync(userFile);
+      const result = f.run(["doctor"], { env });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const base = layer === "repository" ? 6 : layer === "user" ? 3 : 2;
+      for (const [index, agent] of ["codex", "claude", "pi"].entries()) {
+        assert.ok(result.stdout.includes(`框架配置 ${agent}：并发：${layer === "builtin" ? 2 : base + index}；路径：PATH${layer === "builtin" ? "" : `；来源：并发=${layer === "repository" ? "仓库" : "用户"}`}`), result.stdout);
+      }
+      assert.doesNotMatch(result.stdout, /环境变量 CODEX_|环境变量 RUN_SPEC_|=环境/);
+      if (process.env.TICKET_32_EVIDENCE) {
+        mkdirSync(process.env.TICKET_32_EVIDENCE, { recursive: true });
+        writeFileSync(join(process.env.TICKET_32_EVIDENCE, `doctor-empty-env-${layer}.log`), result.stdout + result.stderr);
+      }
+    }
+  } finally { f.cleanup(); }
+});
+
+test("seat review lists replace lower lists, typed lists fall back and null restores framework defaults", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { review: { default: [{ model: "one", effort: "high" }, { model: "two" }], 前端: [{ model: "frontend" }] }, engineering: { default: { model: "user", effort: "high" } } } }));
+    f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "HTML", 后端: "scripts" }, seats: { engineering: { default: { model: null, effort: null } } } }));
+    const user = f.run();
+    assert.equal(user.status, 0, user.stdout + user.stderr);
+    assert.match(user.stdout, /review.default\[1\].*模型：two/);
+    assert.match(user.stdout, /review.前端：.*模型：frontend；强度：框架默认/);
+    assert.match(user.stdout, /这些席位没有『后端』档，回落 default：engineering、review、spec-review、research、watch/);
+    assert.doesNotMatch(user.stdout, /review.后端\[1\]/);
+    assert.match(user.stdout, /engineering.default：.*模型：框架默认；强度：框架默认/);
+    f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "HTML" }, seats: { review: { default: [{}], 前端: [{ model: "repository-type" }] } } }));
+    const repository = f.run();
+    assert.equal(repository.status, 0, repository.stdout + repository.stderr);
+    assert.match(repository.stdout, /review.default：.*模型：框架默认；强度：框架默认/);
+    assert.match(repository.stdout, /review.前端：.*模型：repository-type/);
+    assert.doesNotMatch(repository.stdout, /review.default\[1\]|模型：frontend/);
+  } finally { f.cleanup(); }
+});
+
+test("seat doctor probes configured Codex and Claude paths and ignores unused frameworks", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    mkdirSync(userDirectory, { recursive: true });
+    const codexPath = join(f.temporary, "custom codex.cjs");
+    const claudePath = join(f.temporary, "custom claude.cjs");
+    writeFileSync(codexPath, 'console.log("codex custom fixture");\n');
+    writeFileSync(claudePath, 'console.log("claude custom fixture");\n');
+    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ agents: { codex: { path: codexPath }, claude: { path: claudePath } } }));
+    rmSync(join(f.bin, "codex"));
+    rmSync(join(f.bin, "claude"));
+    const gitPath = (process.env.PATH ?? "").split(delimiter).map(path => join(path, "git")).find(existsSync)!;
+    symlinkSync(gitPath, join(f.bin, "git"));
+    const configured = f.run(["doctor"], { isolatedPath: true });
+    assert.equal(configured.status, 0, configured.stdout + configured.stderr);
+    assert.match(configured.stdout, /Codex CLI 可用；codex custom fixture/);
+    assert.match(configured.stdout, /claude CLI 可用；claude custom fixture/);
+    assert.match(configured.stdout, /用户 .*seats.json.agents.codex.path/);
+    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { "spec-review": { default: { agent: "codex" } }, watch: { default: { agent: "codex", model: null } } }, agents: { codex: { path: codexPath } } }));
+    const unused = f.run(["doctor"], { isolatedPath: true });
+    assert.equal(unused.status, 0, unused.stdout + unused.stderr);
+    assert.doesNotMatch(unused.stdout + unused.stderr, /claude CLI 可用/);
+  } finally { f.cleanup(); }
+});
+
+for (const agent of ["codex", "claude", "pi"]) {
+  for (const extension of ["cjs", "cmd", "bat"]) {
+    test(`doctor 与派发复用框架探测：${agent}.${extension}`, () => {
+      const f = fixture();
+      try {
+        const executable = join(f.temporary, `${agent} entry.cjs`);
+        const configured = extension === "cjs" ? executable : join(f.temporary, `${agent} wrapper.${extension}`);
+        const events = readFileSync(join(import.meta.dirname, `fixtures/${agent}-success.jsonl`), "utf8");
+        writeFileSync(executable, `
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args.includes('--version')) {
+  if (process.env.PROBE_MODE !== 'empty-version') console.log('${agent} wrapper fixture');
+  process.exit(process.env.PROBE_MODE === 'version-failure' ? 3 : 0);
+}
+fs.readFileSync(0, 'utf8');
+if (args[args.indexOf('--mode') + 1] === 'rpc') {
+  console.log(JSON.stringify({type:'response',id:'run-spec-skills',command:'get_commands',success:true,data:{commands:[]}}));
+} else {
+  if (args.includes('-o')) fs.writeFileSync(args[args.indexOf('-o') + 1], '包装入口派发成功');
+  process.stdout.write(${JSON.stringify(events)}.replaceAll('<ROOT>', process.cwd()));
+}
+`);
+        if (extension !== "cjs") writeFileSync(configured, `@"%dp0%/${agent} entry.cjs" %*`);
+        f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, seats: { engineering: { default: { agent } } }, agents: { [agent]: { path: configured } } }));
+        for (const mode of ["available", "empty-version", "version-failure", ...(extension === "cjs" ? ["missing-entry"] : ["invalid-wrapper"])]) {
+          if (mode === "missing-entry") rmSync(executable);
+          if (mode === "invalid-wrapper") writeFileSync(configured, "@echo 无法解析的包装\n");
+          const available = mode === "available" || mode === "empty-version";
+          const doctor = f.run(["doctor"], { env: { PROBE_MODE: mode } });
+          const dispatch = spawnSync(process.execPath, [join(import.meta.dirname, "dispatch-task.ts"), "回放很小的只读任务", "--agent", agent, "--name", `${agent}-${extension}-${mode}`, "--permission", "read-only"], {
+            cwd: f.root, encoding: "utf8", timeout: 10000,
+            env: { ...process.env, PATH: `${f.bin}${delimiter}${process.env.PATH}`, XDG_CONFIG_HOME: join(f.temporary, "xdg"), CODEX_DISPATCH_HOME: join(f.temporary, "dispatch-home"), PROBE_MODE: mode },
+          });
+          assert.ifError(dispatch.error);
+          assert.equal(doctor.status, available ? 0 : 1, doctor.stdout + doctor.stderr);
+          assert.equal(dispatch.status, available ? 0 : 2, dispatch.stdout + dispatch.stderr);
+          const summary = JSON.parse(readFileSync(join(f.root, `.codex-runs/${agent}-${extension}-${mode}.json`), "utf8"));
+          assert.equal(summary.success, available);
+          const label = agent === "codex" ? "Codex CLI 可用" : agent === "claude" ? "claude CLI 可用" : "席位框架安装 pi";
+          assert.ok((available ? doctor.stdout : doctor.stderr).includes(`${available ? "通过" : "不通过"}：${label}`));
+        }
+      } finally { f.cleanup(); }
+    });
+  }
+}
 
 test("doctor reports static configuration values and sources and rejects malformed combinations with exit 2", () => {
   const f = fixture();
@@ -372,7 +649,8 @@ test("doctor passes with tracked source skills, paginated labels and directory-o
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, "");
     assert.match(result.stdout, /自检结束：全部通过/);
-    assert.match(result.stdout, /技能隔离 setup-run-spec；尚未安装/);
+    assert.match(result.stdout, /技能隔离 codex；适配器 isolationArgs/);
+    assert.match(result.stdout, /review-spec、watch 通过工具裁剪隔离/);
     assert.match(result.stdout, /同名软链接实测通过/);
     assert.match(result.stdout, /通过：claude CLI 可用；2\.1\.0/);
     assert.match(
@@ -403,7 +681,7 @@ test("doctor passes with tracked source skills, paginated labels and directory-o
   }
 });
 
-test("doctor accepts ignored installed skills and absent optional triage, and checks setup-run-spec when present", () => {
+test("doctor accepts ignored installed skills and absent optional triage, including shared setup-run-spec", () => {
   const f = fixture();
   try {
     f.git(["rm", "--cached", "-r", ".claude/skills"]);
@@ -413,7 +691,8 @@ test("doctor accepts ignored installed skills and absent optional triage, and ch
     f.skill("setup-run-spec");
     assert.equal(f.run().status, 0);
     f.skill("setup-run-spec", ".agents/skills");
-    fails(f.run(), "技能隔离 setup-run-spec", /移除共享目录副本/);
+    const shared = f.run();
+    assert.equal(shared.status, 0, shared.stdout + shared.stderr);
   } finally {
     f.cleanup();
   }
@@ -532,39 +811,70 @@ test("doctor uses repository excludes without copying or changing them", () => {
   }
 });
 
-test("doctor rejects shared skill copies, direct and indirect shared symlinks, and broken skill links", () => {
-  for (const name of ["run-spec", "codex-dispatch", "setup-run-spec"]) {
-    for (const mode of ["copy", "link", "indirect", "broken"]) {
-      const f = fixture();
-      try {
+test("doctor 技能隔离：两个技能在 Claude、共享目录或软链接安装均通过", () => {
+  for (const mode of ["claude", "shared", "copy", "link", "indirect"]) {
+    const f = fixture();
+    try {
+      for (const name of ["run-spec", "setup-run-spec"]) {
         f.skill(name);
-        if (mode === "copy") f.skill(name, ".codex/skills");
-        else {
+        if (mode === "claude") continue;
+        f.skill(name, ".agents/skills");
+        if (mode !== "copy") {
           rmSync(join(f.root, ".claude/skills", name), { recursive: true });
-          if (mode === "broken")
-            symlinkSync(
-              join(f.temporary, "missing"),
-              join(f.root, ".claude/skills", name),
-            );
-          else {
-            f.write(".agents/skills/unexpected-name/SKILL.md", "skill");
-            let target = join(f.root, ".agents/skills/unexpected-name");
-            if (mode === "indirect") {
-              symlinkSync(target, join(f.temporary, "alias"));
-              target = join(f.temporary, "alias");
-            }
-            symlinkSync(target, join(f.root, ".claude/skills", name));
+          if (mode === "shared") continue;
+          let target = join(f.root, ".agents/skills", name);
+          if (mode === "indirect") {
+            const alias = join(f.temporary, `${name}-alias`);
+            symlinkSync(target, alias);
+            target = alias;
           }
+          symlinkSync(target, join(f.root, ".claude/skills", name));
         }
-        fails(f.run(), `技能隔离 ${name}`, /共享目录|缺少有效的 SKILL/);
-      } finally {
-        f.cleanup();
       }
+      const result = f.run();
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.match(result.stdout, /通过：技能隔离 codex/);
+      assert.match(result.stdout, /通过：技能隔离 claude/);
+      if (process.env.TICKET_34_EVIDENCE) {
+        mkdirSync(process.env.TICKET_34_EVIDENCE, { recursive: true });
+        writeFileSync(join(process.env.TICKET_34_EVIDENCE, `doctor-${mode}.log`), result.stdout + result.stderr + `\n退出码：${result.status}\n`);
+      }
+    } finally {
+      f.cleanup();
     }
   }
 });
 
-test("doctor detects ancestor shared skills even when the local Claude skill is valid", () => {
+test("doctor 技能隔离：已用适配器缺少或返回空隔离参数时退出 1，未用框架不检查", () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });
+    const module = new URL("./dispatch/adapters.ts", import.meta.url).href;
+    const preload = (patch: string) => `data:text/javascript,${encodeURIComponent(`import { adapters } from ${JSON.stringify(module)}; ${patch}`)}`;
+    const unused = f.run(["doctor"], { preload: preload("delete adapters.pi.isolationArgs;") });
+    assert.equal(unused.status, 0, unused.stdout + unused.stderr);
+    assert.doesNotMatch(unused.stdout, /技能隔离 pi/);
+    f.write("docs/agents/run-spec.json", JSON.stringify({
+      ...f.config,
+      workTypes: { 前端: "HTML" },
+      seats: { engineering: { 前端: { agent: "pi" } } },
+    }));
+    for (const agent of ["codex", "claude", "pi"]) {
+      for (const mode of ["missing", "empty"]) {
+        const patch = mode === "missing" ? `delete adapters.${agent}.isolationArgs;` : `adapters.${agent}.isolationArgs = () => [];`;
+        const result = f.run(["doctor"], { preload: preload(patch) });
+        fails(result, `技能隔离 ${agent}`, /isolationArgs/);
+        assert.match(result.stdout, /自检结束：1 项不通过/);
+        if (process.env.TICKET_34_EVIDENCE) {
+          mkdirSync(process.env.TICKET_34_EVIDENCE, { recursive: true });
+          writeFileSync(join(process.env.TICKET_34_EVIDENCE, `doctor-${agent}-${mode}.log`), result.stdout + result.stderr + `\n退出码：${result.status}\n`);
+        }
+      }
+    }
+  } finally { f.cleanup(); }
+});
+
+test("doctor accepts ancestor shared skills alongside local Claude skills", () => {
   const f = fixture();
   try {
     mkdirSync(join(f.temporary, ".agents/skills/run-spec"), {
@@ -574,7 +884,8 @@ test("doctor detects ancestor shared skills even when the local Claude skill is 
       join(f.temporary, ".agents/skills/run-spec/SKILL.md"),
       "skill",
     );
-    fails(f.run(), "技能隔离 run-spec", /Codex 可见/);
+    const result = f.run();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
   } finally {
     f.cleanup();
   }
@@ -619,7 +930,7 @@ test("doctor reports absent configuration, every missing field, invalid JSON and
   try {
     rmSync(join(f.root, "docs/agents/run-spec.json"));
     fails(f.run(), "执行配置完整", /必填项/);
-    for (const key of Object.keys(f.config)) {
+    for (const key of Object.keys(f.config).filter(key => !["dispatchScript", "codexSandbox"].includes(key))) {
       const config: Record<string, unknown> = { ...f.config };
       delete config[key];
       f.write("docs/agents/run-spec.json", JSON.stringify(config));
@@ -636,7 +947,8 @@ test("doctor reports absent configuration, every missing field, invalid JSON and
     fails(f.run(), "执行配置完整", /非空的程序和参数数组/);
     f.write("docs/agents/run-spec.json", JSON.stringify(f.config));
     rmSync(join(f.root, f.config.dispatchScript));
-    fails(f.run(), "派发脚本", /安装 codex-dispatch/);
+    assert.equal(f.run().status, 0);
+    assert.match(f.run().stdout, /已忽略 dispatchScript，可以删除/);
   } finally {
     f.cleanup();
   }
@@ -720,7 +1032,7 @@ test("doctor reads configuration in ticket checkout and third-party dispatcher i
     assert.ok(!existsSync(join(worktree, f.config.dispatchScript)));
     const result = f.run(["doctor"], { cwd: worktree });
     assert.equal(result.status, 0, result.stderr);
-    assert.ok(result.stdout.includes(join(f.root, f.config.dispatchScript)));
+    assert.match(result.stdout, /已忽略 dispatchScript，可以删除/);
   } finally {
     f.cleanup();
   }
@@ -742,11 +1054,13 @@ test("doctor help lists all checks and incorrect arguments exit 2 without invoki
       "triage",
       "setup-run-spec",
       "共享目录",
+      "isolationArgs",
+      "工具裁剪",
       "配置",
       "codexConcurrency",
       "prCheckCommand",
-      "claude",
-      "派发脚本",
+      "各席位使用的框架 CLI",
+      "dispatchScript",
       ".codex-runs",
       "末尾斜杠",
       ".env",
@@ -830,7 +1144,6 @@ test("doctor rejects malformed optional values and environment overrides with ex
     }
     f.write("docs/agents/run-spec.json", JSON.stringify(f.config));
     for (const concurrency of [
-      "",
       "0",
       "-1",
       "1.5",
@@ -862,7 +1175,7 @@ test("doctor reports a missing Claude CLI as an unmet prerequisite", () => {
     fails(
       f.run(["doctor"], { isolatedPath: true }),
       "claude CLI 可用",
-      /无法运行 claude --version[\s\S]*安装 Claude Code CLI/,
+      /找不到 Claude Code CLI[\s\S]*安装 Claude Code CLI/,
     );
   } finally {
     f.cleanup();
@@ -1019,7 +1332,7 @@ test("doctor finds configured Codex Node and npm wrapper entries without Codex o
   }
 });
 
-test("doctor reports both Codex search locations when config and PATH have no CLI", () => {
+test("doctor reports the adapter diagnostic when config and PATH have no Codex CLI", () => {
   const f = fixture();
   try {
     rmSync(join(f.bin, "codex"));
@@ -1033,7 +1346,7 @@ test("doctor reports both Codex search locations when config and PATH have no CL
     fails(
       missing,
       "Codex CLI 可用",
-      /已查找：.*config.json 的 agents.codex.path、PATH/,
+      /找不到 Codex CLI[\s\S]*config.json 的 agents.codex.path/,
     );
     const directory = process.env.RUN_SPEC_TEST_EVIDENCE;
     if (directory) {

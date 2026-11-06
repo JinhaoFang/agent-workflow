@@ -1,6 +1,8 @@
 /**
  * Review comment command: review <spec> --record <name> --conclusion-file <file>.
- * Resolve thread.started in the main checkout's DispatchDock .log, then index
+ * Prefer normalized root usage from the built-in .json summary, while still
+ * reading root activity to detect missing children. For legacy records,
+ * resolve thread.started in the main checkout's .log, then index
  * CODEX_HOME/sessions (default ~/.codex/sessions) by the first session_meta.id.
  * Read index metadata in bounded chunks with an internal 8 MiB first-line budget;
  * stop at the first newline or reject oversized metadata as a scan limit. Read full
@@ -12,10 +14,12 @@
  * Missing or changed data yields a partial comment with reasons, not an error.
  * --session supports surviving session records after dispatch cleanup; dry-run
  * prints only the comment and performs no GitHub calls. No external dependencies.
+ * run 批次按 .batch.json 精确清单合计；非 Codex 使用最终汇总，不扫描 Codex 会话。
  */
 import { spawnSync } from "node:child_process";
 import {
   closeSync,
+  existsSync,
   mkdtempSync,
   openSync,
   readFileSync,
@@ -33,6 +37,8 @@ import {
   type Command,
   type Values,
 } from "./shared.ts";
+
+import { dispatchSummary } from "./dispatch/summary.ts";
 
 type Metadata = {
   id: string;
@@ -170,6 +176,7 @@ const sessionUsage = (
   child: boolean,
   seen: Set<string>,
   missing: Set<string>,
+  readTokens = true,
 ): Usage => {
   if (session.duplicate)
     reasons.push(`会话 ${session.id} 有重复文件，仅计一次`);
@@ -192,7 +199,7 @@ const sessionUsage = (
     ) {
       missing.add(payload.item.agent_thread_id);
     }
-    if (payload.type === "token_count" && payload.info !== null) {
+    if (readTokens && payload.type === "token_count" && payload.info !== null) {
       const total = payload.info?.total_token_usage;
       for (const [field, key] of [
         ["input", "input_tokens"],
@@ -216,9 +223,10 @@ const sessionUsage = (
     }
   }
   if (
-    usage.input === undefined ||
-    usage.cached === undefined ||
-    usage.output === undefined
+    readTokens &&
+    (usage.input === undefined ||
+      usage.cached === undefined ||
+      usage.output === undefined)
   )
     reasons.push(`会话 ${session.id} 缺少完整 token_count`);
   if (
@@ -241,28 +249,25 @@ const sessionUsage = (
   return usage;
 };
 
-const review = (values: Values, numbers: number[]): void => {
-  const name = values.record;
-  const conclusionFile = values["conclusion-file"];
-  if (
-    typeof name !== "string" ||
-    !new RegExp(`^review-${numbers[0]}(?:-[A-Za-z0-9_-]+)?$`).test(name)
-  )
-    throw usageError(
-      "--record 必须是本 spec 的审查记录名（不含扩展名）。",
-      reviewCommand.help,
-    );
-  if (typeof conclusionFile !== "string" || !conclusionFile.trim())
-    throw usageError("必须提供 --conclusion-file。", reviewCommand.help);
-  const conclusion = readFileSync(conclusionFile, "utf8");
-  if (!conclusion.trim()) throw new Error("审查结论不能为空");
+const reviewUsage = (name: string, override: string | undefined, root: string) => {
   const reasons: string[] = [];
-  const trees = spawnSync("git", ["worktree", "list", "--porcelain"], {
-    encoding: "utf8",
-  });
-  const root =
-    trees.status === 0 ? trees.stdout.split("\n")[0].slice(9) : process.cwd();
+  const scanReasons: string[] = [];
   const records = join(root, ".codex-runs", name);
+  const summary = dispatchSummary(`${records}.json`);
+  const model = summary?.actualModel ?? "未知";
+  const label = `派发 ${name}（框架 ${summary?.framework ?? "codex"}；模型 ${model}）`;
+  const line = (label: string, usage: Usage): string =>
+    `- ${label}：用时 ${numberText(usage.minutes)} 分钟，输入 ${numberText(usage.input)}（其中缓存 ${numberText(usage.cached)}），输出 ${numberText(usage.output)} tokens`;
+  if (summary && summary.framework !== "codex") {
+    const usage: Usage = { minutes: summary.minutes, ...(summary.usage ?? {}) };
+    if (typeof usage.minutes !== "number" || !Number.isFinite(usage.minutes) || usage.minutes < 0) {
+      usage.minutes = undefined;
+      reasons.push(`派发 ${name} 缺少有效时长`);
+    }
+    if (!summary.usage) reasons.push(`派发 ${name} 缺少完整用量`);
+    if (!summary.success) reasons.push(`派发 ${name} 未成功结束`);
+    return { usages: [usage], lines: [line(label, usage)], reasons, scanReasons };
+  }
   const log = rows(
     read(`${records}.log`, reasons, "派发日志"),
     reasons,
@@ -279,7 +284,6 @@ const review = (values: Values, numbers: number[]): void => {
         .map((event) => event.thread_id as string),
     ),
   ];
-  const override = values.session;
   if (
     override !== undefined &&
     (typeof override !== "string" || !/^[A-Za-z0-9_-]+$/.test(override))
@@ -289,26 +293,28 @@ const review = (values: Values, numbers: number[]): void => {
   const id = ids.length === 1 ? ids[0] : (override as string | undefined);
   if (ids.length === 1 && override !== undefined && override !== id)
     throw new Error("--session 与派发记录中的会话 ID 不一致");
-  if (!id) reasons.push("派发日志缺少 thread.started 会话 ID");
+  if (!id && !summary) reasons.push("派发日志缺少 thread.started 会话 ID");
   const progress = read(`${records}.progress.log`, reasons, "派发进度");
   const footer = progress.match(
-    /^=== Codex 结束：exit=-?\d+，用时 (\d+(?:\.\d+)?) 分钟，汇报在 .+ ===\r?$/m,
+    /^=== [^\r\n]+ 结束：exit=-?\d+，用时 (\d+(?:\.\d+)?) 分钟，汇报在 .+ ===\r?$/m,
   );
   const minutes = footer ? Number(footer[1]) : undefined;
   if (minutes === undefined) reasons.push("派发进度缺少结束时长");
-  const scanReasons: string[] = [];
   const sessions = sessionIndex(
     join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "sessions"),
     scanReasons,
   );
   const selected: Session[] = [];
-  if (id && sessions.has(id)) selected.push(sessions.get(id)!);
+  const rootSession = id ? sessions.get(id) : undefined;
+  if (rootSession) selected.push(rootSession);
   else if (id) reasons.push(`找不到审查会话 ${id}`);
-  const seen = new Set(selected.map((session) => session.id));
-  for (let index = 0; index < selected.length; index++) {
+  const pending = id ? [id] : [];
+  const seen = new Set(pending);
+  for (let index = 0; index < pending.length; index++) {
     for (const session of sessions.values()) {
-      if (session.parent === selected[index].id && !seen.has(session.id)) {
+      if (session.parent === pending[index] && !seen.has(session.id)) {
         seen.add(session.id);
+        pending.push(session.id);
         selected.push(session);
       }
     }
@@ -316,30 +322,66 @@ const review = (values: Values, numbers: number[]): void => {
   const usages: Usage[] = [];
   const missing = new Set<string>();
   const lines: string[] = [];
-  const line = (label: string, usage: Usage): string =>
-    `- ${label}：用时 ${numberText(usage.minutes)} 分钟，输入 ${numberText(usage.input)}（其中缓存 ${numberText(usage.cached)}），输出 ${numberText(usage.output)} tokens`;
-  if (!selected.length) {
-    usages.push({ minutes });
-    lines.push(line(`派发 ${name}`, usages[0]));
+  if (!rootSession) {
+    usages.push({ minutes, ...(summary?.usage ? { input: summary.usage.input, cached: summary.usage.cached, output: summary.usage.output } : {}) });
+    lines.push(line(label, usages[0]));
   }
-  for (const [index, session] of selected.entries()) {
-    const usage = sessionUsage(session, reasons, index > 0, seen, missing);
-    if (index === 0) usage.minutes = minutes;
+  for (const session of selected) {
+    const isRoot = session.id === id;
+    const usage = sessionUsage(session, reasons, !isRoot, seen, missing, !isRoot || !summary);
+    if (isRoot && summary?.usage)
+      Object.assign(usage, { input: summary.usage.input, cached: summary.usage.cached, output: summary.usage.output });
+    if (isRoot) usage.minutes = minutes;
     usages.push(usage);
     lines.push(
       line(
-        index === 0
-          ? `派发 ${name}（会话 ${session.id}）`
+        isRoot
+          ? `${label}（会话 ${session.id}）`
           : `子代理 ${session.meta.agent_path ?? session.id}（会话 ${session.id}）`,
         usage,
       ),
     );
   }
+  if (summary && !summary.usage) reasons.push("派发记录缺少完整用量");
   for (const id of missing) {
     reasons.push(`找不到子代理会话 ${id}`);
     usages.push({});
     lines.push(line(`子代理（会话 ${id}）`, {}));
   }
+  if (summary && !summary.success) reasons.push(`派发 ${name} 未成功结束`);
+  return { usages, lines, reasons, scanReasons };
+};
+
+const review = (values: Values, numbers: number[]): void => {
+  const name = values.record;
+  if (typeof name !== "string" || !new RegExp(`^review-${numbers[0]}(?:-[A-Za-z0-9_-]+)?$`).test(name))
+    throw usageError("--record 必须是本 spec 的审查记录名（不含扩展名）。", reviewCommand.help);
+  const conclusionFile = values["conclusion-file"];
+  if (typeof conclusionFile !== "string" || !conclusionFile.trim()) throw usageError("必须提供 --conclusion-file。", reviewCommand.help);
+  const conclusion = readFileSync(conclusionFile, "utf8");
+  if (!conclusion.trim()) throw new Error("审查结论不能为空");
+  const override = values.session;
+  if (override !== undefined && (typeof override !== "string" || !/^[A-Za-z0-9_-]+$/.test(override)))
+    throw usageError("--session 必须是会话 ID。", reviewCommand.help);
+  const trees = spawnSync("git", ["worktree", "list", "--porcelain"], { encoding: "utf8" });
+  const root = trees.status === 0 ? trees.stdout.split("\n")[0].slice(9) : process.cwd();
+  const manifest = join(root, ".codex-runs", `${name}.batch.json`);
+  let names = [name];
+  if (existsSync(manifest)) {
+    const batch = JSON.parse(readFileSync(manifest, "utf8"));
+    if (batch?.version !== 1 || batch.seat !== "review" || batch.prefix !== name || (batch.spec !== null && batch.spec !== numbers[0]) ||
+      !Array.isArray(batch.records) || !batch.records.length || batch.records.some((item: unknown) => typeof item !== "string" || !new RegExp(`^${name}(?:-[A-Za-z0-9_-]+)?$`).test(item)) || new Set(batch.records).size !== batch.records.length)
+      throw new Error("审查批次清单无效或不属于指定 spec。");
+    names = batch.records;
+    if (names.length > 1 && override !== undefined) throw usageError("多份审查不能共用 --session。", reviewCommand.help);
+  }
+  const results = names.map(record => reviewUsage(record, override as string | undefined, root));
+  const usages = results.flatMap(result => result.usages);
+  const lines = results.flatMap(result => result.lines);
+  const reasons = results.flatMap(result => result.reasons);
+  const scanReasons = results.flatMap(result => result.scanReasons);
+  const line = (label: string, usage: Usage): string =>
+    `- ${label}：用时 ${numberText(usage.minutes)} 分钟，输入 ${numberText(usage.input)}（其中缓存 ${numberText(usage.cached)}），输出 ${numberText(usage.output)} tokens`;
   const total: Usage = {};
   for (const key of ["minutes", "input", "cached", "output"] as const) {
     const known = usages
@@ -353,7 +395,7 @@ const review = (values: Values, numbers: number[]): void => {
     }
   }
   lines.push(line(reasons.length ? "合计（已知部分；不完整）" : scanReasons.length ? "合计（已知部分；扫描受限）" : "合计", total));
-  if (selected.length > 1)
+  if (usages.length > names.length)
     lines.push(
       "\n时长来源：审查本身取派发进度；子代理未单独派发，取各自会话的 task_complete.duration_ms。合计时长为各任务累计用时，包含并行重叠。",
     );
@@ -400,7 +442,10 @@ export const reviewCommand: Command = {
   execute: review,
   help: `${entry} review <spec> --record <review-号-批次> --conclusion-file <结论文件> [--dry-run] [--session <会话ID>]
 结论原文后附「用量」：审查和所有子代理的时长、输入（其中缓存）、输出与合计。
-派发记录读取主工作区的 .codex-runs；审查时长取进度文件，token 取本机会话。
+--record 可给 run --seat review 生成的批次前缀，按 .batch.json 清单合计全部份数，每份列出实际模型；模型未记录时写未知。
+派发记录读取主工作区的 .codex-runs；审查时长取进度文件，token 优先取内置派发 .json，旧记录取本机会话。
+汇总只替换根会话 token 来源，仍读取根会话检查子代理缺失；子代理用量继续计入合计。
+根会话缺失时仍按根会话 ID 查找后代并计入已知用量，合计标明不完整及缺失原因。
 子代理未单独派发，时长取各自会话的已完成任务；合计为累计用时。
 会话目录默认 ~/.codex/sessions，可用 Codex 的 CODEX_HOME 环境变量更改根目录。
 索引分块仅读首行元数据，关联审查及后代后才读取对应会话全文。

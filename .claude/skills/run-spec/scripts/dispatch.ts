@@ -14,14 +14,16 @@
  * Every installation attempt records ignored leaves in the private git
  * directory before dispatch, excluding configured directory symlinks.
  * Preparation retries reuse that snapshot and add only newly installed paths.
- * Global startup admission is locked until DispatchDock registers a live run;
+ * Global startup admission is locked until the built-in layer registers a live run;
  * account concurrency errors retry through the same queue with live output.
  * --resume preserves interrupted edits and rejects live runs or rebases.
  * Ticket instructions read comments; parent-spec instructions read only body.
  * Installation and dispatch inherit effective verificationEnv; exclusive
  * verification instructions route complete checks through main tickets.ts.
- * Layered repositories instruct Codex to run only related tests and static
+ * Layered repositories instruct the executor to run only related tests and static
  * checks during development, routing optional full checks through main verify.
+ * Resolve workTypes/seats/agents before writes; pass effective settings and sources
+ * to the built-in entry so old worktree configuration cannot override this plan.
  */
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -48,6 +50,8 @@ import {
   sameDirectory,
 } from "./dispatchdock.ts";
 import { prepareInstallationSnapshot } from "./ignored-artifacts.ts";
+import { adapters, adapterFor } from "./dispatch/adapters.ts";
+import { describeSeat, frameworkSettings, resolveSeat, workTypeFromBody } from "./dispatch/settings.ts";
 import {
   entry,
   CheckFailure,
@@ -69,7 +73,7 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
       "--note 和 --note-file 不能同时使用",
       dispatchCommand.help,
     );
-  const note =
+  const originalNote =
     values["note-file"] === undefined
       ? ((values.note as string | undefined) ?? "")
       : readFileSync(values["note-file"] as string, "utf8");
@@ -90,11 +94,16 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
   const env = { ...process.env, ...verificationEnv };
   const { repo, endpoint, issue, write } = github(Boolean(values["dry-run"]));
   const ticket = numbers[0];
-  const child = issue(ticket) as Issue & { labels?: { name: string }[] };
+  const child = issue(ticket) as Issue & { labels?: { name: string }[]; body?: string };
   if (child.state !== "open")
     throw new CheckFailure(`#${ticket} 已关闭，不能派发`);
   if (!child.labels?.some((label) => label.name === "role:engineering"))
     throw new CheckFailure(`#${ticket} 不是 role:engineering 工单，不能派发`);
+  const overrides = Object.fromEntries(["work-type", "agent", "model", "effort"].flatMap(key => values[key] === undefined ? [] : [[key, values[key] as string]]));
+  const workType = overrides["work-type"] ?? workTypeFromBody(child.body ?? "");
+  const settings = resolveSeat(config.seatConfiguration, "engineering", workType, overrides, workType === "default" ? "内置默认（工单未写工作类型）" : "工单正文 工作类型")[0];
+  const framework = frameworkSettings(config.seatConfiguration, settings.agent);
+  const note = [originalNote, Object.keys(overrides).length ? `本次派发参数覆盖：${JSON.stringify(overrides)}\n${describeSeat(settings)}` : ""].filter(Boolean).join("\n\n");
   const { spec, integration } = ticketIntegration(checkout, endpoint(ticket));
   const worktree = `${root}.worktrees/${ticket}`;
   const branch = `ticket/${ticket}`;
@@ -146,9 +155,7 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
       )
     : "";
   const needsPreparation = !existing || existsSync(preparationFile);
-  const script = resolve(root, config.dispatchScript);
-  if (!existsSync(script) || !statSync(script).isFile())
-    throw new Error(`派发脚本不存在或不是文件：${script}`);
+  const script = join(import.meta.dirname, "dispatch-task.ts");
   const links = config.symlinkDirectories.map((directory) => {
     const source = join(root, directory);
     const target = join(worktree, directory);
@@ -241,8 +248,13 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
     "engineering",
     "--name",
     name,
-    "--sandbox",
-    config.codexSandbox,
+    "--agent",
+    settings.agent,
+    "--work-type",
+    settings.workType,
+    "--settings",
+    JSON.stringify(settings),
+    ...(settings.agent === "codex" ? ["--sandbox", settings.permission === "full" ? "danger-full-access" : settings.permission] : []),
   ];
   if (values["dry-run"]) {
     console.log(
@@ -261,8 +273,10 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
       console.log(`安装命令：${JSON.stringify(config.installCommand)}`);
     console.log(`验收产物：${artifacts}`);
     console.log(`记录名：${name}`);
+    console.log(describeSeat(settings));
+    if (!adapters[settings.agent]) console.log(`提示：框架 ${settings.agent} 尚未接入适配器，当前不可用`);
     console.log(
-      `并发上限：${config.codexConcurrency}；达到上限时加锁排队，每 5 分钟最多打印一行；限流后自动重试。`,
+      `并发上限：${framework.concurrency}；框架：${settings.agent}；来源：${framework.sources.concurrency}；达到上限时加锁排队，每 5 分钟最多打印一行；限流后自动重试。`,
     );
     if (comment) console.log(`工单 #${ticket} 评论预览：\n${comment}`);
     console.log(
@@ -270,8 +284,10 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
     );
     return;
   }
+  adapterFor(settings.agent);
+  console.log(describeSeat(settings));
   const queued = queueReporter();
-  let release = await dispatchSlot(config.codexConcurrency, worktree, queued);
+  let release = await dispatchSlot(framework.concurrency, worktree, queued, settings.agent);
   try {
     validateWorktree();
     if (!existing) {
@@ -354,7 +370,7 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
           stream.on("data", (chunk: Buffer) => {
             output.write(chunk);
             tail = (tail + chunk.toString()).slice(-65536);
-            if (tail.includes("Concurrency limit exceeded")) limited = true;
+            if (adapterFor(settings.agent).isConcurrencyLimit(tail)) limited = true;
           });
         };
         pipe(child.stdout!, process.stdout);
@@ -396,9 +412,9 @@ const dispatch = async (values: Values, numbers: number[]): Promise<void> => {
         process.exitCode = result.code ?? 2;
         return;
       }
-      queued("Codex 返回 Concurrency limit exceeded，等待账号名额");
+      queued(`${adapterFor(settings.agent).label} 返回并发超限，等待账号名额`);
       await delay(5000);
-      release = await dispatchSlot(config.codexConcurrency, worktree, queued);
+      release = await dispatchSlot(framework.concurrency, worktree, queued, settings.agent);
     }
   } finally {
     release();
@@ -411,13 +427,25 @@ export const dispatchCommand: Command = {
     "note-file": { type: "string" },
     "allow-push": { type: "boolean" },
     resume: { type: "boolean" },
+    "work-type": { type: "string" },
+    agent: { type: "string" },
+    model: { type: "string" },
+    effort: { type: "string" },
   },
   positionals: 1,
   execute: dispatch,
   help: `${entry} dispatch <工单> [--note <文字> | --note-file <文件>] [--allow-push] [--resume] [--dry-run]
+[--work-type <名称>] [--agent <codex|claude|pi>] [--model <模型>] [--effort <强度>]
+工单正文「工作类型：<名称>」按仓库 workTypes 词表选 seats.engineering 的档；未写用 default。
+词表外名称退出 2，词表内未配档回落到 default 并打印原因、写入记录。
+席位逐字段优先级：命令参数 > 环境变量 > 仓库 > 用户 > 内置默认。
+用户文件为 $XDG_CONFIG_HOME/agent-workflow/seats.json，默认 ~/.config/agent-workflow/seats.json；
+seats.<席位>.default/工作类型 含 agent、model、effort、permission，review 支持列表；
+agents.<框架>.path/concurrency 设置可执行路径和并发；配置格式见 setup-run-spec/run-spec.md。
+用户文件缺省时取低层，文件格式错退出 2；类型、框架、模型、强度覆盖会写入派发补充说明。
 读取 docs/agents/run-spec.json，为工程工单准备或复用干净的 worktree，
 在该目录前台运行派发脚本，透传记录名、进度路径和退出码。
-一个 worktree 同时只跑一个 Codex；普通派发同样在有活着的运行或进行中的 rebase 时拒绝。
+一个 worktree 同时只跑一个 agent；普通派发同样在有活着的运行或进行中的 rebase 时拒绝。
 --allow-push 只允许把本工单分支推送到远端，不开 PR，不推送其他分支；
 不带时指令仍为「不要推送」。
 补充说明支持 UTF-8 文件；非空说明先评论到工单，标题含本次记录名，
@@ -432,9 +460,9 @@ exclusiveVerification 默认 false；开启时指令要求完整验证运行主�
 通过仓库锁排队，日志自动写入主工作区 .codex-runs；局部测试照常。
 配置 staticCheckCommand 时，指令要求开发时只跑相关测试和静态检查，不跑完整验证；
 需要完整验证时始终走主工作区 tickets.ts verify <工单>，按 exclusiveVerification 决定是否排队。
-以 DispatchDock 全局记录及进程存活判断并发，codexConcurrency 默认 2，
-可用 RUN_SPEC_CODEX_CONCURRENCY 覆盖；达到上限时加锁排队，每 5 分钟最多打印一行。
-Codex 返回 Concurrency limit exceeded 时回到排队自动重试；用 slots 查看运行与空余名额。
+以内置派发层全局记录及进程存活判断并发，按所选框架的 agents.<框架>.concurrency 排队；
+旧 DispatchDock 运行计入 Codex 名额，兼容 codexConcurrency 和 RUN_SPEC_CODEX_CONCURRENCY；达到上限时加锁排队，每 5 分钟最多打印一行。
+派发失败且适配器认定为并发超限时回到排队自动重试（目前只有 Codex 认定）；slots 按框架显示运行与空余名额。
 评论失败以 2 退出，不派发，已准备的 worktree 保留供重试。
 安装失败重试时沿用已有安装产物快照，只补充本次安装新建的路径。
 --dry-run 只读 GitHub 和 git 并打印计划及评论内容，不评论、不安装、

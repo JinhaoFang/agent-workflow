@@ -25,4 +25,4 @@
 
 ## 执行会话放在后台
 
-用户想让执行会话不依附终端时：`claude --bg -n <名字> --permission-mode <和平时相同的模式> "<开场白>"` 启动，`claude attach <名字>` 进入；在里面按 ← 回到会话列表、按 Ctrl+Z 回到 shell，会话都继续运行。`claude agents` 看有哪些会话，`claude logs <名字>` 看最近的输出，`claude stop <id>` 停下。权限模式要和平时一致，不一致时碰到确认就停下等人。后台会话在用户的终端里看不到，启动后把这几条命令告诉用户。以上命令按 Claude Code 2.1.312 的 `--help` 核对。
+主会话是 Claude Code、用户想让它不依附终端时：`claude --bg -n <名字> --permission-mode <和平时相同的模式> "<开场白>"` 启动，`claude attach <名字>` 进入；在里面按 ← 回到会话列表、按 Ctrl+Z 回到 shell，会话都继续运行。`claude agents` 看有哪些会话，`claude logs <名字>` 看最近的输出，`claude stop <id>` 停下。权限模式要和平时一致，不一致时碰到确认就停下等人。后台会话在用户的终端里看不到，启动后把这几条命令告诉用户。以上命令按 Claude Code 2.1.312 的 `--help` 核对。

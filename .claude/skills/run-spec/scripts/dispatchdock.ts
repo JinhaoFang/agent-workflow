@@ -1,14 +1,14 @@
 /**
- * Dependency-free DispatchDock integration: resolve its home/config and Codex
- * launcher, fold complete registry events and count live wrapper/agent PIDs.
+ * Built-in registry with DispatchDock v1 compatibility: resolve registry home,
+ * fold complete registry events and count live wrapper/agent PIDs.
  * Interrupted records retain a slot while an agent is alive; ended records do
  * not. A global directory lock covers admission through startup registration,
  * including managed starts. Dead lock owners are removed by unlinking their
  * specific owner file before removing the empty directory; incomplete locks
  * recover after ten seconds. Queue messages are shared across admission/retry
- * waits and limited to one per five minutes. No DispatchDock files are rewritten.
+ * waits and limited to one per five minutes. Missing framework means Codex;
+ * capacity is counted by framework. Existing registry rows are not rewritten.
  */
-import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -21,7 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { CheckFailure } from "./shared.ts";
 
@@ -54,6 +54,7 @@ export type RunningDispatch = {
   started: number;
   pid: number;
   agentPid?: number;
+  framework: string;
   ended?: boolean;
   interrupted?: boolean;
 };
@@ -89,6 +90,7 @@ export const runningDispatches = (): RunningDispatch[] => {
           repo: event.repo,
           started: event.started,
           pid: event.pid,
+          framework: event.framework ?? event.agent ?? "codex",
         });
     } else {
       const record = records.get(event.id);
@@ -140,6 +142,7 @@ export const dispatchSlot = async (
   limit: number,
   worktree: string,
   queued: (reason: string) => void,
+  framework = "codex",
 ): Promise<() => void> => {
   const lock = join(dispatchHome(), "run-spec-dispatch.lock");
   mkdirSync(dispatchHome(), { recursive: true });
@@ -165,7 +168,7 @@ export const dispatchSlot = async (
       process.once("exit", release);
       try {
         assertIdle(worktree);
-        const count = runningDispatches().length;
+        const count = runningDispatches().filter(run => run.framework === framework).length;
         if (count < limit) return release;
         queued(`运行 ${count}/${limit}`);
       } catch (error) {
@@ -198,68 +201,4 @@ export const dispatchSlot = async (
     }
     await delay(1000);
   }
-};
-
-export const codexVersion = (): string => {
-  const file = join(dispatchHome(), "config.json");
-  let configured: unknown;
-  try {
-    const config = JSON.parse(readFileSync(file, "utf8"));
-    if (config?.v === 1) configured = config.agents?.codex?.path;
-  } catch (error) {
-    if (
-      !(error instanceof SyntaxError) &&
-      (error as NodeJS.ErrnoException).code !== "ENOENT"
-    )
-      throw error;
-  }
-  const locations = [`${file} 的 agents.codex.path`, "PATH"];
-  const missing = () =>
-    new CheckFailure(
-      `找不到可用的 Codex CLI；已查找：${locations.join("、")}。`,
-    );
-  let candidate: string | undefined;
-  if (configured != null) {
-    if (typeof configured !== "string" || !isAbsolute(configured))
-      throw new Error(
-        `DispatchDock 配置 ${file} 的 agents.codex.path 必须是绝对路径或 null。`,
-      );
-    candidate = configured;
-  } else {
-    const names =
-      process.platform === "win32" ? ["codex.exe", "codex.cmd"] : ["codex"];
-    candidate = (process.env.PATH ?? process.env.Path ?? "")
-      .split(delimiter)
-      .filter(Boolean)
-      .flatMap((directory) =>
-        names.map((name) => resolve(directory.replace(/^"|"$/g, ""), name)),
-      )
-      .find((path) => existsSync(path) && statSync(path).isFile());
-  }
-  if (!candidate || !existsSync(candidate) || !statSync(candidate).isFile())
-    throw missing();
-  let executable = candidate;
-  let args: string[] = [];
-  if (/\.(?:cmd|bat)$/i.test(candidate)) {
-    const wrapper = readFileSync(candidate, "utf8");
-    const match = wrapper.match(
-      /"%dp0%[\\/]([^"\r\n]+\.(?:js|mjs|cjs))"\s+%\*/i,
-    );
-    if (!match) throw missing();
-    candidate = resolve(dirname(candidate), match[1]);
-    if (!existsSync(candidate) || !statSync(candidate).isFile())
-      throw missing();
-  }
-  if (/\.(?:js|mjs|cjs)$/i.test(candidate)) {
-    executable = process.execPath;
-    args = [candidate];
-  }
-  const result = spawnSync(executable, [...args, "--version"], {
-    encoding: "utf8",
-    timeout: 10000,
-    shell: false,
-  });
-  if (result.error || result.status !== 0 || !result.stdout.trim())
-    throw missing();
-  return `${result.stdout.trim()}；路径 ${candidate}；来源 ${configured ? file : "PATH"}`;
 };

@@ -11,6 +11,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readdirSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { dispatchSummary } from "./dispatch/summary.ts";
 import { dispatchHome } from "./dispatchdock.ts";
 import { CheckFailure, git, matchesRecord, recordName } from "./shared.ts";
 import { readRecordBindings, type RecordBinding } from "./scorecard-bindings.ts";
@@ -153,12 +154,13 @@ export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>,
     const progress = read(item.files.get(".progress.log") ?? "");
     const first = item.lifecycle.find((event) => event.event === "start");
     const last = [...item.lifecycle].reverse().find((event) => event.event === "end");
-    const header = progress.match(/=== Codex 开始：.*?  (\d{4})\/(\d{1,2})\/(\d{1,2}) (\d{1,2}):(\d{2}):(\d{2}) ===/);
+    const summary = item.ambiguity ? null : dispatchSummary(item.files.get(".json") ?? "") as Json | null;
+    const header = progress.match(/=== [^\r\n]+ 开始：.*?  (\d{4})\/(\d{1,2})\/(\d{1,2}) (\d{1,2}):(\d{2}):(\d{2}) ===/);
     const headerTime = header ? new Date(...[Number(header[1]), Number(header[2]) - 1, ...header.slice(3).map(Number)] as [number, number, number, number, number, number]).toISOString() : null;
-    const footer = progress.match(/^=== Codex 结束：exit=(-?\d+)，用时 (\d+(?:\.\d+)?) 分钟，汇报在 .+ ===\r?$/m);
-    item.start = timestamp(first?.started) ?? timestamp(item.raw[0]?._at) ?? headerTime;
-    item.end = timestamp(last?.at) ?? (footer && item.start ? timestamp(Date.parse(item.start) + Number(footer[2]) * 60000) : null);
-    item.exitCode = Number.isInteger(last?.exit) ? last!.exit : footer ? Number(footer[1]) : null;
+    const footer = progress.match(/^=== [^\r\n]+ 结束：exit=(-?\d+)，用时 (\d+(?:\.\d+)?) 分钟，汇报在 .+ ===\r?$/m);
+    item.start = timestamp(first?.started) ?? timestamp(summary?.started) ?? timestamp(item.raw[0]?._at) ?? headerTime;
+    item.end = timestamp(last?.at) ?? timestamp(summary?.at) ?? (footer && item.start ? timestamp(Date.parse(item.start) + Number(footer[2]) * 60000) : null);
+    item.exitCode = Number.isInteger(last?.exit) ? last!.exit : Number.isInteger(summary?.exit) ? summary!.exit : footer ? Number(footer[1]) : null;
     item.reported = Boolean(read(item.files.get(".md") ?? "").trim());
     item.prompt = progress.split("\n", 1)[0];
     touch(item.start);
