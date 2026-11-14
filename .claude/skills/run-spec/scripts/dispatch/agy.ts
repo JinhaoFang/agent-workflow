@@ -15,7 +15,7 @@ type Launcher = NonNullable<Detection["launcher"]>;
 const blocked = ["run-spec", "setup-run-spec"];
 const permissionPath = (path: string) => path.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "");
 const skillDeny = (root = "") => blocked.flatMap(name => [".agents", ".claude"].flatMap(directory => {
-  const path = `${directory}/skills/${name}`;
+  const path = `${directory}/skills/${name}/SKILL.md`;
   return [`read_file(${path})`, ...(root ? [`read_file(${permissionPath(`${root}/${path}`)})`] : [])];
 }));
 const isolationSettings = { permissions: { allow: [] as string[], deny: skillDeny() } };
@@ -126,7 +126,7 @@ export const agy: Adapter = {
       if (settings.model !== null) args.push("--model", settings.model);
       if (settings.effort !== null) args.push("--effort", settings.effort);
       args.push("--input-format", "stream-json", "--output-format", "stream-json");
-      const instruction = `\n\n任务仓库根目录：${root}。当前目录仅用于技能隔离；所有仓库读取、git 命令和编辑均使用上述根目录的绝对路径。禁止读取或调用 run-spec、setup-run-spec。`;
+      const instruction = `\n\n任务仓库根目录：${root}。当前目录仅用于技能隔离；所有仓库读取、git 命令和编辑均使用上述根目录的绝对路径。禁止读取两项流程技能的 SKILL.md 或调用 run-spec、setup-run-spec 技能。`;
       const readOnly = settings.permission === "read-only" ? "\n只读权限：只允许读取和非破坏命令；禁止写文件、改配置、提交、派发子代理或执行会生成缓存和报告的测试。没有操作系统只读沙箱，shell、子进程和网络仍须遵守此约束。" : "";
       return { executable: process.execPath, args: [join(import.meta.dirname, "agy-launch.ts"), directory, launcher.executable, ...args], stdin: JSON.stringify({ event: "user", message: { content: prompt + instruction + readOnly } }) + "\n" };
     } catch (error) { rmSync(directory, { recursive: true, force: true }); throw error; }

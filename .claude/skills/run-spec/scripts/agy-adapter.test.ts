@@ -103,11 +103,12 @@ test("agy CLI 传数组与 NDJSON，隔离两项技能并关联会话", () => {
     assert.equal(command.args[command.args.indexOf("--effort") + 1], "high");
     const settings = JSON.parse(command.args[command.args.indexOf("--settings") + 1]);
     assert.equal(settings.allowNonWorkspaceAccess, false);
-    for (const name of ["run-spec", "setup-run-spec"]) assert.ok(settings.permissions.deny.includes(`read_file(.agents/skills/${name})`));
+    for (const name of ["run-spec", "setup-run-spec"]) for (const directory of [".agents", ".claude"]) assert.ok(settings.permissions.deny.includes(`read_file(${directory}/skills/${name}/SKILL.md)`));
     assert.ok(settings.permissions.deny.includes("write_file(*)"));
     const message = JSON.parse(command.stdin);
     assert.equal(message.event, "user");
     assert.match(message.message.content, /只读权限/);
+    assert.ok(message.message.content.includes("禁止读取两项流程技能的 SKILL.md 或调用 run-spec、setup-run-spec 技能。"));
     assert.ok(message.message.content.includes(task));
     assert.ok(!command.args.some((arg: string) => arg.includes(task)));
     assert.equal(f.read(".md"), "OK\n");
@@ -168,11 +169,18 @@ for (const permission of ["read-only", "workspace-write", "full"]) test(`agy CLI
     assert.deepEqual(JSON.parse(probe.args[probe.args.indexOf("--settings") + 1]), settings);
     const root = f.root.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "");
     const skillDeny = ["run-spec", "setup-run-spec"].flatMap(name => [".agents", ".claude"].flatMap(directory => [
-      `read_file(${directory}/skills/${name})`, `read_file(${root}/${directory}/skills/${name})`,
+      `read_file(${directory}/skills/${name}/SKILL.md)`, `read_file(${root}/${directory}/skills/${name}/SKILL.md)`,
     ]));
     assert.deepEqual([...settings.permissions.deny].sort(), [...skillDeny, ...(permission === "full" ? [] : ["mcp(*)", "execute_url(*)"]), ...(permission === "read-only" ? ["write_file(*)"] : [])].sort());
     assert.ok(settings.permissions.allow.includes(`read_file(${root})`));
-    assert.equal(JSON.parse(command.stdin).message.content.includes("只读权限："), permission === "read-only");
+    const message = JSON.parse(command.stdin).message.content;
+    assert.ok(message.includes("禁止读取两项流程技能的 SKILL.md 或调用 run-spec、setup-run-spec 技能。"));
+    assert.equal(message.includes("只读权限："), permission === "read-only");
+    const evidence = process.env.RUN_SPEC_TEST_EVIDENCE;
+    if (evidence) {
+      mkdirSync(evidence, { recursive: true });
+      writeFileSync(join(evidence, `agy-${permission}-settings.json`), JSON.stringify({ permission, root: f.root, settings, message, probe, command }, null, 2) + "\n");
+    }
     if (permission !== "full") {
       assert.equal(settings.allowNonWorkspaceAccess, false);
       assert.equal(settings.toolPermission, "request-review");
