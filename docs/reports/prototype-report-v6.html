@@ -1,0 +1,1659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>V6 Spec 交互式驾驶舱汇报原型</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f3f3ee;
+  --bg-accent: radial-gradient(1100px 420px at 18% -6%, rgba(37, 99, 235, 0.08), transparent 65%),
+               radial-gradient(900px 360px at 88% -4%, rgba(13, 148, 136, 0.07), transparent 60%);
+  --surface: #ffffff;
+  --surface2: #f9f9f6;
+  --surface-glass: rgba(255, 255, 255, 0.88);
+  --ink: #141518;
+  --ink2: #3b3e47;
+  --muted: #686d78;
+  --border: #e2e2dc;
+  --border-strong: #cfcfc6;
+  --grid: #ecece6;
+  --wash: #efefe9;
+  --wash2: #e4e4dc;
+  --axis: #9ca3af;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.035);
+  --shadow-md: 0 10px 30px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+
+  --good: #15803d;
+  --good-bg: #ecfdf3;
+  --good-bd: rgba(21, 128, 61, 0.25);
+  --warning: #b45309;
+  --warning-bg: #fffbeb;
+  --serious: #c2410c;
+  --serious-bg: #fff4ed;
+  --critical: #b91c1c;
+  --critical-bg: #fef2f2;
+
+  --agy: #2563eb;
+  --agy-soft: rgba(37, 99, 235, 0.14);
+  --pi: #0d9488;
+  --pi-soft: rgba(13, 148, 136, 0.14);
+  --claude: #ea580c;
+  --claude-soft: rgba(234, 88, 12, 0.14);
+  --codex: #4f46e5;
+  --codex-soft: rgba(79, 70, 229, 0.14);
+
+  --design: #d97706;
+  --verify: #7c3aed;
+  --wait: #db2777;
+  --pause: #94a3b8;
+  --out: #16a34a;
+  --info-bg: #eff6ff;
+  --info-bd: #bfdbfe;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0f13;
+    --bg-accent: radial-gradient(1100px 420px at 18% -6%, rgba(59, 130, 246, 0.14), transparent 65%),
+                 radial-gradient(900px 360px at 88% -4%, rgba(45, 212, 191, 0.10), transparent 60%);
+    --surface: #161920;
+    --surface2: #1c2029;
+    --surface-glass: rgba(22, 25, 32, 0.90);
+    --ink: #f3f4f6;
+    --ink2: #d1d5db;
+    --muted: #9ca3af;
+    --border: #282d39;
+    --border-strong: #373e4f;
+    --grid: #222631;
+    --wash: #202530;
+    --wash2: #2b3140;
+    --axis: #6b7280;
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+    --shadow-md: 0 14px 36px rgba(0, 0, 0, 0.48);
+
+    --good: #4ade80;
+    --good-bg: rgba(20, 83, 45, 0.35);
+    --good-bd: rgba(74, 222, 128, 0.28);
+    --warning: #fbbf24;
+    --warning-bg: rgba(120, 53, 15, 0.30);
+    --serious: #fb923c;
+    --serious-bg: rgba(124, 45, 18, 0.32);
+    --critical: #f87171;
+    --critical-bg: rgba(127, 29, 29, 0.32);
+
+    --agy: #60a5fa;
+    --agy-soft: rgba(96, 165, 250, 0.18);
+    --pi: #2dd4bf;
+    --pi-soft: rgba(45, 212, 191, 0.18);
+    --claude: #fb923c;
+    --claude-soft: rgba(251, 146, 60, 0.18);
+    --codex: #818cf8;
+    --codex-soft: rgba(129, 140, 248, 0.18);
+
+    --design: #f59e0b;
+    --verify: #a78bfa;
+    --wait: #f472b6;
+    --pause: #64748b;
+    --out: #4ade80;
+    --info-bg: rgba(30, 58, 138, 0.28);
+    --info-bd: rgba(96, 165, 250, 0.32);
+  }
+}
+
+html[data-theme="dark"] {
+  --bg: #0d0f13;
+  --bg-accent: radial-gradient(1100px 420px at 18% -6%, rgba(59, 130, 246, 0.14), transparent 65%),
+               radial-gradient(900px 360px at 88% -4%, rgba(45, 212, 191, 0.10), transparent 60%);
+  --surface: #161920;
+  --surface2: #1c2029;
+  --surface-glass: rgba(22, 25, 32, 0.90);
+  --ink: #f3f4f6;
+  --ink2: #d1d5db;
+  --muted: #9ca3af;
+  --border: #282d39;
+  --border-strong: #373e4f;
+  --grid: #222631;
+  --wash: #202530;
+  --wash2: #2b3140;
+  --axis: #6b7280;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 14px 36px rgba(0, 0, 0, 0.48);
+
+  --good: #4ade80;
+  --good-bg: rgba(20, 83, 45, 0.35);
+  --good-bd: rgba(74, 222, 128, 0.28);
+  --warning: #fbbf24;
+  --warning-bg: rgba(120, 53, 15, 0.30);
+  --serious: #fb923c;
+  --serious-bg: rgba(124, 45, 18, 0.32);
+  --critical: #f87171;
+  --critical-bg: rgba(127, 29, 29, 0.32);
+
+  --agy: #60a5fa;
+  --agy-soft: rgba(96, 165, 250, 0.18);
+  --pi: #2dd4bf;
+  --pi-soft: rgba(45, 212, 191, 0.18);
+  --claude: #fb923c;
+  --claude-soft: rgba(251, 146, 60, 0.18);
+  --codex: #818cf8;
+  --codex-soft: rgba(129, 140, 248, 0.18);
+
+  --design: #f59e0b;
+  --verify: #a78bfa;
+  --wait: #f472b6;
+  --pause: #64748b;
+  --out: #4ade80;
+  --info-bg: rgba(30, 58, 138, 0.28);
+  --info-bd: rgba(96, 165, 250, 0.32);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background-color: var(--bg); color: var(--ink); }
+body {
+  background-image: var(--bg-accent);
+  background-attachment: fixed;
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Inter", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+  padding-bottom: 84px;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, .mono {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+.num { font-variant-numeric: tabular-nums; }
+
+.shell { max-width: 1380px; margin: 0 auto; padding: 18px 20px 28px; }
+
+.cockpit-grid {
+  display: grid;
+  grid-template-columns: 274px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.cockpit-grid.collapsed { grid-template-columns: minmax(0, 1fr); }
+.cockpit-grid > * { min-width: 0; }
+
+.cockpit-side {
+  position: sticky;
+  top: 14px;
+  background: var(--surface-glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 15px;
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  gap: 14px;
+}
+.cockpit-side[hidden] { display: none !important; }
+
+.side-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.pr-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 999px; font-weight: 600; font-size: 12px;
+  background: var(--good-bg); color: var(--good); border: 1px solid var(--good-bd);
+}
+.pr-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.icon-btn {
+  border: 1px solid var(--border); background: var(--surface2); color: var(--ink2);
+  border-radius: 8px; padding: 4px 9px; font-size: 12px; font-weight: 500;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
+  transition: all .16s ease;
+}
+.icon-btn:hover { border-color: var(--agy); color: var(--ink); transform: translateY(-1px); }
+
+.expand-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 8px 12px; border-radius: 12px;
+  background: var(--surface-glass); border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+}
+
+.side-nav-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 5px; }
+.side-nav { display: grid; gap: 4px; }
+.nav-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; text-align: left; padding: 7px 10px; border-radius: 9px;
+  border: 1px solid transparent; background: transparent; color: var(--ink2);
+  font: 500 13px/1.35 inherit; cursor: pointer; transition: all .15s ease;
+}
+.nav-btn:hover { background: var(--wash); color: var(--ink); }
+.nav-btn.active {
+  background: var(--agy-soft); color: var(--agy); border-color: rgba(37, 99, 235, 0.25); font-weight: 600;
+}
+.nav-count {
+  font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--wash); color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.nav-btn.active .nav-count { background: var(--agy); color: #fff; }
+
+.roster-list { display: grid; gap: 6px; }
+.roster-card {
+  display: grid; gap: 3px; width: 100%; text-align: left;
+  padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--ink);
+  cursor: pointer; font-family: inherit; transition: all .16s ease;
+}
+.roster-card:hover { border-color: var(--border-strong); transform: translateX(2px); }
+.roster-card.active { border-color: var(--agy); background: var(--agy-soft); box-shadow: 0 0 0 1px var(--agy); }
+.roster-row1 { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.actor-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.effort-pill {
+  padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 700;
+  background: var(--wash2); color: var(--ink2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.model-line {
+  font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.hero-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  padding: 18px 22px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 14px;
+}
+.top-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12.5px; color: var(--muted); }
+h1 {
+  font-size: clamp(19px, 2.1vw, 24px); line-height: 1.3; margin: 7px 0 6px;
+  font-weight: 750; letter-spacing: -0.015em;
+}
+.lead { font-size: 14.5px; color: var(--ink2); margin: 0 0 14px; max-width: 92ch; }
+
+.ask-banner {
+  margin: 0 0 14px; padding: 13px 16px; border-radius: 12px;
+  background: var(--serious-bg); border: 1px solid rgba(194, 65, 12, 0.38);
+  display: grid; gap: 8px;
+}
+.ask-banner[hidden] { display: none !important; }
+.ask-head { font-weight: 700; font-size: 13.5px; color: var(--serious); display: flex; align-items: center; gap: 6px; }
+.ask-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.ask-box { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; font-size: 13px; }
+
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px;
+}
+.kpi-card {
+  position: relative; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  background: var(--surface2);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.kpi-card:hover { transform: translateY(-2px); border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+.kpi-val { font-size: 20px; font-weight: 760; line-height: 1.2; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.kpi-lbl { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-top: 3px; }
+.kpi-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+.kpi-ring { width: 46px; height: 46px; flex: none; }
+
+.deck {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  padding: 16px 20px 20px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 14px;
+}
+.deck-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding-bottom: 12px; margin-bottom: 14px; border-bottom: 1px solid var(--grid);
+}
+.deck-title { font-size: 15.5px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+
+.seg-tabs {
+  display: inline-flex; flex-wrap: wrap; gap: 4px;
+  padding: 4px; border-radius: 11px; background: var(--wash); border: 1px solid var(--border);
+}
+.seg-tab {
+  padding: 6px 13px; border-radius: 8px; border: 0; background: transparent;
+  color: var(--ink2); font: 600 12.5px/1.3 inherit; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; transition: all .16s ease;
+  white-space: nowrap;
+}
+.seg-tab:hover { color: var(--ink); }
+.seg-tab.active {
+  background: var(--surface); color: var(--agy);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+.tab-badge {
+  font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--wash2); color: var(--ink2);
+}
+.seg-tab.active .tab-badge { background: var(--agy-soft); color: var(--agy); }
+
+.story-compare {
+  display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.35fr); gap: 12px; margin-bottom: 14px;
+}
+.story-pane {
+  border-radius: 11px; padding: 13px 15px; border: 1px solid var(--border); background: var(--surface2);
+}
+.story-pane.before { border-left: 3.5px solid var(--serious); }
+.story-pane.after { border-left: 3.5px solid var(--good); }
+.pane-kicker { font-size: 12px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.step-pills { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.step-pills li {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 13px; color: var(--ink2);
+}
+.step-num {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--good-bg); color: var(--good);
+  font-weight: 700; font-size: 11.5px; display: grid; place-items: center; margin-top: 1px;
+  border: 1px solid var(--good-bd);
+}
+
+.arch-card {
+  border: 1px solid var(--border); border-radius: 11px; padding: 12px 14px;
+  background: var(--surface2); margin-bottom: 14px;
+}
+.arch-node { cursor: pointer; transition: opacity .15s ease; }
+.arch-node:hover rect { stroke-width: 2.4px; }
+
+.module-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.module-card {
+  border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; background: var(--surface2);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.module-card:hover { border-color: var(--agy); transform: translateY(-1px); }
+.module-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.ticket-tag {
+  font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 5px;
+  background: var(--wash); color: var(--ink2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.goal-cards { display: grid; gap: 10px; margin-bottom: 16px; }
+.goal-card {
+  display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr); gap: 14px;
+  padding: 13px 15px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface2);
+}
+.delta-pill {
+  display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 4px 10px; border-radius: 7px; background: var(--surface); border: 1px solid var(--border);
+  font-size: 12.5px; margin: 6px 0; font-variant-numeric: tabular-nums;
+}
+pre.proof {
+  margin: 4px 0 0; padding: 9px 11px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+
+.browser-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.browser-frame {
+  border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden;
+  background: var(--surface); box-shadow: var(--shadow-sm);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.browser-frame:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.browser-bar {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  background: var(--wash); border-bottom: 1px solid var(--border);
+}
+.traffic { display: inline-flex; gap: 5px; }
+.traffic i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.url-pill {
+  flex: 1; min-width: 0; padding: 2px 9px; border-radius: 6px; background: var(--surface);
+  font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid var(--border);
+}
+.browser-canvas {
+  padding: 12px; background: var(--surface2); cursor: zoom-in; position: relative;
+}
+.browser-foot { padding: 10px 13px; border-top: 1px solid var(--border); font-size: 12.5px; }
+
+.takeaway-strip {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px;
+}
+.takeaway-card {
+  padding: 10px 12px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border);
+  border-top: 3px solid var(--agy); font-size: 12.5px; color: var(--ink2); line-height: 1.5;
+}
+.takeaway-card:nth-child(2) { border-top-color: var(--pi); }
+.takeaway-card:nth-child(3) { border-top-color: var(--design); }
+.takeaway-card b { color: var(--ink); display: block; margin-bottom: 3px; font-size: 13px; }
+
+.timeline-box {
+  padding: 11px 13px; border-radius: 11px; border: 1px solid var(--border);
+  background: var(--surface2); margin-bottom: 14px;
+}
+.tl-span { cursor: pointer; transition: filter .15s ease, opacity .15s ease; }
+.tl-span:hover { filter: brightness(1.12); }
+
+.chart-split {
+  display: grid; grid-template-columns: minmax(340px, 1fr) minmax(0, 1.15fr); gap: 14px; align-items: stretch;
+}
+.chart-card {
+  border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface2);
+  display: flex; flex-direction: column; justify-content: space-between;
+}
+.chart-title { font-size: 13.5px; font-weight: 700; margin-bottom: 2px; color: var(--ink); }
+.chart-sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+
+.story-compare > *, .module-grid > *, .goal-card > *, .browser-grid > *, .chart-split > * { min-width: 0; }
+.donut-wrap { display: grid; grid-template-columns: 152px minmax(0, 1fr); gap: 12px; align-items: center; margin: auto 0; }
+.donut-slice { cursor: pointer; transition: stroke-width .16s ease, opacity .16s ease; }
+.donut-slice:hover { stroke-width: 26px; }
+.donut-legend { display: grid; gap: 6px; font-size: 12px; }
+.legend-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 4px 7px; border-radius: 6px; cursor: pointer; transition: background .14s;
+}
+.legend-item:hover { background: var(--wash); }
+.swatch { width: 9px; height: 9px; border-radius: 2.5px; display: inline-block; flex: none; }
+
+.bar-chart-row { cursor: pointer; transition: opacity .15s ease; }
+.bar-chart-row:hover rect.bar-bg { fill: var(--wash2); }
+.bar-chart-row.dimmed { opacity: 0.25; }
+
+.tw { overflow-x: auto; }
+table.clean { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.clean th, table.clean td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+table.clean th { color: var(--muted); font-weight: 600; font-size: 11.5px; white-space: nowrap; }
+table.clean tbody tr { transition: background .12s ease; }
+table.clean tbody tr:hover { background: var(--wash); }
+table.clean tr:last-child td { border-bottom: 0; }
+.mini-bar { height: 9px; border-radius: 999px; background: var(--wash2); overflow: hidden; display: flex; min-width: 96px; }
+
+.wf-list { display: grid; gap: 7px; }
+.wf-row {
+  display: grid;
+  grid-template-columns: minmax(175px, 220px) minmax(140px, 0.9fr) minmax(200px, 1.25fr) minmax(110px, 140px);
+  gap: 10px; align-items: center; padding: 8px 11px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--surface2); font-size: 12.5px;
+  transition: border-color .14s ease, transform .14s ease;
+}
+.wf-row:hover { border-color: var(--agy); transform: translateX(2px); }
+.wf-row.dimmed { opacity: 0.25; }
+.wf-axis-track { position: relative; height: 14px; background: var(--wash); border-radius: 999px; overflow: hidden; }
+.wf-bar { position: absolute; top: 2px; height: 10px; border-radius: 999px; min-width: 6px; }
+.wf-bar.aborted { background: none !important; border: 1.6px dashed var(--critical); }
+
+.batch-fold { border: 1px solid var(--agy); border-radius: 10px; background: var(--surface2); padding: 9px 12px; }
+.batch-fold summary {
+  cursor: pointer; font-weight: 600; font-size: 12.5px;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+.risk-grid { display: grid; gap: 9px; }
+.risk-card {
+  padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2);
+  display: grid; gap: 4px;
+}
+.badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600;
+}
+.badge.good { background: var(--good-bg); color: var(--good); }
+.badge.warn { background: var(--warning-bg); color: var(--warning); }
+
+svg.viz { display: block; width: 100%; height: auto; overflow: visible; }
+svg.viz text { fill: var(--ink2); font-size: 11.5px; font-family: inherit; }
+.muted { color: var(--muted); font-size: 12px; }
+
+.floating-tip {
+  position: fixed; z-index: 95; pointer-events: none;
+  max-width: 310px; padding: 9px 12px; border-radius: 10px;
+  background: rgba(20, 22, 28, 0.94); color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  font-size: 12px; line-height: 1.5; backdrop-filter: blur(8px);
+}
+.floating-tip[hidden] { display: none !important; }
+
+.lightbox {
+  position: fixed; inset: 0; z-index: 90; background: rgba(9, 11, 16, 0.80);
+  display: grid; place-items: center; padding: 22px; backdrop-filter: blur(6px);
+}
+.lightbox[hidden] { display: none !important; }
+.lightbox-inner {
+  max-width: 980px; width: 100%; background: var(--surface); border-radius: 14px;
+  padding: 18px; border: 1px solid var(--border-strong); box-shadow: var(--shadow-md);
+}
+
+.proto-switcher {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 70;
+  background: rgba(20, 22, 27, 0.92); color: #f4f4f5; border: 1px solid rgba(255,255,255,.16);
+  backdrop-filter: blur(12px);
+  border-radius: 999px; padding: 6px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: calc(100vw - 16px);
+  font-size: 12px;
+}
+.proto-switcher button {
+  background: rgba(255,255,255,.10); color: #f4f4f5; border: 0; border-radius: 999px;
+  padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit; white-space: nowrap;
+  transition: background .15s;
+}
+.proto-switcher button:hover { background: rgba(255,255,255,.22); }
+.proto-switcher button.on { background: #3b82f6; color: #fff; font-weight: 600; }
+.proto-sep { width: 1px; height: 15px; background: rgba(255,255,255,.2); margin: 0 2px; }
+
+@media (max-width: 960px) {
+  .cockpit-grid, .chart-split, .story-compare, .browser-grid, .module-grid, .goal-card { grid-template-columns: 1fr; }
+  .cockpit-side { position: static; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .takeaway-strip { grid-template-columns: 1fr; }
+  .wf-row { grid-template-columns: 1fr; gap: 6px; }
+  .donut-wrap { grid-template-columns: 1fr; justify-items: center; }
+}
+@media (max-width: 440px) {
+  .shell { padding: 10px 10px 30px; }
+  .hero-card, .deck { padding: 13px 12px; border-radius: 12px; }
+  .kpi-grid { grid-template-columns: 1fr; }
+  .seg-tabs { width: 100%; }
+  .seg-tab { flex: 1; justify-content: center; padding: 6px 8px; font-size: 12px; }
+}
+</style>
+</head>
+<body>
+
+<main id="app"></main>
+
+<div class="floating-tip" id="floating-tip" hidden></div>
+
+<div class="lightbox" id="lightbox" hidden>
+  <div class="lightbox-inner" id="lightbox-body"></div>
+</div>
+
+<nav class="proto-switcher" aria-label="原型场景与模式切换栏">
+  <span style="font-weight:700;color:#93c5fd;padding:0 4px">V6 交互式驾驶舱</span>
+  <span class="proto-sep"></span>
+  <button type="button" data-scene="mixed">场景1：多模型+前端截图 (PathJX)</button>
+  <button type="button" data-scene="batch">场景2：81批并发专项 (飞书治理)</button>
+  <button type="button" data-scene="zero">场景3：纯设计样张 (Design System)</button>
+  <span class="proto-sep"></span>
+  <button type="button" id="expand-all-btn">切换全展开长卷</button>
+  <button type="button" id="theme-btn">深浅色</button>
+</nav>
+
+<script>
+(() => {
+  "use strict";
+
+  const FW_COLOR = {
+    agy: { solid: "var(--agy)", hex: "#2563eb", label: "agy" },
+    pi: { solid: "var(--pi)", hex: "#0d9488", label: "pi" },
+    claude: { solid: "var(--claude)", hex: "#ea580c", label: "Claude Code" },
+    codex: { solid: "var(--codex)", hex: "#4f46e5", label: "Codex" },
+  };
+
+  const SCENES = {
+    mixed: {
+      spec: "#281",
+      repo: "JinhaoFang/PathJX-01",
+      date: "2026-11-13",
+      pr: { number: 289, state: "验收通过 · 待合并" },
+      title: "切片删除：上传者与管理员可删除切片，管理员可恢复与永久清除",
+      lead: "解决「传错切片后医生无处可删、管理员手工删库易误伤医院原文件」的痛点：建成软删除隔离、一键恢复、30 分钟宽限期后永久清除三步闭环，7 张工单全部通过实测。",
+      asks: [],
+      kpis: [
+        { v: "4 / 4", k: "量化目标全部达成", n: "接口 404 隔离 · 杀进程续做", pct: 100, color: "var(--good)" },
+        { v: "6 / 7", k: "工单一次通过率 86%", n: "仅 #285 经审查拦住返工 1 次", pct: 86, color: "var(--agy)" },
+        { v: "5h 18m", k: "Agent 实际干活时长", n: "日历跨度 8h12m（停工 2h24m）", pct: 65, color: "var(--pi)" },
+        { v: "319 万", k: "真实干活 Token (新读+写出)", n: "首次新读 258万 · 思考写出 61万", pct: 82, color: "var(--design)" },
+      ],
+      story: {
+        before: "切片一旦传错，普通医生没有任何删除入口；管理员只能进服务器手工改数据库、删磁盘目录，稍不注意就会把医院挂载目录里的原始 TIFF 误删，且全程没有审计留痕。",
+        afterSteps: [
+          "软删除隔离（可逆）：上传者或管理员点删除 → 弹窗实时算出将连带隐藏的复核/标注/测量条数 → 确认后常规页面与 API 全返 404，底层文件原地保留。",
+          "管理员一键恢复：专属「已删除切片」页展示删除人、时间与关联记录；恢复后自动检测并补排缺失的后台分析任务。",
+          "宽限期后永久清除：满 30 分钟瓦片令牌有效期 + 手输完整切片名确认 → 同事务写审计并交由后台队列删托管瓦片（严格跳过导入源目录原始 TIFF）。",
+        ],
+      },
+      archNodes: [
+        { title: "1. 正常切片 (Active)", sub: "医生/列表可见 · 操作记审计", stroke: "var(--axis)", tip: "常规状态：GET /slides/:id 正常返回元数据与瓦片签名令牌（有效期 30 分钟）。" },
+        { title: "2. 已软删除 (常规全 404)", sub: "文件保留 · 仅管理员页可见", stroke: "var(--agy)", tip: "软删态：deleted_at 非空；所有医生端列表、阅片接口统一返回 404，关联标注一并隐藏但数据未删。" },
+        { title: "3. 永久清除 (不可逆)", sub: "后台删托管瓦片 · 原 TIFF 不动", stroke: "var(--verify)", tip: "终态：等满 30m 旧令牌失效 + 手输切片名二次确认；同事务写审计，异步队列清理托管目录并跳过导入源目录。" },
+      ],
+      delivered: [
+        { what: "软删除与一键恢复闭环（平台层）", tickets: ["#283", "#286"], meaning: "删除后所有常规页面与 API 统一按 404 隔离；管理员恢复后自动补排缺失分析任务。" },
+        { what: "永久清除与后台文件回收队列", tickets: ["#284", "#287"], meaning: "手输切片名二次确认后清除；异步回收托管瓦片，绝不触碰导入目录原 TIFF，进程重启自动续做。" },
+        { what: "删除影响确认框与「已删除切片」页", tickets: ["#285", "#288"], meaning: "删前弹窗实时列出将被一起隐藏的复核/标注/测量条数；管理员专属列表支持恢复与永久清除。" },
+        { what: "领域术语表定稿", tickets: ["#282"], meaning: "GLOSSARY 厘清「软删除 / 恢复 / 永久清除」与既有「作废 / 移除」，消除前后端命名歧义。" },
+      ],
+      goals: [
+        { name: "医生可删自己传错的切片，且删后常规入口彻底隔离", before: "0 处入口", after: "3 处入口 + API 全 404", status: "达成", plainWhy: "普通医生账号实测删除后，工作列表、阅片页及直接请求 GET /slides/:id 均返回 404，其他医生无法再访问。", method: "合成栈端到端实测（医生组 + 管理员组）", proof: "确认框提示：将连带隐藏 复核 1 · 标注 0 · 测量 0\nGET /api/slides/WSI-2026-091 -> 404 SLIDE_NOT_FOUND" },
+        { name: "永久清除释放托管磁盘，且医院导入源目录原始 TIFF 零改动", before: "只能手工进服务器删", after: "托管区 3.18MB → 0B · 原文件不动", status: "达成", plainWhy: "回收中途故意 kill 进程再重启，队列自动续做删净托管文件；比对导入目录原 TIFF 的 SHA-256 指纹分毫不差。", method: "#284 杀进程重启实测 + SHA-256 前后比对", proof: "managed_bytes: 3,178,496 -> 0\nsource_tiff_sha256: e3b0c442... (前后完全一致)" },
+        { name: "受保护目录与审计事务回滚护栏（0→0 零越界目标）", before: "0 处越界", after: "0 处越界（目标 0）", status: "达成", plainWhy: "注入审计写入异常时，切片删除事务整笔回滚，绝不出现「片删了却没留审计」的脏数据。", method: "事务故障注入测试 + git diff 护栏检查", proof: "protected_mutations = 0 | audit_tx_rollback = PASS" },
+      ],
+      shots: [
+        {
+          title: "阅片工作台 · 删除影响实时确认弹窗",
+          url: "https://pathjx.local/cases/C-2026-08/slides",
+          focus: "重点核验：弹窗实时汇总「复核 1 · 标注 0 · 测量 0」，防止医生误删已有诊断复核的切片",
+          ref: "#285 前端实测截图",
+          mockKind: "confirm",
+        },
+        {
+          title: "系统管理 · 「已删除切片」恢复与永久清除台",
+          url: "https://pathjx.local/admin/deleted-slides",
+          focus: "重点核验：必须完整输入 DEL-purge-w0 才解锁红色「永久清除」按钮，一键恢复走绿色安全通道",
+          ref: "#288 前端实测截图",
+          mockKind: "admin",
+        },
+      ],
+      risks: [
+        { level: "warn", what: "删除前已打开的阅片页，在瓦片令牌 30 分钟有效期内仍能读缓存瓦片", impact: "Spec 明确接受的性能取舍；因此永久清除强制要求等满 30 分钟才允许执行，物理删盘时旧令牌必已过期。", next: "院内私有化部署若要求秒级断流，后续可在网关层加短名单。" },
+        { level: "warn", what: "合并后正式库将执行 00018、00019 两个数据库迁移", impact: "新增软删字段、回收队列表并升级只追加审计触发器，上线后不宜直接回滚旧二进制。", next: "下次启动正式演示栈前先按运行手册执行一次数据库备份。" },
+      ],
+      takeaways: [
+        { title: "⏱ 耗时与并发收益", body: "实际干活 5h 18m；前后端双路并行把 7h 06m 串行工作量压短了 1h 48m。唯一卡点在前端 #285 返工多花 38m。" },
+        { title: "🏆 模型与席位高下", body: "平台席 pi · gpt-6.1-sol (high) 3 单全一次过（均 40m/单）；前端 glm-5.3-flash 漏看细节返工 1 次；审查 agy · carbon-high 9m/轮拦下 2 处隐患。" },
+        { title: "🧮 Token 账单真相", body: "API 账面 1.61 亿里 98.4%（1.58 亿）是 214 轮工具调用自动重发的历史缓存；真正首次新读材料仅 258 万，思考写码输出 61 万。" },
+      ],
+      actors: [
+        { id: "d1", role: "设计负责人", fw: "agy", model: "gemini-4-carbon-high", effort: "high", minutes: 142, avgMin: 20, unitText: "统筹 7 单 + 亲做 #282", turns: 68, fresh: 1100000, cached: 47100000, output: 162000, runs: "主会话", pass: "Spec 定稿 · 验收把关", readDoc: "—" },
+        { id: "e-be", role: "工程负责人·平台", fw: "pi", model: "openai/gpt-6.1-sol", effort: "high", minutes: 119, avgMin: 40, unitText: "均 40m / 单（3 单）", turns: 64, fresh: 550000, cached: 41050000, output: 194000, runs: "4 次(含1断连)", pass: "✓ 3/3 一次过", readDoc: "读档 1.8m", note: "1 次网关断连无账单，其余 4 次完整计入" },
+        { id: "e-fe", role: "工程负责人·前端", fw: "pi", model: "zai-coding-cn/glm-5.3-flash", effort: "high", minutes: 121, avgMin: 61, unitText: "首做 83m + 返工 38m", turns: 58, fresh: 610000, cached: 58100000, output: 217000, runs: "2 次(含返工)", pass: "↻ 返工 1 次", readDoc: "读档 2.4m" },
+        { id: "r1", role: "代码审查", fw: "agy", model: "gemini-4-carbon-high", effort: "high", minutes: 28, avgMin: 9.3, unitText: "均 9.3m / 轮（3 轮）", turns: 24, fresh: 310000, cached: 12180000, output: 37000, runs: "3 轮审查", pass: "🔍 拦住 2 处漏项", readDoc: "只读不计" },
+      ],
+      timeBreakdown: [
+        { label: "设计统筹 / 亲做", min: 142, color: "#d97706", desc: "编写 Spec、拆解工单、#282 术语定稿与最终端到端验收" },
+        { label: "派发写码 / 审查", min: 164, color: "#0d9488", desc: "6 张工单与 3 轮审查并行去重后的净活跃时长" },
+        { label: "跑测试与验收", min: 12, color: "#7c3aed", desc: "本地 CI 门禁、数据库迁移与浏览器端到端核验" },
+        { label: "等你确认 (10~45m)", min: 30, color: "#db2777", desc: "等待你确认删除宽限期口径的真实响应间隔" },
+        { label: "跨夜停工 (>45m)", min: 144, color: "#94a3b8", desc: "中途超过 45 分钟的暂停空档，单独剥离不计入干活耗时" },
+      ],
+      timeline: {
+        totalMin: 492,
+        pauseSpan: [210, 354],
+        lanes: [
+          { actorId: "d1", label: "设计 · agy (carbon-high)", color: "var(--design)", spans: [[0, 32, "定稿 Spec 与 #282"], [75, 112, "验收 #283 并派发前后端"], [160, 210, "复核中期进度"], [354, 392, "跨夜恢复派发收尾批"], [452, 492, "端到端实测与生成汇报"]] },
+          { actorId: "e-be", label: "平台 · pi (gpt-6.1-sol · high)", color: "var(--pi)", spans: [[32, 71, "#283 软删除迁移一次过"], [74, 86, "aborted", "#284-try1 网关断连中断"], [88, 131, "#284 异步文件回收队列一次过"], [392, 430, "#287 恢复补排分析一次过"]] },
+          { actorId: "e-fe", label: "前端 · pi (glm-5.3-flash · high)", color: "var(--claude)", spans: [[112, 195, "#285 删除弹窗（漏算测量数）"], [430, 468, "#288 管理页 + 修复测量统计"]] },
+          { actorId: "r1", label: "审查 · agy (carbon-high · high)", color: "var(--agy)", spans: [[71, 80, "review-1 提醒幂等锁"], [195, 206, "review-2 抓出 #285 漏项打回"], [468, 477, "review-final 双轴终审通过"]] },
+          { actorId: "", label: "测试门禁 / 等你确认", color: "var(--verify)", spans: [[131, 160, "wait", "等你确认 30m 宽限期方案"], [478, 486, "合成栈全量验收"]] },
+        ],
+      },
+      dispatches: [
+        { name: "gh-283 软删除与隔离", actorId: "e-be", fw: "pi", model: "openai/gpt-6.1-sol", effort: "high", kind: "首次", startMin: 32, min: 38.9, fresh: 220000, cached: 15450000, out: 68000, ok: true, story: "✓ 一次过：完成软删表结构迁移与常规接口 404 隔离" },
+        { name: "review-1 首批审查", actorId: "r1", fw: "agy", model: "gemini-4-carbon-high", effort: "high", kind: "审查", startMin: 71, min: 8.7, fresh: 110000, cached: 3710000, out: 11000, ok: true, story: "🔍 通过 #283，提醒回收队列需补进程重启幂等锁" },
+        { name: "gh-284-try1 回收队列", actorId: "e-be", fw: "pi", model: "openai/gpt-6.1-sol", effort: "high", kind: "断连重派", startMin: 74, min: null, fresh: null, cached: null, out: null, ok: false, story: "⚡ 跑至 12m 上游网关断连，自动重派（未清空同席位其余统计）" },
+        { name: "gh-284 回收队列(重派)", actorId: "e-be", fw: "pi", model: "openai/gpt-6.1-sol", effort: "high", kind: "首次", startMin: 88, min: 43.4, fresh: 220000, cached: 16620000, out: 84000, ok: true, story: "✓ 一次过：与前端 #285 并行推进，实现杀进程续做与原 TIFF 保护" },
+        { name: "gh-285 前端删除弹窗", actorId: "e-fe", fw: "pi", model: "zai-coding-cn/glm-5.3-flash", effort: "high", kind: "首次", startMin: 112, min: 83.0, fresh: 400000, cached: 41700000, out: 152000, ok: true, story: "⚠ 耗时偏长且漏统计「测量记录条数」，被下一轮审查拦住" },
+        { name: "review-2 前后端联审", actorId: "r1", fw: "agy", model: "gemini-4-carbon-high", effort: "high", kind: "审查", startMin: 195, min: 10.7, fresh: 110000, cached: 4450000, out: 14000, ok: true, story: "🔍 精准抓出 #285 弹窗漏算测量条数，打回前端返工" },
+        { name: "gh-287 恢复补排分析", actorId: "e-be", fw: "pi", model: "openai/gpt-6.1-sol", effort: "high", kind: "首次", startMin: 392, min: 36.8, fresh: 110000, cached: 8980000, out: 42000, ok: true, story: "✓ 跨夜恢复后一次过：管理员恢复切片自动补排缺失分析任务" },
+        { name: "gh-288 管理页+返工修复", actorId: "e-fe", fw: "pi", model: "zai-coding-cn/glm-5.3-flash", effort: "high", kind: "返工闭环", startMin: 430, min: 38.0, fresh: 210000, cached: 16400000, out: 65000, ok: true, story: "↻ 补齐 #285 测量计数 + 完成手输切片名永久清除页" },
+        { name: "review-final 终审", actorId: "r1", fw: "agy", model: "gemini-4-carbon-high", effort: "high", kind: "终审", startMin: 468, min: 8.6, fresh: 90000, cached: 4020000, out: 12000, ok: true, story: "✓ 代码规范与 Spec 逐条核对零偏差，准予收尾" },
+      ],
+      batches: [],
+    },
+    batch: {
+      spec: "feishu-refactor",
+      repo: "JinhaoFang/organize_management",
+      date: "2026-11-12",
+      pr: { number: 5, state: "验收通过 · 待拍板 2 项" },
+      title: "飞书双空间 330 篇存量全库精读审计、体裁重构与双源巡检闭环",
+      lead: "通过 60 批 5 并发 agy 全库逐篇精读 + 5 波受控写入，清零全部 42 个空白父目录与 91 个乱标题，1,686 处知识库内链实测零断链、图片画板零丢失。",
+      asks: [
+        { kind: "不可逆操作授权", what: "是否物理清空《Agent 待删除》隔离区 12 个旧空壳节点", why: "全库 319 个有效节点已在线核实零引用，物理删除不可恢复。", rec: "同意执行一次性清空。" },
+        { kind: "运行节奏选择", what: "每周一双源巡检先口令触发还是挂本机定时任务", why: "刚建首轮基线，前两周人工看摘要更易校准阈值。", rec: "前 2 周口令触发，稳定后转 cron。" },
+      ],
+      kpis: [
+        { v: "8 / 8", k: "治理目标全部清零", n: "空目录 42→0 · 坏标题 91→0", pct: 100, color: "var(--good)" },
+        { v: "81 / 81", k: "5 并发池一次通过 100%", n: "审计 60 批 + 写入 21 批零幻觉", pct: 100, color: "var(--agy)" },
+        { v: "5h 10m", k: "Agent 实际干活时长", n: "日历 8h45m（等配额恢复 3h10m）", pct: 59, color: "var(--pi)" },
+        { v: "2,298 万", k: "真实干活 Token (新读+写出)", n: "首次新读 2,180万 · 写出 118万", pct: 90, color: "var(--design)" },
+      ],
+      story: {
+        before: "飞书双空间积压 330 篇历史文档：42 个父目录点开空白、91 篇带「智能纪要/副本」乱前缀、29 篇挂错目录；此前用 medium 思考强度试跑时曾编造过 52 个假飞书 token。",
+        afterSteps: [
+          "60 批 × 5 并发全库精读：全程锁死 agy · gemini-4-carbon-high (思考:high)，逐篇读正文并与 5 个代码仓交叉核对，揪出全部体裁错位。",
+          "无损改标题与导览补齐：原位改名保留 node_token 零断链，为 42 个空白父目录生成结构化导览首页。",
+          "505 笔写入四轴在线核验：逐篇核对图片/表格/画板富媒体块与 1,686 处内链，实测零断链、零丢块。",
+        ],
+      },
+      archNodes: [],
+      delivered: [
+        { what: "60 批次全库正文精读与五仓对账", tickets: ["专项池"], meaning: "逐篇比对正文与代码仓现状，揪出商业目录下的法规科普等 29 处错位。" },
+        { what: "42 个空白目录导览补齐 + 91 项标题规范化", tickets: ["Wave 1-3"], meaning: "清掉全部“智能纪要：”“副本”前缀并补齐医院全称，原链接零断链。" },
+        { what: "155 篇历史文档状态横幅 + 四轴核验", tickets: ["Wave 4-5"], meaning: "图片/表格/画板 100% 完好，1,686 处内链在线实测 0 断链。" },
+      ],
+      goals: [
+        { name: "双空间空白父级目录清零", before: "42 个白板目录", after: "0 个（目标 0）", status: "达成", plainWhy: "扫描全部带子节点的父目录，每处均已生成直达下属文档的结构化导览页。", method: "全库扫描 has_child=true 节点正文块数", proof: "wave5_audit_report.json: blank_dirs = [] (0 / 319)" },
+        { name: "505 笔改写后内链不断、富媒体块不丢", before: "23 处疑似失效", after: "0 断链 · 0 丢块", status: "达成", plainWhy: "写入前后逐篇快照对比图片与画板数量，并对 1,686 条链接逐一发起在线校验。", method: "check_feishu_links.py + 富块快照比对", proof: "wiki_links_checked: 1686 | broken: 0 | rich_loss: 0" },
+      ],
+      shots: [],
+      risks: [
+        { level: "warn", what: "飞书开放平台接口暂不支持调整同级节点侧栏顺序", impact: "新建导览页默认排在同级末尾，不影响搜索与首页链接直达。", next: "高频目录可在飞书客户端手动置顶一次。" },
+      ],
+      takeaways: [
+        { title: "🚀 5 并发池提速 4.4 倍", body: "60 批全库精读若串行需 7.4 小时，开启 agy 5 并发池后 1h 40m 全部扫完。" },
+        { title: "🧠 high 强度根治幻觉", body: "锁定 gemini-4-carbon-high (思考:high) 后，81 批派发、505 笔写入实现 0 编造 token。" },
+        { title: "⏸ 配额等待独立剥离", body: "中途 2 段配额恢复等待（3h 10m）自动归入停工空档，你真实看方案确认仅 25 分钟。" },
+      ],
+      actors: [
+        { id: "d-org", role: "设计负责人", fw: "agy", model: "gemini-4-carbon-high", effort: "high", minutes: 158, avgMin: 31, unitText: "统筹 5 波 + 终验", turns: 92, fresh: 2800000, cached: 61200000, output: 240000, runs: "主会话", pass: "统筹零事故", readDoc: "—" },
+        { id: "r-aud", role: "调研·全库审计池", fw: "agy", model: "gemini-4-carbon-high", effort: "high", minutes: 100, avgMin: 7.4, unitText: "单批中位 7.4m (5并发)", turns: 360, fresh: 15000000, cached: 111000000, output: 610000, runs: "60 批池", pass: "✓ 60/60 零幻觉", readDoc: "只读不计" },
+        { id: "e-fei", role: "工程·飞书管家", fw: "agy", model: "gemini-4-carbon-high", effort: "high", minutes: 50, avgMin: 11, unitText: "单批中位 11m (5并发)", turns: 145, fresh: 4000000, cached: 54000000, output: 330000, runs: "21 批池", pass: "✓ 505 笔零丢块", readDoc: "读档 1.4m" },
+      ],
+      timeBreakdown: [
+        { label: "设计负责人分波调度", min: 158, color: "#d97706", desc: "制定审计口径、分波派发与四轴核验" },
+        { label: "5 并发池审计与写入", min: 131, color: "#2563eb", desc: "81 批次并发去重后的净执行时长" },
+        { label: "在线内链与富块核验", min: 21, color: "#7c3aed", desc: "1,686 处链接与富媒体块自动对账" },
+        { label: "等你确认方案", min: 25, color: "#db2777", desc: "审阅重构清单并拍板写入" },
+        { label: "等配额恢复停工 (>45m)", min: 190, color: "#94a3b8", desc: "2 段配额刷新等待，不计入有效耗时" },
+      ],
+      timeline: {
+        totalMin: 525,
+        pauseSpan: [220, 410],
+        lanes: [
+          { actorId: "d-org", label: "设计 · agy (carbon-high)", color: "var(--design)", spans: [[0, 45, "制定全库审计口径"], [95, 140, "中期抽检"], [190, 220, "汇总重构清单"], [410, 445, "派发写入池"], [495, 525, "四轴终验与汇报"]] },
+          { actorId: "r-aud", label: "审计池 · agy×5并发 (60批)", color: "var(--agy)", spans: [[45, 95, "第 1~30 批正文精读"], [140, 190, "第 31~60 批正文精读"]] },
+          { actorId: "e-fei", label: "写入池 · agy×5并发 (21批)", color: "var(--pi)", spans: [[445, 495, "Wave 1~4 导览与标题无损改写"]] },
+          { actorId: "", label: "四轴核验 / 等你拍板", color: "var(--verify)", spans: [[196, 220, "wait", "等你拍板写入清单"], [495, 516, "1,686 处内链核验"]] },
+        ],
+      },
+      dispatches: [
+        { name: "wave1-changsu 常熟重构", actorId: "e-fei", fw: "agy", model: "gemini-4-carbon-high", effort: "high", kind: "首次", startMin: 445, min: 15.4, fresh: 350000, cached: 3850000, out: 28000, ok: true, story: "✓ 一次过：完成常熟空间目录归位与标题清洗" },
+        { name: "wave1-nayou 呐有重构", actorId: "e-fei", fw: "agy", model: "gemini-4-carbon-high", effort: "high", kind: "首次", startMin: 445, min: 19.3, fresh: 390000, cached: 4510000, out: 31000, ok: true, story: "✓ 与常熟批次并行推进，零丢块完成迁移" },
+        { name: "wave3-dir-homes (19批导览)", actorId: "e-fei", fw: "agy", model: "gemini-4-carbon-high", effort: "high", kind: "批量池", startMin: 465, min: 30.2, fresh: 3260000, cached: 45640000, out: 271000, ok: true, story: "✓ 5 并发补齐全部 42 个空白父目录导览页" },
+      ],
+      batches: [
+        {
+          prefix: "audit-batch-01 .. audit-batch-60",
+          actorId: "r-aud",
+          fw: "agy",
+          model: "gemini-4-carbon-high",
+          effort: "high",
+          count: 60,
+          okCount: 60,
+          wallMin: 100,
+          medianMin: 7.4,
+          fresh: 15000000,
+          story: "✓ 60 批（每批 5 篇）5 并发全库精读，揪出 29 处目录错位，0 编造 token",
+          samples: [
+            ["audit-batch-01", "7.1m", "首次新读 26万 · 写出 1.0万", "通过"],
+            ["audit-batch-02", "8.3m", "首次新读 29万 · 写出 1.1万", "通过"],
+            ["… 中间 57 批全部一次通过（单批中位 7.4m）…", "—", "—", "通过"],
+            ["audit-batch-60", "6.4m", "首次新读 21万 · 写出 0.9万", "通过"],
+          ],
+        },
+      ],
+    },
+    zero: {
+      spec: "#94",
+      repo: "JinhaoFang/design-system",
+      date: "2026-11-11",
+      pr: { number: 98, state: "已核收 · 已合并" },
+      title: "两套新种子视觉体系：油画网点、色纸剪贴（纯设计工单零外部派发）",
+      lead: "将两条已批准视觉参考转化为可复用的「油画网点」「色纸剪贴」种子体系与样张；全由设计负责人主会话打磨并经你在浏览器实看核收。",
+      asks: [],
+      kpis: [
+        { v: "2 / 2", k: "新视觉体系达标", n: "对比度全部达 WCAG AA", pct: 100, color: "var(--good)" },
+        { v: "100%", k: "一次核收通过 · 0 返工", n: "设计亲做 2 单 · 外部派发 0", pct: 100, color: "var(--claude)" },
+        { v: "1h 52m", k: "Agent 实际干活时长", n: "日历 2h39m（等你看样张 47m）", pct: 70, color: "var(--pi)" },
+        { v: "84.2 万", k: "真实干活 Token (新读+写出)", n: "首次新读 70万 · 思考写出 14.2万", pct: 76, color: "var(--design)" },
+      ],
+      story: {
+        before: "种子库缺少「人文气质科技简报」和「纪念致谢长信」两类视觉基底，直接生成长文页面容易退化成千篇一律的白底卡片。",
+        afterSteps: [
+          "提炼设计令牌契约：从参考样张抽出暖纸底纹、油画网点颗粒、手剪色纸阴影与标题字阶。",
+          "完成双样张与无障碍实测：交付《乡音库》《栖桐植物园百年》完整样张，通过对比度与响应式校验。",
+        ],
+      },
+      archNodes: [],
+      delivered: [
+        { what: "「油画网点」（oil-halftone）体系与样张《乡音库》", tickets: ["#95"], meaning: "古典油画暖底配现代设备网点插图，适合深度技术人文简报。" },
+        { what: "「色纸剪贴」（cut-paper）体系与样张《栖桐植物园百年》", tickets: ["#96"], meaning: "手剪色纸层叠与 SVG 叶片聚散动效，适合纪念特辑与致谢长信。" },
+      ],
+      goals: [
+        { name: "两套新体系通过契约与 AA 无障碍对比度校验", before: "0 套", after: "2 套全部 PASS", status: "达成", plainWhy: "自动校验脚本实测正文字号、行宽与深浅底色对比度全部优于 WCAG AA 标准。", method: "pnpm verify 与 validate-system 自动核验", proof: "oil-halftone: PASS (min contrast 7.1:1)\ncut-paper: PASS (44 SVG leaves, contrast 5.8:1)" },
+      ],
+      shots: [
+        {
+          title: "样张一 · 《乡音库》油画网点视觉体系",
+          url: "file:///design-system/seeds/oil-halftone/specimen.html",
+          focus: "重点核验：亚麻暖纸底色 + 双色设备网点插图，正文对比度 7.1:1 远超 AA 要求",
+          ref: "#95 前端样张实拍",
+          mockKind: "halftone",
+        },
+        {
+          title: "样张二 · 《栖桐植物园百年》色纸剪贴体系",
+          url: "file:///design-system/seeds/cut-paper/specimen.html",
+          focus: "重点核验：多层手剪色纸投影与 44 片 SVG 叶片排布，窄屏自动收拢不遮挡正文",
+          ref: "#96 前端样张实拍",
+          mockKind: "cutpaper",
+        },
+      ],
+      risks: [
+        { level: "good", what: "全部样张已由你在浏览器实看核收，无遗留风险", impact: "静态视觉种子体系扩展，无数据库或线上服务变更。", next: "无需额外操作。" },
+      ],
+      takeaways: [
+        { title: "🎨 纯主会话零派发合法", body: "审美定稿由设计负责人亲手完成，0 次外部 CLI 派发属正常分工，不再误报缺项。" },
+        { title: "🔍 内建子代理独立拆账", body: "主会话顺手唤起的 2 次 Sonnet 只读核查子代理（9m）单独列行，不混入主模型账单。" },
+        { title: "⚡ 轻快闭环", body: "仅 46 轮工具调用即完成两套完整视觉体系与样张核收。" },
+      ],
+      actors: [
+        { id: "d-ds", role: "设计负责人", fw: "claude", model: "claude-opus-5-5", effort: "high", minutes: 108, avgMin: 54, unitText: "均 54m / 套（亲做 2 套）", turns: 38, fresh: 550000, cached: 27850000, output: 126000, runs: "主会话", pass: "✓ 一次核收通过", readDoc: "—" },
+        { id: "sub-ds", role: "内建子代理·核查", fw: "claude", model: "claude-sonnet-5-5", effort: "medium", minutes: 9, avgMin: 4.5, unitText: "均 4.5m / 次（2 次）", turns: 8, fresh: 150000, cached: 3250000, output: 16000, runs: "2 次子代理", pass: "✓ 核完字阶契约", readDoc: "只读不计" },
+      ],
+      timeBreakdown: [
+        { label: "设计负责人打磨样张", min: 108, color: "#ea580c", desc: "令牌提炼、SVG 插图与版式精调" },
+        { label: "契约校验脚本", min: 4, color: "#7c3aed", desc: "pnpm verify 与对比度扫描" },
+        { label: "等你看样张核收", min: 47, color: "#db2777", desc: "浏览器实看两套样张并反馈确认" },
+      ],
+      timeline: {
+        totalMin: 159,
+        pauseSpan: null,
+        lanes: [
+          { actorId: "d-ds", label: "设计 · Claude (opus-5-5 · high)", color: "var(--claude)", spans: [[0, 28, "提炼令牌与《乡音库》初稿"], [46, 118, "《栖桐植物园》样张与细节打磨"], [151, 159, "归档提交"]] },
+          { actorId: "sub-ds", label: "内建子代理 · sonnet-5-5 (medium)", color: "var(--design)", spans: [[62, 67, "核查对比度"], [108, 112, "核查响应式断点"]] },
+          { actorId: "", label: "校验门禁 / 等你核收", color: "var(--wait)", spans: [[28, 46, "wait", "首套样张核收"], [118, 151, "wait", "终版样张核收"]] },
+        ],
+      },
+      dispatches: [],
+      batches: [],
+    },
+  };
+
+  const state = {
+    scene: new URLSearchParams(location.search).get("scene") || "mixed",
+    topTab: "overview",
+    costLens: "charts",
+    filterActor: null,
+    sidebarCollapsed: false,
+    expandAll: false,
+  };
+  if (!SCENES[state.scene]) state.scene = "mixed";
+
+  const fmtTok = (n) => {
+    if (n == null) return "未记录";
+    if (n >= 1e8) return (n / 1e8).toFixed(2) + " 亿";
+    if (n >= 1e4) return (n / 1e4).toFixed(1).replace(/\.0$/, "") + " 万";
+    return String(n);
+  };
+  const fmtMin = (m) => {
+    if (m == null) return "断连未计";
+    if (m >= 60) {
+      const h = Math.floor(m / 60);
+      const r = Math.round(m % 60);
+      return r ? `${h}h ${r}m` : `${h}h`;
+    }
+    return `${Number(m).toFixed(m < 10 ? 1 : 0)}m`;
+  };
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  function renderKpiRing(pct, color) {
+    const r = 18, c = 2 * Math.PI * r;
+    const dash = (Math.max(6, Math.min(100, pct)) / 100) * c;
+    return `<svg class="kpi-ring" viewBox="0 0 46 46" aria-hidden="true">
+      <circle cx="23" cy="23" r="${r}" fill="none" stroke="var(--wash2)" stroke-width="4.5"/>
+      <circle cx="23" cy="23" r="${r}" fill="none" stroke="${color}" stroke-width="4.5"
+        stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 23 23)"/>
+      <text x="23" y="26.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--ink)">${pct}%</text>
+    </svg>`;
+  }
+
+  function renderArchFlow(scene) {
+    if (!scene.archNodes.length) return "";
+    return `<div class="arch-card">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:12px" class="muted">
+        <span><b style="color:var(--ink)">交互式状态流转图</b>（鼠标悬停节点可看接口与磁盘底层行为）</span>
+        <span>软删除可逆隔离 → 30m 令牌宽限期 → 异步安全回收</span>
+      </div>
+      <svg class="viz" viewBox="0 0 880 84" role="img" aria-label="状态流转架构图">
+        <g class="arch-node" data-tip="${esc(scene.archNodes[0].tip)}">
+          <rect x="6" y="14" width="205" height="56" rx="10" fill="var(--surface)" stroke="var(--axis)" stroke-width="1.5"/>
+          <text x="108" y="38" text-anchor="middle" font-weight="700" fill="var(--ink)">${esc(scene.archNodes[0].title)}</text>
+          <text x="108" y="56" text-anchor="middle">${esc(scene.archNodes[0].sub)}</text>
+        </g>
+
+        <line x1="211" y1="33" x2="294" y2="33" stroke="var(--agy)" stroke-width="2"/>
+        <polygon points="294,29 303,33 294,37" fill="var(--agy)"/>
+        <text x="256" y="25" text-anchor="middle" font-size="11">软删除</text>
+
+        <line x1="303" y1="53" x2="220" y2="53" stroke="var(--good)" stroke-width="1.8" stroke-dasharray="4 3"/>
+        <polygon points="220,49 211,53 220,57" fill="var(--good)"/>
+        <text x="256" y="70" text-anchor="middle" font-size="11">一键恢复</text>
+
+        <g class="arch-node" data-tip="${esc(scene.archNodes[1].tip)}">
+          <rect x="305" y="14" width="248" height="56" rx="10" fill="var(--surface)" stroke="var(--agy)" stroke-width="1.7"/>
+          <text x="429" y="38" text-anchor="middle" font-weight="700" fill="var(--ink)">${esc(scene.archNodes[1].title)}</text>
+          <text x="429" y="56" text-anchor="middle">${esc(scene.archNodes[1].sub)}</text>
+        </g>
+
+        <line x1="553" y1="42" x2="646" y2="42" stroke="var(--verify)" stroke-width="2"/>
+        <polygon points="646,38 655,42 646,46" fill="var(--verify)"/>
+        <text x="602" y="32" text-anchor="middle" font-size="11">满30m + 输名确认</text>
+
+        <g class="arch-node" data-tip="${esc(scene.archNodes[2].tip)}">
+          <rect x="657" y="14" width="217" height="56" rx="10" fill="var(--surface)" stroke="var(--verify)" stroke-width="1.7"/>
+          <text x="765" y="38" text-anchor="middle" font-weight="700" fill="var(--ink)">${esc(scene.archNodes[2].title)}</text>
+          <text x="765" y="56" text-anchor="middle">${esc(scene.archNodes[2].sub)}</text>
+        </g>
+      </svg>
+    </div>`;
+  }
+
+  function renderUiMock(kind, large = false) {
+    const h = large ? 250 : 148;
+    if (kind === "confirm") {
+      return `<svg class="viz" viewBox="0 0 460 ${h}">
+        <rect width="460" height="${h}" rx="8" fill="var(--surface)"/>
+        <rect x="14" y="12" width="120" height="${h - 24}" rx="6" fill="var(--wash)"/>
+        <rect x="146" y="12" width="300" height="${h - 24}" rx="6" fill="var(--wash)" opacity="0.55"/>
+        <rect x="68" y="${large ? 38 : 16}" width="324" height="${large ? 174 : 116}" rx="10" fill="var(--surface)" stroke="var(--border-strong)" stroke-width="1.5"/>
+        <circle cx="88" cy="${large ? 64 : 36}" r="8" fill="var(--critical-bg)" stroke="var(--critical)"/>
+        <text x="88" y="${large ? 68 : 40}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--critical)">!</text>
+        <text x="104" y="${large ? 68 : 40}" font-weight="700" fill="var(--ink)">确认软删除切片 WSI-2026-091？</text>
+        <rect x="84" y="${large ? 84 : 50}" width="292" height="${large ? 44 : 30}" rx="6" fill="var(--info-bg)" stroke="var(--info-bd)"/>
+        <text x="96" y="${large ? 110 : 69}" font-weight="600" fill="var(--agy)">关联影响：复核 1 条 · 标注 0 条 · 测量 0 条</text>
+        <text x="84" y="${large ? 150 : 98}" fill="var(--muted)">删除后常规阅片页隐藏，管理员仍可在回收台恢复。</text>
+        <rect x="220" y="${large ? 172 : 104}" width="68" height="22" rx="6" fill="var(--wash)"/>
+        <text x="254" y="${large ? 187 : 119}" text-anchor="middle">取消</text>
+        <rect x="296" y="${large ? 172 : 104}" width="80" height="22" rx="6" fill="var(--critical)"/>
+        <text x="336" y="${large ? 187 : 119}" text-anchor="middle" fill="#fff" font-weight="600">确认删除</text>
+      </svg>`;
+    }
+    if (kind === "admin") {
+      return `<svg class="viz" viewBox="0 0 460 ${h}">
+        <rect width="460" height="${h}" rx="8" fill="var(--surface)"/>
+        <text x="20" y="${large ? 34 : 25}" font-weight="700" fill="var(--ink)">已删除切片回收台（仅管理员可见 · 共 1 条）</text>
+        <rect x="20" y="${large ? 48 : 35}" width="420" height="${large ? 64 : 42}" rx="7" fill="var(--wash)"/>
+        <text x="32" y="${large ? 74 : 53}" font-weight="600" fill="var(--ink)">DEL-purge-w0 · 上传者 Dr.Lin · 已满 30m 宽限期</text>
+        <text x="32" y="${large ? 96 : 69}" fill="var(--muted)">连带隐藏：复核 1 条 · 托管占用 3.18 MB</text>
+        <rect x="20" y="${large ? 132 : 88}" width="252" height="28" rx="6" fill="var(--surface2)" stroke="var(--agy)" stroke-width="1.4"/>
+        <text x="32" y="${large ? 150 : 106}" font-family="monospace" fill="var(--ink)">DEL-purge-w0</text>
+        <rect x="282" y="${large ? 132 : 88}" width="68" height="28" rx="6" fill="var(--good)"/>
+        <text x="316" y="${large ? 150 : 106}" text-anchor="middle" fill="#fff" font-weight="600">恢复</text>
+        <rect x="358" y="${large ? 132 : 88}" width="82" height="28" rx="6" fill="var(--critical)"/>
+        <text x="399" y="${large ? 150 : 106}" text-anchor="middle" fill="#fff" font-weight="600">永久清除</text>
+      </svg>`;
+    }
+    if (kind === "halftone") {
+      return `<svg class="viz" viewBox="0 0 460 ${h}">
+        <rect width="460" height="${h}" rx="8" fill="#f4ede2"/>
+        <circle cx="355" cy="${h / 2}" r="${large ? 72 : 44}" fill="#c2410c" opacity="0.18"/>
+        <circle cx="340" cy="${h / 2 - 8}" r="${large ? 48 : 30}" fill="#1e3a8a" opacity="0.22"/>
+        <text x="28" y="${large ? 58 : 38}" font-size="11" fill="#78350f" font-weight="700">ISSUE 04 · 乡音田野档案</text>
+        <text x="28" y="${large ? 96 : 66}" font-size="${large ? 22 : 16}" font-weight="800" fill="#1c1917">消失中的方言声调图谱</text>
+        <text x="28" y="${large ? 128 : 92}" fill="#44403c">古典亚麻油画暖底 × 双色设备网点插图 · 正文对比度 7.1:1</text>
+      </svg>`;
+    }
+    return `<svg class="viz" viewBox="0 0 460 ${h}">
+      <rect width="460" height="${h}" rx="8" fill="#eef5ee"/>
+      <polygon points="330,18 430,36 395,126 308,98" fill="#15803d" opacity="0.20"/>
+      <polygon points="365,32 442,78 370,136" fill="#ca8a04" opacity="0.24"/>
+      <text x="28" y="${large ? 58 : 38}" font-size="11" fill="#166534" font-weight="700">CENTENNIAL · 1926—2026</text>
+      <text x="28" y="${large ? 96 : 66}" font-size="${large ? 22 : 16}" font-weight="800" fill="#14532d">栖桐植物园百年手札</text>
+      <text x="28" y="${large ? 128 : 92}" fill="#1e293b">多层手剪色纸叠影 × 44 片 SVG 叶片动效 · AA 无障碍通过</text>
+    </svg>`;
+  }
+
+  function renderDeliveryTab(scene) {
+    return `
+      <div class="story-compare">
+        <div class="story-pane before">
+          <div class="pane-kicker" style="color:var(--serious)"><span>⚠ 改动前的业务痛点</span></div>
+          <div style="font-size:13px;color:var(--ink2);line-height:1.65">${esc(scene.story.before)}</div>
+        </div>
+        <div class="story-pane after">
+          <div class="pane-kicker" style="color:var(--good)"><span>✦ 现在的端到端运作闭环</span></div>
+          <ol class="step-pills">
+            ${scene.story.afterSteps.map((s, i) => `<li><span class="step-num">${i + 1}</span><span>${esc(s)}</span></li>`).join("")}
+          </ol>
+        </div>
+      </div>
+      ${renderArchFlow(scene)}
+      <div class="module-grid">
+        ${scene.delivered.map((d) => `<div class="module-card">
+          <div class="module-top">
+            <b style="font-size:13.5px">${esc(d.what)}</b>
+            <span>${d.tickets.map((t) => `<span class="ticket-tag">${esc(t)}</span>`).join(" ")}</span>
+          </div>
+          <div style="font-size:12.5px;color:var(--ink2)">${esc(d.meaning)}</div>
+        </div>`).join("")}
+      </div>
+    `;
+  }
+
+  function renderGoalsAndGalleryTab(scene) {
+    return `
+      <div class="goal-cards">
+        ${scene.goals.map((g) => `<div class="goal-card">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:13.5px">
+              <span>${esc(g.name)}</span>
+              <span class="badge good">✓ ${esc(g.status)}</span>
+            </div>
+            <div class="delta-pill">
+              <span class="muted">改前</span> <b>${esc(g.before)}</b>
+              <span style="color:var(--agy);font-weight:700">→</span>
+              <span class="muted">改后</span> <b style="color:var(--good)">${esc(g.after)}</b>
+            </div>
+            <div style="font-size:12.5px;color:var(--ink2);margin-bottom:3px"><b>白话实测结论：</b>${esc(g.plainWhy)}</div>
+            <div class="muted">核验手段：${esc(g.method)}</div>
+          </div>
+          <div>
+            <div class="muted" style="margin-bottom:3px">终端/接口核验回执：</div>
+            <pre class="proof">${esc(g.proof)}</pre>
+          </div>
+        </div>`).join("")}
+      </div>
+      ${scene.shots.length ? `
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 8px;flex-wrap:wrap;gap:8px">
+          <b style="font-size:13.5px">🖥 前端界面实测画廊（拟真视口预览 · 点击任意画面全屏高清放大）</b>
+          <span class="muted">共 ${scene.shots.length} 处关键交互现场</span>
+        </div>
+        <div class="browser-grid">
+          ${scene.shots.map((s, idx) => `<div class="browser-frame">
+            <div class="browser-bar">
+              <span class="traffic"><i style="background:#ef4444"></i><i style="background:#f59e0b"></i><i style="background:#22c55e"></i></span>
+              <span class="url-pill">${esc(s.url)}</span>
+              <span class="muted">${esc(s.ref)}</span>
+            </div>
+            <div class="browser-canvas" data-shot="${idx}" role="button" tabindex="0" aria-label="点击放大查看 ${esc(s.title)}">
+              ${renderUiMock(s.mockKind, false)}
+            </div>
+            <div class="browser-foot">
+              <div style="display:flex;justify-content:space-between;gap:8px">
+                <b>${esc(s.title)}</b>
+                <span style="color:var(--agy);font-weight:600;font-size:11.5px">🔍 点击灯箱放大</span>
+              </div>
+              <div class="muted" style="margin-top:3px;color:var(--ink2)">${esc(s.focus)}</div>
+            </div>
+          </div>`).join("")}
+        </div>
+      ` : `<div class="muted" style="padding:10px 12px;border-radius:8px;background:var(--wash)">本专项为纯后端/知识库数据治理，无前端 UI 页面变更；上方已完成全量在线接口核验。</div>`}
+    `;
+  }
+
+  function renderRisksTab(scene) {
+    return `<div class="risk-grid">
+      ${scene.risks.map((r) => `<div class="risk-card">
+        <div><span class="badge ${r.level === "good" ? "good" : "warn"}">${r.level === "good" ? "✓ 已闭环" : "! 上线前留意"}</span> <b style="font-size:13.5px">${esc(r.what)}</b></div>
+        <div style="font-size:13px;color:var(--ink2)"><b>原因与边界：</b>${esc(r.impact)}</div>
+        <div class="muted"><b>建议动作：</b>${esc(r.next)}</div>
+      </div>`).join("")}
+    </div>`;
+  }
+
+  function renderTimelineSvg(scene) {
+    const tl = scene.timeline;
+    const W = 920, labelW = 226, rightPad = 14, plotW = W - labelW - rightPad, rowH = 26;
+    const p = tl.pauseSpan;
+    const topPad = p ? 26 : 10;
+    const H = topPad + tl.lanes.length * rowH + 24;
+    const gapPx = p ? 26 : 0;
+    const activeMin = p ? tl.totalMin - (p[1] - p[0]) : tl.totalMin;
+
+    const xOf = (m) => {
+      if (!p) return labelW + (m / tl.totalMin) * plotW;
+      const usable = plotW - gapPx;
+      if (m <= p[0]) return labelW + (m / activeMin) * usable;
+      if (m >= p[1]) return labelW + (p[0] / activeMin) * usable + gapPx + ((m - p[1]) / activeMin) * usable;
+      return labelW + (p[0] / activeMin) * usable + ((m - p[0]) / (p[1] - p[0])) * gapPx;
+    };
+    const pauseBandX = p ? xOf(p[0]) : 0;
+
+    return `<div class="timeline-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:12px" class="muted">
+        <span><b style="color:var(--ink)">全局并发泳道时间线</b>（鼠标悬停色块查看该时间段具体动作）</span>
+        <span>日历总跨度 ${fmtMin(tl.totalMin)}${p ? ` · 已自动折叠 ${fmtMin(p[1] - p[0])} 停工空档` : ""}</span>
+      </div>
+      <div data-slot="timeline">
+        <svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="分角色与框架并发时间线">
+          ${p ? `
+            <text x="${(pauseBandX + gapPx / 2).toFixed(1)}" y="13" text-anchor="middle" font-size="10">折叠 ${fmtMin(p[1] - p[0])} 停工</text>
+            <rect x="${pauseBandX.toFixed(1)}" y="18" width="${gapPx}" height="${H - 38}" fill="var(--wash2)" rx="4"/>
+            <line x1="${(pauseBandX + gapPx / 2).toFixed(1)}" y1="20" x2="${(pauseBandX + gapPx / 2).toFixed(1)}" y2="${H - 22}" stroke="var(--axis)" stroke-dasharray="3 3"/>
+          ` : ""}
+          ${tl.lanes.map((lane, i) => {
+            const y = topPad + i * rowH;
+            const dim = state.filterActor && lane.actorId && state.filterActor !== lane.actorId ? 0.22 : 1;
+            return `<g opacity="${dim}">
+              <text x="${labelW - 10}" y="${y + 16}" text-anchor="end">${esc(lane.label)}</text>
+              <rect x="${labelW}" y="${y + 4}" width="${plotW}" height="16" rx="4" fill="var(--wash)"/>
+              ${lane.spans.map((sp) => {
+                const x1 = xOf(sp[0]);
+                const x2 = Math.max(x1 + 4, xOf(sp[1]));
+                const kind = sp[2];
+                const desc = sp[3] || sp[2] || "";
+                const tip = `${lane.label}｜第 ${fmtMin(sp[0])} → ${fmtMin(sp[1])}（历时 ${fmtMin(sp[1] - sp[0])}）：${desc}`;
+                if (kind === "aborted") {
+                  return `<rect class="tl-span" data-tip="${esc(tip)}" x="${x1.toFixed(1)}" y="${y + 4}" width="${(x2 - x1).toFixed(1)}" height="16" rx="3" fill="none" stroke="var(--critical)" stroke-width="1.6" stroke-dasharray="3 2"/>`;
+                }
+                const fill = kind === "wait" ? "var(--wait)" : lane.color;
+                return `<rect class="tl-span" data-tip="${esc(tip)}" x="${x1.toFixed(1)}" y="${y + 4}" width="${(x2 - x1).toFixed(1)}" height="16" rx="3" fill="${fill}"/>`;
+              }).join("")}
+            </g>`;
+          }).join("")}
+          <line x1="${labelW}" y1="${H - 18}" x2="${W - rightPad}" y2="${H - 18}" stroke="var(--axis)"/>
+          <text x="${labelW}" y="${H - 4}">开工 0m</text>
+          <text x="${W - rightPad}" y="${H - 4}" text-anchor="end">收尾 ${fmtMin(tl.totalMin)}</text>
+        </svg>
+      </div>
+    </div>`;
+  }
+
+  function renderDonutSvg(segments, centerTop, centerSub, unitFormatter) {
+    const total = segments.reduce((s, x) => s + x.val, 0) || 1;
+    const r = 62, cx = 88, cy = 88, circum = 2 * Math.PI * r;
+    let offset = 0;
+    const arcs = segments.map((seg) => {
+      const len = (seg.val / total) * circum;
+      const pct = Math.round((seg.val / total) * 100);
+      const tip = `${seg.label}：${unitFormatter(seg.val)}（占 ${pct}%）— ${seg.desc}`;
+      const arc = `<circle class="donut-slice" cx="${cx}" cy="${cy}" r="${r}" fill="none"
+        stroke="${seg.color}" stroke-width="22"
+        stroke-dasharray="${Math.max(1.5, len - 1.5).toFixed(2)} ${circum.toFixed(2)}"
+        stroke-dashoffset="${(-offset).toFixed(2)}"
+        transform="rotate(-90 ${cx} ${cy})"
+        data-tip="${esc(tip)}" data-center-val="${esc(unitFormatter(seg.val))}" data-center-lbl="${esc(seg.label)} (${pct}%)"/>`;
+      offset += len;
+      return arc;
+    }).join("");
+
+    return `<div class="donut-wrap">
+      <svg viewBox="0 0 176 176" width="152" height="152" role="img" aria-label="${esc(centerSub)}">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--wash)" stroke-width="22"/>
+        ${arcs}
+        <text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="16" font-weight="760" fill="var(--ink)" class="donut-center-v">${esc(centerTop)}</text>
+        <text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="10.5" fill="var(--muted)" class="donut-center-k">${esc(centerSub)}</text>
+      </svg>
+      <div class="donut-legend">
+        ${segments.map((seg) => {
+          const pct = Math.round((seg.val / total) * 100);
+          const tip = `${seg.label}：${unitFormatter(seg.val)}（${pct}%）— ${seg.desc}`;
+          return `<div class="legend-item" data-tip="${esc(tip)}">
+            <span style="display:inline-flex;align-items:center;gap:6px;min-width:0">
+              <i class="swatch" style="background:${seg.color}"></i>
+              <span style="line-height:1.3">${esc(seg.label)}</span>
+            </span>
+            <b class="num" style="white-space:nowrap">${unitFormatter(seg.val)} <span class="muted">(${pct}%)</span></b>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }
+
+  function renderGroupedBarChartSvg(scene) {
+    const actors = scene.actors;
+    const maxMin = Math.max(...actors.map((a) => a.minutes), 1);
+    const maxTok = Math.max(...actors.map((a) => a.fresh + a.output), 1);
+    const W = 560, L = 136, R = 142, PW = W - L - R, rowH = 52, H = 14 + actors.length * rowH;
+
+    return `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="各席位耗时与真实Token分组柱状图">
+      ${actors.map((a, idx) => {
+        const fw = FW_COLOR[a.fw] || FW_COLOR.codex;
+        const y = 8 + idx * rowH;
+        const wMin = Math.max(5, (a.minutes / maxMin) * PW);
+        const wFresh = Math.max(4, (a.fresh / maxTok) * PW);
+        const wOut = Math.max(3, (a.output / maxTok) * PW);
+        const dim = state.filterActor && state.filterActor !== a.id ? "dimmed" : "";
+        const tip = `${a.role} · ${fw.label} · ${a.model} (思考:${a.effort})｜工作时长 ${fmtMin(a.minutes)}（${a.unitText}）｜首次新读 ${fmtTok(a.fresh)} + 思考写出 ${fmtTok(a.output)}｜${a.pass}`;
+        return `<g class="bar-chart-row ${dim}" data-tip="${esc(tip)}" data-actor="${esc(a.id)}">
+          <rect class="bar-bg" x="2" y="${y - 4}" width="${W - 4}" height="${rowH - 4}" rx="7" fill="transparent"/>
+          <text x="${L - 8}" y="${y + 13}" text-anchor="end" font-weight="600" fill="var(--ink)">${esc(a.role)}</text>
+          <text x="${L - 8}" y="${y + 28}" text-anchor="end" font-size="10.5" fill="var(--muted)">${esc(fw.label)} · ${esc(a.effort)}</text>
+
+          <rect x="${L}" y="${y + 3}" width="${PW}" height="12" rx="6" fill="var(--wash)"/>
+          <rect x="${L}" y="${y + 3}" width="${wMin.toFixed(1)}" height="12" rx="6" fill="${fw.hex}"/>
+          <text x="${W - 6}" y="${y + 13}" text-anchor="end" font-weight="600" fill="var(--ink)">⏱ ${fmtMin(a.minutes)}</text>
+
+          <rect x="${L}" y="${y + 20}" width="${PW}" height="12" rx="6" fill="var(--wash)"/>
+          <rect x="${L}" y="${y + 20}" width="${wFresh.toFixed(1)}" height="12" rx="6" fill="#3b82f6" opacity="0.82"/>
+          <rect x="${(L + Math.min(PW - wOut, wFresh)).toFixed(1)}" y="${y + 20}" width="${wOut.toFixed(1)}" height="12" rx="4" fill="#16a34a"/>
+          <text x="${W - 6}" y="${y + 30}" text-anchor="end" font-size="11" fill="var(--muted)">新读${fmtTok(a.fresh)}·写${fmtTok(a.output)}</text>
+        </g>`;
+      }).join("")}
+    </svg>`;
+  }
+
+  function renderLensCharts(scene) {
+    const timeSegs = scene.timeBreakdown.map((t) => ({ label: t.label, val: t.min, color: t.color, desc: t.desc }));
+    const activeTotal = scene.timeBreakdown.slice(0, 3).reduce((s, x) => s + x.min, 0);
+    return `<div class="chart-split">
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">🍩 时间去向构成饼图（悬停扇区查看明细）</div>
+          <div class="chart-sub">把「真干活」「等你拍板」与「跨夜/配额停工」彻底分开</div>
+        </div>
+        ${renderDonutSvg(timeSegs, fmtMin(activeTotal), "实际净干活时长", fmtMin)}
+      </div>
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">📊 各席位耗时 vs 真实干活 Token 分组柱状图</div>
+          <div class="chart-sub">上柱 = 工作时长，下柱 = 首次新读(蓝) + 思考写出(绿)；点击柱子可筛选该角色</div>
+        </div>
+        ${renderGroupedBarChartSvg(scene)}
+      </div>
+    </div>`;
+  }
+
+  function renderLensTokenAndTable(scene) {
+    const sumFresh = scene.actors.reduce((s, a) => s + a.fresh, 0);
+    const sumOut = scene.actors.reduce((s, a) => s + a.output, 0);
+    const sumCached = scene.actors.reduce((s, a) => s + a.cached, 0);
+    const sumTurns = scene.actors.reduce((s, a) => s + a.turns, 0);
+    const tokSegs = [
+      { label: "首次新读材料", val: sumFresh, color: "#2563eb", desc: "本场第一次读进上下文的源码、规范文档与测试输出" },
+      { label: "思考与写码输出", val: sumOut, color: "#16a34a", desc: "模型推理思考链 + 写出的代码与汇报（单价最高）" },
+      { label: `历史缓存重读(${sumTurns}轮)`, val: sumCached, color: "#94a3b8", desc: "每调一次工具自动重发的前文历史，命中大模型缓存打 1 折" },
+    ];
+    const seatPalette = ["#2563eb", "#0d9488", "#ea580c", "#7c3aed", "#db2777"];
+    const actorTokSegs = scene.actors.map((a, i) => ({
+      label: `${a.role} (${(FW_COLOR[a.fw] || FW_COLOR.codex).label})`,
+      val: a.fresh + a.output,
+      color: seatPalette[i % seatPalette.length],
+      desc: `${a.model} · 思考:${a.effort}｜新读 ${fmtTok(a.fresh)} + 写出 ${fmtTok(a.output)}`,
+    }));
+    const maxReal = Math.max(...scene.actors.map((a) => a.fresh + a.output), 1);
+
+    return `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:14px" class="story-compare">
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">🧮 账面总 Token 结构环形图</div>
+          <div class="chart-sub">灰色全是 ${sumTurns} 轮工具自动重读的打折历史缓存，蓝绿才是真实产投</div>
+        </div>
+        ${renderDonutSvg(tokSegs, fmtTok(sumFresh + sumOut), "真实新读 + 写出", fmtTok)}
+      </div>
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">🥧 真实干活 Token 按席位占比饼图</div>
+          <div class="chart-sub">剔除缓存噪音后，看哪个角色与模型吃掉了主要的新读与思考预算</div>
+        </div>
+        ${renderDonutSvg(actorTokSegs, fmtTok(sumFresh + sumOut), `${scene.actors.length} 个席位合计`, fmtTok)}
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">🏅 四元组（角色 · 框架 · 模型 · 思考强度）全量投入产出对比表</div>
+      <div class="chart-sub">同一行横看耗时、真实干活量、多轮缓存复用与工程一次通过质量</div>
+      <div class="tw">
+        <table class="clean">
+          <thead>
+            <tr>
+              <th>角色 · 框架 · 模型 · 思考强度</th>
+              <th>耗时与单均</th>
+              <th>真实干活 Token（新读 + 写出）</th>
+              <th>多轮历史缓存重读</th>
+              <th>工程质量与读档耗时</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${scene.actors.map((a) => {
+              const fw = FW_COLOR[a.fw] || FW_COLOR.codex;
+              const freshPct = (a.fresh / maxReal) * 100;
+              const outPct = Math.max(3, (a.output / maxReal) * 100);
+              const dim = state.filterActor && state.filterActor !== a.id ? 'style="opacity:.25"' : "";
+              return `<tr ${dim}>
+                <td>
+                  <div style="font-weight:700"><span class="actor-dot" style="background:${fw.solid};display:inline-block;margin-right:5px"></span>${esc(a.role)} <span class="effort-pill">思考:${esc(a.effort)}</span></div>
+                  <div class="model-line">${esc(fw.label)} · ${esc(a.model)} · ${esc(a.runs)}</div>
+                </td>
+                <td class="num"><b>${fmtMin(a.minutes)}</b><div class="muted">${esc(a.unitText)}</div></td>
+                <td>
+                  <div class="mini-bar">
+                    <div style="width:${freshPct.toFixed(1)}%;background:${fw.solid}"></div>
+                    <div style="width:${outPct.toFixed(1)}%;background:var(--out)"></div>
+                  </div>
+                  <div class="num" style="margin-top:3px">首次新读 <b>${fmtTok(a.fresh)}</b> · 思考写出 <b style="color:var(--good)">${fmtTok(a.output)}</b></div>
+                  ${a.note ? `<div style="color:var(--warning);font-size:11px">⚠ ${esc(a.note)}</div>` : ""}
+                </td>
+                <td class="num"><b>${fmtTok(a.cached)}</b><div class="muted">${a.turns} 轮工具复用</div></td>
+                <td><b>${esc(a.pass)}</b><div class="muted">${esc(a.readDoc)}</div></td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  function renderLensWaterfall(scene) {
+    if (!scene.dispatches.length && !scene.batches.length) {
+      return `<div class="muted" style="padding:12px;border-radius:9px;background:var(--wash)">本场为纯主会话设计定稿模式（0 次外部 CLI 派发，无缺项）。</div>`;
+    }
+    const tl = scene.timeline;
+    const p = tl.pauseSpan;
+    const activeMin = p ? tl.totalMin - (p[1] - p[0]) : tl.totalMin;
+    const pctOf = (m) => {
+      if (!p) return (m / tl.totalMin) * 100;
+      const gapPct = 4, usable = 100 - gapPct;
+      if (m <= p[0]) return (m / activeMin) * usable;
+      if (m >= p[1]) return (p[0] / activeMin) * usable + gapPct + ((m - p[1]) / activeMin) * usable;
+      return (p[0] / activeMin) * usable + ((m - p[0]) / (p[1] - p[0])) * gapPct;
+    };
+
+    return `<div class="wf-list">
+      ${scene.batches.map((b) => {
+        const fw = FW_COLOR[b.fw] || FW_COLOR.codex;
+        return `<details class="batch-fold">
+          <summary>
+            <span>📦 <b>${esc(b.prefix)}</b>（同前缀 >10 批自动折叠：<b>${b.okCount}/${b.count}</b> 批成功）</span>
+            <span class="num">${esc(fw.label)} · <code>${esc(b.model)}</code> (${esc(b.effort)}) ｜ 墙钟 ${fmtMin(b.wallMin)} · 中位 ${fmtMin(b.medianMin)} · 新读 ${fmtTok(b.fresh)}</span>
+          </summary>
+          <div class="muted" style="margin:6px 0;color:var(--ink2)">${esc(b.story)}</div>
+          <div class="tw">
+            <table class="clean">
+              <thead><tr><th>批次</th><th>耗时</th><th>真实干活 Token</th><th>状态</th></tr></thead>
+              <tbody>${b.samples.map((r) => `<tr><td><code>${esc(r[0])}</code></td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td>${esc(r[3])}</td></tr>`).join("")}</tbody>
+            </table>
+          </div>
+        </details>`;
+      }).join("")}
+      ${scene.dispatches.map((d) => {
+        const fw = FW_COLOR[d.fw] || FW_COLOR.codex;
+        const left = pctOf(d.startMin);
+        const width = Math.max(2.5, pctOf(d.startMin + (d.min || 12)) - left);
+        const dim = state.filterActor && state.filterActor !== d.actorId ? "dimmed" : "";
+        return `<div class="wf-row ${dim}">
+          <div>
+            <div style="font-weight:700">${esc(d.name)}</div>
+            <div class="model-line">${esc(fw.label)} · ${esc(d.model)} (${esc(d.effort)})</div>
+          </div>
+          <div>
+            <div class="wf-axis-track"><div class="wf-bar ${d.ok ? "" : "aborted"}" style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%;background:${fw.solid}"></div></div>
+            <div class="muted" style="font-size:11px;margin-top:2px">第 ${fmtMin(d.startMin)} 启动 · ${esc(d.kind)}</div>
+          </div>
+          <div style="color:var(--ink2)">${esc(d.story)}</div>
+          <div class="num" style="text-align:right">
+            <b>${fmtMin(d.min)}</b>
+            <div class="muted">${d.fresh != null ? `新读 ${fmtTok(d.fresh)} · 写 ${fmtTok(d.out)}` : "断连无账单"}</div>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>`;
+  }
+
+  function render() {
+    const scene = SCENES[state.scene];
+    const collapsed = state.sidebarCollapsed;
+    const all = state.expandAll;
+
+    document.querySelectorAll("[data-scene]").forEach((btn) => {
+      btn.classList.toggle("on", btn.getAttribute("data-scene") === state.scene);
+    });
+    document.getElementById("expand-all-btn").classList.toggle("on", all);
+    document.getElementById("expand-all-btn").textContent = all ? "返回页签切换视图" : "切换全展开长卷";
+
+    const app = document.getElementById("app");
+    app.innerHTML = `<div class="shell">
+      ${collapsed ? `
+        <div class="expand-bar">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button type="button" class="icon-btn" id="toggle-side">» 展开左侧驾驶舱栏 (快捷键 [)</button>
+            <span class="pr-pill"><i class="pr-dot"></i>PR #${scene.pr.number} · ${esc(scene.pr.state)}</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${scene.actors.map((a) => {
+              const fw = FW_COLOR[a.fw] || FW_COLOR.codex;
+              return `<button type="button" class="icon-btn" data-actor="${esc(a.id)}" style="${state.filterActor === a.id ? "border-color:var(--agy);color:var(--agy)" : ""}">
+                <span class="actor-dot" style="background:${fw.solid};display:inline-block;margin-right:4px"></span>${esc(a.role)} · ${esc(fw.label)}
+              </button>`;
+            }).join("")}
+          </div>
+        </div>
+      ` : ""}
+
+      <div class="cockpit-grid ${collapsed ? "collapsed" : ""}">
+        <aside class="cockpit-side" ${collapsed ? "hidden" : ""}>
+          <div class="side-top">
+            <span class="pr-pill"><i class="pr-dot"></i>PR #${scene.pr.number}</span>
+            <button type="button" class="icon-btn" id="toggle-side" title="收起侧栏铺满全屏 (快捷键 [)">« 收起侧栏</button>
+          </div>
+
+          <div>
+            <div style="font-weight:750;font-size:14px;line-height:1.38">${esc(scene.title)}</div>
+            <div class="muted" style="margin-top:4px">${esc(scene.date)} · Spec ${esc(scene.spec)}</div>
+          </div>
+
+          <div>
+            <div class="side-nav-label">快速切换视图（免滚动）</div>
+            <div class="side-nav">
+              <button type="button" class="nav-btn ${state.topTab === "overview" ? "active" : ""}" data-jump-top="overview">
+                <span>✦ 改动机制与交付</span><span class="nav-count">${scene.delivered.length}</span>
+              </button>
+              <button type="button" class="nav-btn ${state.topTab === "goals" ? "active" : ""}" data-jump-top="goals">
+                <span>🎯 目标与前端截图</span><span class="nav-count">${scene.goals.length + scene.shots.length}</span>
+              </button>
+              <button type="button" class="nav-btn ${state.topTab === "risks" ? "active" : ""}" data-jump-top="risks">
+                <span>🛡 风险与上线边界</span><span class="nav-count">${scene.risks.length}</span>
+              </button>
+              <button type="button" class="nav-btn ${state.costLens === "charts" ? "active" : ""}" data-jump-lens="charts">
+                <span>📊 耗时饼图 & 柱状图</span><span class="nav-count">图</span>
+              </button>
+              <button type="button" class="nav-btn ${state.costLens === "tokens" ? "active" : ""}" data-jump-lens="tokens">
+                <span>🧮 Token 环图 & 对比表</span><span class="nav-count">${scene.actors.length}</span>
+              </button>
+              <button type="button" class="nav-btn ${state.costLens === "waterfall" ? "active" : ""}" data-jump-lens="waterfall">
+                <span>⏱ 逐单协作与返工流</span><span class="nav-count">${scene.dispatches.length + scene.batches.length}</span>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div class="side-nav-label" style="display:flex;justify-content:space-between">
+              <span>参演四元组（点击筛选）</span>
+              ${state.filterActor ? `<a href="#" id="clear-actor" style="font-size:11px">重置</a>` : ""}
+            </div>
+            <div class="roster-list">
+              ${scene.actors.map((a) => {
+                const fw = FW_COLOR[a.fw] || FW_COLOR.codex;
+                const active = state.filterActor === a.id ? "active" : "";
+                return `<button type="button" class="roster-card ${active}" data-actor="${esc(a.id)}">
+                  <div class="roster-row1">
+                    <span style="font-weight:700;font-size:12.5px"><span class="actor-dot" style="background:${fw.solid};display:inline-block;margin-right:5px"></span>${esc(a.role)}</span>
+                    <span class="effort-pill">${esc(fw.label)} · ${esc(a.effort)}</span>
+                  </div>
+                  <div class="model-line">${esc(a.model)}</div>
+                </button>`;
+              }).join("")}
+            </div>
+          </div>
+        </aside>
+
+        <div>
+          <header class="hero-card">
+            <div class="top-meta">
+              <span>${esc(scene.date)}</span><span>·</span>
+              <span>${esc(scene.repo)}</span><span>·</span>
+              <span>Spec ${esc(scene.spec)}</span>
+              <span class="pr-pill"><i class="pr-dot"></i>PR #${scene.pr.number} · ${esc(scene.pr.state)}</span>
+            </div>
+            <h1>${esc(scene.title)}</h1>
+            <p class="lead">${esc(scene.lead)}</p>
+
+            ${scene.asks.length ? `
+              <div class="ask-banner">
+                <div class="ask-head">⚡ 需要你拍板的决策（共 ${scene.asks.length} 项）</div>
+                <div class="ask-grid">
+                  ${scene.asks.map((a, idx) => `<div class="ask-box">
+                    <div><b>${idx + 1}. 【${esc(a.kind)}】${esc(a.what)}</b></div>
+                    <div class="muted" style="margin:3px 0">${esc(a.why)}</div>
+                    <div style="color:var(--good);font-weight:600">建议：${esc(a.rec)}</div>
+                  </div>`).join("")}
+                </div>
+              </div>
+            ` : ""}
+
+            <div class="kpi-grid">
+              ${scene.kpis.map((k) => `<div class="kpi-card">
+                <div>
+                  <div class="kpi-val">${esc(k.v)}</div>
+                  <div class="kpi-lbl">${esc(k.k)}</div>
+                  <div class="kpi-sub">${esc(k.n)}</div>
+                </div>
+                ${renderKpiRing(k.pct, k.color)}
+              </div>`).join("")}
+            </div>
+          </header>
+
+          <section class="deck" id="deck-top">
+            <div class="deck-head">
+              <div class="deck-title"><span>1. 成果验收台</span><span class="muted">点右侧按钮直接切换「机制 / 实测与截图 / 风险」，免上下翻页</span></div>
+              ${!all ? `
+                <div class="seg-tabs" role="tablist">
+                  <button type="button" class="seg-tab ${state.topTab === "overview" ? "active" : ""}" data-top="overview">
+                    ✦ 改动机制与交付 <span class="tab-badge">${scene.delivered.length}</span>
+                  </button>
+                  <button type="button" class="seg-tab ${state.topTab === "goals" ? "active" : ""}" data-top="goals">
+                    🎯 目标与前端截图 <span class="tab-badge">${scene.shots.length ? `${scene.shots.length}图` : scene.goals.length}</span>
+                  </button>
+                  <button type="button" class="seg-tab ${state.topTab === "risks" ? "active" : ""}" data-top="risks">
+                    🛡 风险与边界 <span class="tab-badge">${scene.risks.length}</span>
+                  </button>
+                </div>
+              ` : ""}
+            </div>
+            ${all
+              ? renderDeliveryTab(scene) + `<div style="margin-top:16px">${renderGoalsAndGalleryTab(scene)}</div><div style="margin-top:16px">${renderRisksTab(scene)}</div>`
+              : state.topTab === "goals" ? renderGoalsAndGalleryTab(scene)
+              : state.topTab === "risks" ? renderRisksTab(scene)
+              : renderDeliveryTab(scene)}
+          </section>
+
+          <section class="deck" id="deck-cost">
+            <div class="deck-head">
+              <div class="deck-title"><span>2. 耗时 · Token · 模型对比图表台</span><span class="muted">三透镜切换查看饼图、柱状图、四元组表与逐单复盘</span></div>
+              ${!all ? `
+                <div class="seg-tabs" role="tablist">
+                  <button type="button" class="seg-tab ${state.costLens === "charts" ? "active" : ""}" data-lens="charts">
+                    ① 耗时饼图 & 模型柱状图
+                  </button>
+                  <button type="button" class="seg-tab ${state.costLens === "tokens" ? "active" : ""}" data-lens="tokens">
+                    ② Token 环形图 & 四元组表
+                  </button>
+                  <button type="button" class="seg-tab ${state.costLens === "waterfall" ? "active" : ""}" data-lens="waterfall">
+                    ③ 逐单协作与返工流 <span class="tab-badge">${scene.dispatches.length + scene.batches.length}</span>
+                  </button>
+                </div>
+              ` : ""}
+            </div>
+
+            <div class="takeaway-strip">
+              ${scene.takeaways.map((t) => `<div class="takeaway-card"><b>${esc(t.title)}</b>${esc(t.body)}</div>`).join("")}
+            </div>
+
+            ${renderTimelineSvg(scene)}
+
+            ${all
+              ? renderLensCharts(scene) + `<div style="margin-top:14px">${renderLensTokenAndTable(scene)}</div><div style="margin-top:14px">${renderLensWaterfall(scene)}</div>`
+              : state.costLens === "tokens" ? renderLensTokenAndTable(scene)
+              : state.costLens === "waterfall" ? renderLensWaterfall(scene)
+              : renderLensCharts(scene)}
+          </section>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const tipEl = document.getElementById("floating-tip");
+  document.addEventListener("mouseover", (ev) => {
+    const holder = ev.target.closest("[data-tip]");
+    if (!holder) { tipEl.hidden = true; return; }
+    tipEl.textContent = holder.getAttribute("data-tip");
+    tipEl.hidden = false;
+
+    if (holder.classList.contains("donut-slice")) {
+      const svg = holder.closest("svg");
+      const v = svg && svg.querySelector(".donut-center-v");
+      const k = svg && svg.querySelector(".donut-center-k");
+      if (v && holder.dataset.centerVal) v.textContent = holder.dataset.centerVal;
+      if (k && holder.dataset.centerLbl) k.textContent = holder.dataset.centerLbl;
+    }
+  });
+  document.addEventListener("mousemove", (ev) => {
+    if (tipEl.hidden) return;
+    const x = Math.min(window.innerWidth - 325, ev.clientX + 14);
+    const y = Math.min(window.innerHeight - 90, ev.clientY + 14);
+    tipEl.style.left = Math.max(8, x) + "px";
+    tipEl.style.top = Math.max(8, y) + "px";
+  });
+  document.addEventListener("mouseout", (ev) => {
+    const holder = ev.target.closest("[data-tip]");
+    if (holder && !holder.contains(ev.relatedTarget)) tipEl.hidden = true;
+  });
+
+  document.addEventListener("click", (ev) => {
+    if (ev.target.id === "clear-actor") {
+      ev.preventDefault();
+      state.filterActor = null;
+      render();
+      return;
+    }
+    const target = ev.target.closest("button, [data-shot], .bar-chart-row");
+    if (!target) return;
+
+    if (target.id === "toggle-side") {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      render();
+      return;
+    }
+    if (target.id === "expand-all-btn") {
+      state.expandAll = !state.expandAll;
+      render();
+      return;
+    }
+    if (target.id === "theme-btn") {
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark" ||
+        (!document.documentElement.hasAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-theme", isDark ? "light" : "dark");
+      return;
+    }
+    if (target.hasAttribute("data-scene")) {
+      state.scene = target.getAttribute("data-scene");
+      state.filterActor = null;
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-top")) {
+      state.topTab = target.getAttribute("data-top");
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-lens")) {
+      state.costLens = target.getAttribute("data-lens");
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-jump-top")) {
+      state.expandAll = false;
+      state.topTab = target.getAttribute("data-jump-top");
+      render();
+      document.getElementById("deck-top")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    if (target.hasAttribute("data-jump-lens")) {
+      state.expandAll = false;
+      state.costLens = target.getAttribute("data-jump-lens");
+      render();
+      document.getElementById("deck-cost")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    if (target.hasAttribute("data-actor")) {
+      const id = target.getAttribute("data-actor") || null;
+      state.filterActor = state.filterActor === id ? null : id;
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-shot")) {
+      const scene = SCENES[state.scene];
+      const shot = scene.shots[Number(target.getAttribute("data-shot"))];
+      if (!shot) return;
+      const lb = document.getElementById("lightbox");
+      document.getElementById("lightbox-body").innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap">
+          <div><b>${esc(shot.title)}</b> <span class="muted">· ${esc(shot.url)}</span></div>
+          <span class="muted">点击任意处或按 Esc 关闭</span>
+        </div>
+        <div class="muted" style="margin-bottom:12px;color:var(--ink2)">${esc(shot.focus)}</div>
+        ${renderUiMock(shot.mockKind, true)}
+      `;
+      lb.hidden = false;
+    }
+  });
+
+  document.getElementById("lightbox").addEventListener("click", () => {
+    document.getElementById("lightbox").hidden = true;
+  });
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") { document.getElementById("lightbox").hidden = true; return; }
+    if (ev.target && ev.target.matches("input, textarea, [contenteditable]")) return;
+    if (ev.key === "[") { state.sidebarCollapsed = !state.sidebarCollapsed; render(); }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
