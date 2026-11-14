@@ -512,7 +512,38 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
   const ver = val(S && S.verification);
   const merges = val(S && S.merges);
 
+  const parseSpanList = (rawSpans, defaultDesc) => {
+    if (!Array.isArray(rawSpans)) return [];
+    return rawSpans.map((s) => ({
+      a: Date.parse(s && s.start),
+      b: Date.parse(s && s.end),
+      kind: "ok",
+      desc: (s && s.desc) || defaultDesc
+    })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b)).map((s) => ({
+      ...s,
+      b: Math.max(s.b, s.a + 1000)
+    }));
+  };
+
+  const resolveMainSessionSpans = (ms, allLeadSpans) => {
+    const direct = parseSpanList(ms && val(ms.spans), "主会话统筹、定稿与验收");
+    if (direct.length) return direct;
+    const s0 = Date.parse((ms && ms.startedAt) || "");
+    const s1 = Date.parse((ms && ms.cutoffAt) || "");
+    if (Number.isFinite(s0) && Number.isFinite(s1) && s1 >= s0) {
+      const clipped = allLeadSpans
+        .filter((sp) => sp.b >= s0 && sp.a <= s1)
+        .map((sp) => ({ a: Math.max(sp.a, s0), b: Math.max(Math.min(sp.b, s1), Math.max(sp.a, s0) + 1000), kind: "ok", desc: "主会话统筹、定稿与验收" }));
+      if (clipped.length) return clipped;
+      return [{ a: s0, b: Math.max(s1, s0 + 1000), kind: "ok", desc: "主会话统筹、定稿与验收" }];
+    }
+    return [];
+  };
+
+  const rawLeadSpans = parseSpanList((val(S && S.time && S.time.designLead) || {}).spans, "主会话统筹、定稿与验收");
+
   const buildActors = () => {
+    const mainSess = (S && S.mainSessions) || [];
     const cockpitSeats = val(S && S.cockpit && S.cockpit.seats);
     if (Array.isArray(cockpitSeats) && cockpitSeats.length) {
       return cockpitSeats.map((c, idx) => {
@@ -521,23 +552,41 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         const seatKey = c.seat || c.role || "engineering";
         const roleLabel = SEAT_LABEL[seatKey] || c.roleLabel || c.role || seatKey;
         const medEdit = val(c.medianFirstEditMinutes);
+        const model = c.actualModel || c.model || "默认模型";
+        const effort = c.actualEffort || c.effort || "默认";
+        const isDesign = seatKey === "director" || seatKey === "design" || seatKey === "main";
+        const rawSeatSpans = val(c.spans);
+        let actorSpans = Array.isArray(rawSeatSpans)
+          ? parseSpanList(rawSeatSpans, isDesign ? "主会话统筹、定稿与验收" : `${roleLabel} 活跃时段`)
+          : null;
+        if ((!actorSpans || !actorSpans.length) && isDesign && mainSess.length) {
+          const matched = mainSess.filter((ms) => {
+            const mFw = ms.framework || ms.agent || "";
+            const mModel = ms.actualModel || ms.model || "默认模型";
+            const mEffort = ms.actualEffort || ms.effort || "默认";
+            return mFw === fw && mModel === model && mEffort === effort;
+          });
+          const recovered = matched.flatMap((ms) => resolveMainSessionSpans(ms, rawLeadSpans));
+          if (recovered.length) actorSpans = recovered;
+        }
         return {
           id: c.id || `actor-${idx}`,
           seat: seatKey,
           workType: c.workType || "default",
           role: roleLabel + (c.workType && c.workType !== "default" ? `·${c.workType}` : ""),
           fw,
-          model: c.actualModel || c.model || "默认模型",
-          effort: c.actualEffort || c.effort || "默认",
+          model,
+          effort,
           minutes: val(c.activeMinutes ?? c.minutes),
-          runsText: (seatKey === "director" || seatKey === "design" || seatKey === "main")
+          runsText: isDesign
             ? (typeof c.runs === "number" && c.runs > 1 ? `${c.runs} 段主会话` : "主会话")
             : (typeof c.runs === "number" ? `${c.runs} 次运行` : String(c.runs || "主会话")),
           turns: u && u.turns !== null ? u.turns : (val(c.turns) ?? null),
           fresh: u ? u.fresh : null,
           output: u ? u.output : null,
           cached: u ? u.cached : null,
-          readDoc: typeof medEdit === "number" ? `首次改码中位 ${fmtMin(medEdit)}` : (seatKey === "director" || seatKey === "design" || seatKey === "main" ? "主会话统筹" : "只读或未计"),
+          spans: actorSpans,
+          readDoc: typeof medEdit === "number" ? `首次改码中位 ${fmtMin(medEdit)}` : (isDesign ? "主会话统筹" : "只读或未计"),
           pass: c.complete === false || (c.anomalies && c.anomalies.length) ? `部分记录（异常 ${c.anomalies ? c.anomalies.length : 1}）` : "记录完整",
           note: c.anomalies && c.anomalies.length ? c.anomalies.map((a) => `${a.source || a.record || ""}${a.source || a.record ? ": " : ""}${a.reason || a}`).join("；") : null
         };
@@ -545,12 +594,61 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     }
 
     const list = [];
-    const mainSess = (S && S.mainSessions) || [];
     const mainU = normUsage(S && S.usage && S.usage.mainSession);
     const dMin = (val(S && S.time && S.time.designLead) || {}).minutes ?? null;
-    if (mainSess.length || mainU || dMin !== null) {
+    if (mainSess.length > 1) {
+      const mGroups = new Map();
+      for (const ms of mainSess) {
+        const fw = ms.framework || ms.agent || (S && S.mainFrameworks && S.mainFrameworks[0]) || "claude";
+        const model = ms.actualModel || ms.model || "主会话模型";
+        const effort = ms.actualEffort || ms.effort || "默认";
+        const key = `${fw}|${model}|${effort}`;
+        if (!mGroups.has(key)) mGroups.set(key, { fw, model, effort, items: [] });
+        mGroups.get(key).items.push(ms);
+      }
+      if (mGroups.size > 1) {
+        let mIdx = 0;
+        for (const mg of mGroups.values()) {
+          mIdx += 1;
+          let fresh = 0, out = 0, cached = 0, hasTok = false, minSum = 0, hasMin = false, turns = 0, hasTurns = false, missingTurns = false;
+          const sp = [];
+          for (const ms of mg.items) {
+            const mu = normUsage(ms.usage);
+            if (mu) {
+              fresh += mu.fresh; out += mu.output; cached += mu.cached; hasTok = true;
+              if (mu.turns !== null) { turns += mu.turns; hasTurns = true; }
+              else { missingTurns = true; }
+            }
+            const msSpans = resolveMainSessionSpans(ms, rawLeadSpans);
+            sp.push(...msSpans);
+            if (typeof ms.minutes === "number") { minSum += ms.minutes; hasMin = true; }
+            else if (msSpans.length) { minSum += msSpans.reduce((acc, x) => acc + (x.b - x.a) / 60000, 0); hasMin = true; }
+          }
+          list.push({
+            id: `seat-design-${mIdx}`,
+            seat: "design",
+            role: "设计负责人",
+            fw: mg.fw,
+            model: mg.model,
+            effort: mg.effort,
+            minutes: hasMin ? minSum : null,
+            runsText: mg.items.length > 1 ? `${mg.items.length} 段主会话` : "主会话",
+            turns: hasTurns && !missingTurns ? turns : null,
+            fresh: hasTok ? fresh : null,
+            output: hasTok ? out : null,
+            cached: hasTok ? cached : null,
+            spans: sp.length ? sp : null,
+            readDoc: "Spec 定稿与验收",
+            pass: "统筹全局",
+            note: null
+          });
+        }
+      }
+    }
+    if (!list.length && (mainSess.length || mainU || dMin !== null)) {
       const m0 = mainSess[0] || {};
       const fw = m0.framework || m0.agent || (S && S.mainFrameworks && S.mainFrameworks[0]) || "claude";
+      const sp0 = mainSess.flatMap((ms) => resolveMainSessionSpans(ms, rawLeadSpans));
       list.push({
         id: "seat-design",
         seat: "design",
@@ -564,6 +662,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         fresh: mainU ? mainU.fresh : null,
         output: mainU ? mainU.output : null,
         cached: mainU ? mainU.cached : null,
+        spans: sp0.length ? sp0 : (rawLeadSpans.length ? rawLeadSpans : null),
         readDoc: "Spec 定稿与验收",
         pass: "统筹全局",
         note: null
@@ -694,18 +793,45 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 
   const collectAllSpans = () => {
     const lanes = [];
-    const dSpans = ((val(S && S.time && S.time.designLead) || {}).spans || []).map((s) => ({
-      a: Date.parse(s.start), b: Date.parse(s.end), kind: "ok", desc: "主会话统筹、定稿与验收"
-    })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
+    const dSpans = rawLeadSpans;
     const designActors = ACTORS.filter((a) => a.seat === "director" || a.seat === "design" || a.seat === "main");
-    const designActor = designActors.length === 1 ? designActors[0] : null;
-    if (dSpans.length) {
+    let emittedDesignLane = false;
+    for (const da of designActors) {
+      const sp = Array.isArray(da.spans) && da.spans.length ? da.spans : (designActors.length === 1 ? dSpans : []);
+      if (sp.length) {
+        emittedDesignLane = true;
+        lanes.push({
+          actorId: da.id,
+          label: `设计·${fwInfo(da.fw).label}·${compactModel(da.model)}(${da.effort})`,
+          fullLabel: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model} · ${da.effort}`,
+          color: "var(--design)",
+          spans: sp.map((s) => ({
+            ...s,
+            desc: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model}(${da.effort})`
+          }))
+        });
+      }
+    }
+    if (!emittedDesignLane && dSpans.length) {
       lanes.push({
-        actorId: designActor ? designActor.id : "",
-        label: designActor ? `设计·${fwInfo(designActor.fw).label}·${compactModel(designActor.model)}(${designActor.effort})` : "设计负责人",
-        fullLabel: designActor ? `设计负责人 · ${fwInfo(designActor.fw).label} · ${designActor.model} · ${designActor.effort}` : "设计负责人",
+        actorId: "",
+        label: "设计负责人(未拆分会话)",
+        fullLabel: "设计负责人（旧版评分表未记录分会话时段）",
         color: "var(--design)",
         spans: dSpans
+      });
+    }
+    const subActors = ACTORS.filter((a) => a.seat === "subagent" && Array.isArray(a.spans) && a.spans.length);
+    for (const sa of subActors) {
+      lanes.push({
+        actorId: sa.id,
+        label: `子代理·${fwInfo(sa.fw).label}·${compactModel(sa.model)}(${sa.effort})`,
+        fullLabel: `原生子代理 · ${fwInfo(sa.fw).label} · ${sa.model} · ${sa.effort}`,
+        color: fwInfo(sa.fw).solid,
+        spans: sa.spans.map((s) => ({
+          ...s,
+          desc: `原生子代理 · ${fwInfo(sa.fw).label} · ${sa.model}(${sa.effort})`
+        }))
       });
     }
     const byLane = new Map();
@@ -1083,7 +1209,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
           ${TL_LANES.map((lane, idx) => {
             const y = topPad + idx * rowH;
             const dim = state.filterActor && lane.actorId && state.filterActor !== lane.actorId ? 0.22 : 1;
-            return `<g opacity="${dim}">
+            return `<g opacity="${dim}" data-lane-actor="${esc(lane.actorId || "")}">
               <text x="${LW - 8}" y="${y + 16}" text-anchor="end" font-size="10.5">${esc(lane.label)}</text>
               <rect x="${LW}" y="${y + 4}" width="${PW}" height="16" rx="4" fill="var(--wash)"/>
               ${lane.spans.map((sp) => {
