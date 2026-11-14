@@ -13,12 +13,24 @@ import { limitOutput } from "./codex.ts";
 
 type Launcher = NonNullable<Detection["launcher"]>;
 const blocked = ["run-spec", "setup-run-spec"];
-const isolationSettings = { permissions: { deny: blocked.map(name => `read_file(.agents/skills/${name})`) } };
+const permissionPath = (path: string) => path.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "");
+const skillDeny = (root = "") => blocked.flatMap(name => [".agents", ".claude"].flatMap(directory => {
+  const path = `${directory}/skills/${name}`;
+  return [`read_file(${path})`, ...(root ? [`read_file(${permissionPath(`${root}/${path}`)})`] : [])];
+}));
+const isolationSettings = { permissions: { allow: [] as string[], deny: skillDeny() } };
+const commandArguments = "(?:\\s+[^;&|<>\\r\\n`$]*)?";
+const readOnlyCommands = [
+  "git(?:\\.exe)? (?:diff|status|show|log|merge-base|rev-parse|branch|ls-files|blame|cat-file)",
+  "gh(?:\\.exe)? (?:issue|pr) (?:view|list|diff|status)",
+  "gh(?:\\.exe)? api --method GET",
+  "(?:rg|grep|find|ls|pwd|cat|head|tail|wc|stat|jq)(?:\\.exe)?",
+].map(pattern => `command(regex:^${pattern}${commandArguments}$)`);
 const permissionSettings = (readOnly: boolean) => ({
   toolPermission: "request-review", allowNonWorkspaceAccess: false,
   permissions: {
-    allow: ["command(git diff)", "command(git status)", "command(git show)", "command(git log)", "command(rg)", "command(ls)", "command(pwd)"],
-    deny: [...isolationSettings.permissions.deny, ...(readOnly ? ["write_file(*)", "mcp(*)", "execute_url(*)"] : [])],
+    allow: readOnly ? readOnlyCommands : ["command(*)"],
+    deny: [...skillDeny(), ...(readOnly ? ["write_file(*)"] : []), "mcp(*)", "execute_url(*)"],
   },
 });
 
@@ -64,7 +76,7 @@ function actualSettings(events: Event[]): { model: string | null; effort: string
   const result = events.filter(event => event.event === "result").at(-1)?.result;
   return { model: response?.model ?? result?.model ?? model, effort: response?.effort ?? result?.effort ?? effort, sessionId: sessionPath ? sessionId : null, sessionPath };
 }
-let text = "";
+const texts = new Map<number, string>();
 
 export const agy: Adapter = {
   id: "agy", label: "Antigravity CLI", writesReport: false,
@@ -77,6 +89,7 @@ export const agy: Adapter = {
     } catch (error) { return { installed: false, version: null, error: (error as Error).message }; }
   },
   command({ root, prompt, settings, detection, env }) {
+    texts.clear();
     const launcher = detection.launcher ?? resolveLauncher(env, settings.path);
     const parent = join(root, ".codex-runs");
     mkdirSync(parent, { recursive: true });
@@ -97,12 +110,13 @@ export const agy: Adapter = {
       writeFileSync(join(directory, ".agents/skills.json"), JSON.stringify({ exclude: blocked }));
       const permission = [...this.permissions[settings.permission].args];
       const settingsIndex = permission.indexOf("--settings");
-      if (settingsIndex >= 0) {
-        const value = JSON.parse(permission[settingsIndex + 1]);
-        value.permissions.allow.push(`read_file(${root})`);
-        permission[settingsIndex + 1] = JSON.stringify(value);
-      }
-      const args = [...launcher.args, "--add-dir", root, ...permission, ...(permission.includes("--settings") ? [] : this.isolationArgs())];
+      const value = JSON.parse(permission[settingsIndex + 1]);
+      const normRoot = permissionPath(root);
+      value.permissions.allow.push(`read_file(${normRoot})`);
+      if (settings.permission === "workspace-write") value.permissions.allow.push(`write_file(${normRoot})`);
+      value.permissions.deny = [...new Set([...value.permissions.deny, ...skillDeny(root)])];
+      permission[settingsIndex + 1] = JSON.stringify(value);
+      const args = [...launcher.args, "--add-dir", root, ...permission];
       const probe = spawnSync(launcher.executable, [...args, "--output-format", "json", "-p", "/skills"], { cwd: directory, env, encoding: "utf8", shell: false, windowsHide: true, timeout: 30000, maxBuffer: 8 * 1024 * 1024 });
       let result;
       try { result = JSON.parse(probe.stdout); } catch {}
@@ -112,7 +126,6 @@ export const agy: Adapter = {
       if (settings.model !== null) args.push("--model", settings.model);
       if (settings.effort !== null) args.push("--effort", settings.effort);
       args.push("--input-format", "stream-json", "--output-format", "stream-json");
-      text = "";
       const instruction = `\n\n任务仓库根目录：${root}。当前目录仅用于技能隔离；所有仓库读取、git 命令和编辑均使用上述根目录的绝对路径。禁止读取或调用 run-spec、setup-run-spec。`;
       const readOnly = settings.permission === "read-only" ? "\n只读权限：只允许读取和非破坏命令；禁止写文件、改配置、提交、派发子代理或执行会生成缓存和报告的测试。没有操作系统只读沙箱，shell、子进程和网络仍须遵守此约束。" : "";
       return { executable: process.execPath, args: [join(import.meta.dirname, "agy-launch.ts"), directory, launcher.executable, ...args], stdin: JSON.stringify({ event: "user", message: { content: prompt + instruction + readOnly } }) + "\n" };
@@ -120,9 +133,9 @@ export const agy: Adapter = {
   },
   isolationArgs: () => ["--settings", JSON.stringify(isolationSettings)],
   permissions: {
-    "read-only": { args: ["--mode", "accept-edits", "--settings", JSON.stringify(permissionSettings(true))], loss: "agy 没有操作系统只读沙箱；拒绝写文件工具、MCP 和浏览器执行，自动批准所列非破坏命令并附只读任务约束。shell 参数、子进程、原生子代理/工作流、网络下载和 CLI 自身缓存/会话仍可能写文件；allowNonWorkspaceAccess:false 不是系统边界。" },
-    "workspace-write": { args: ["--mode", "accept-edits", "--settings", JSON.stringify(permissionSettings(false))], loss: "agy 自动批准工作区编辑，非交互权限请求可能被拒绝；allowNonWorkspaceAccess:false 没有操作系统工作区边界，shell 和子进程仍可写工作区外。" },
-    full: { args: ["--dangerously-skip-permissions"], loss: "agy 跳过权限确认，没有操作系统沙箱；技能排除及显式拒绝规则仍保留。" },
+    "read-only": { args: ["--mode", "accept-edits", "--settings", JSON.stringify(permissionSettings(true))], loss: "agy 没有操作系统只读沙箱；拒绝写文件工具、MCP 和浏览器执行，以跨平台命令正则自动批准所列审查与调研命令并附只读任务约束。正则限制命令前缀及整行匹配时的 shell 连接符，不验证全部参数；find、git、jq 等参数、子进程、原生子代理/工作流、网络下载和 CLI 缓存/会话仍可能写文件；allowNonWorkspaceAccess:false 不是系统边界。" },
+    "workspace-write": { args: ["--mode", "accept-edits", "--settings", JSON.stringify(permissionSettings(false))], loss: "agy 无头可写档显式放行仓库根 read_file、write_file 与 command(*)，以执行测试、静态检查和 git add/commit；拒绝 MCP 和浏览器执行。allowNonWorkspaceAccess:false 没有操作系统工作区边界，shell 和子进程仍可写工作区外。" },
+    full: { args: ["--dangerously-skip-permissions", "--settings", JSON.stringify(isolationSettings)], loss: "agy 跳过权限确认，没有操作系统沙箱；技能排除及显式拒绝规则仍保留。" },
   },
   mapLine(line) {
     let event: Event;
@@ -130,7 +143,7 @@ export const agy: Adapter = {
     if (!event || typeof event !== "object") return [];
     if (event.event === "dispatch") return [{ kind: "text", text: `agy 可用技能：${event.skills.join("、")}`, argv: event.argv, cwd: event.cwd, skills: event.skills }];
     if (event.event === "init") {
-      text = "";
+      texts.clear();
       const path = transcriptFor(event.conversation_id);
       return path ? [{ kind: "text", text: `agy 会话：${event.conversation_id}；记录：${path}`, session: event.conversation_id, transcript: path }] : [];
     }
@@ -144,7 +157,11 @@ export const agy: Adapter = {
     if (event.event === "error") return [{ kind: "error", text: String(event.error ?? event.message ?? "agy 运行失败") }];
     const step = event.event === "step_update" ? event.step_update : null;
     if (!step) return [];
-    if (step.step_type === "agent_response" && typeof step.text_delta === "string") { text += step.text_delta; return [{ kind: "say", text }]; }
+    if (step.step_type === "agent_response" && typeof step.text_delta === "string") {
+      const text = (texts.get(step.step_index) ?? "") + step.text_delta;
+      texts.set(step.step_index, text);
+      return [{ kind: "say", text }];
+    }
     if (step.step_type === "error" || step.state === "ERROR") return [{ kind: "error", text: String(step.error ?? step.text_delta ?? "agy 模型运行失败") }];
     if (step.tool_info) {
       const tool = step.tool_info;

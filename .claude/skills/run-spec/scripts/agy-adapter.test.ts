@@ -46,6 +46,14 @@ if (args.includes('-p')) {
 let rows = ${JSON.stringify(sample)}.trim().split('\\n').map(JSON.parse);
 const scenario = process.env.CASE || 'success';
 if (scenario==='actual') Object.assign(rows.find(r=>r.step_update?.state==='DONE' && r.step_update.step_type==='agent_response').step_update,{model:'actual-model-high',effort:'high'});
+if (scenario==='multi-step') rows.splice(2,2,
+  {event:'step_update',step_update:{step_index:1,state:'ACTIVE',step_type:'agent_response',text_delta:'准备'}},
+  {event:'step_update',step_update:{step_index:1,state:'DONE',step_type:'agent_response',text_delta:'审查'}},
+  {event:'step_update',step_update:{step_index:2,state:'DONE',step_type:'tool',tool_info:{name:'run_command',parameters:{CommandLine:'git status'},output:'clean'}}},
+  {event:'step_update',step_update:{step_index:3,state:'ACTIVE',step_type:'agent_response',text_delta:'本步'}},
+  {event:'step_update',step_update:{step_index:3,state:'DONE',step_type:'agent_response',text_delta:'完成'}},
+  {event:'init',conversation_id:'agy-fixture'},
+  {event:'step_update',step_update:{step_index:1,state:'DONE',step_type:'agent_response',text_delta:'新会话'}});
 if (scenario==='missing-usage') delete rows.at(-1).result.usage;
 if (scenario==='invalid-usage') rows.at(-1).result.usage.cache_read_tokens=-1;
 if (scenario==='cached') rows.at(-1).result.usage.cache_read_tokens=1500;
@@ -148,14 +156,58 @@ test("agy CLI 中途收到信号时判失败并收拾隔离目录", { timeout: 1
   } finally { if (child?.exitCode === null) child.kill(); f.cleanup(); }
 });
 
-for (const permission of ["workspace-write", "full"]) test(`agy CLI 映射 ${permission} 权限`, () => {
+for (const permission of ["read-only", "workspace-write", "full"]) test(`agy CLI 映射 ${permission} 权限与仓库根技能拒绝`, () => {
   const f = fixture();
   try {
     const result = f.run("success", ["--permission", permission]);
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    const command = f.calls().at(-1);
+    const [probe, command] = f.calls();
     assert.ok(command.args.includes(permission === "full" ? "--dangerously-skip-permissions" : "accept-edits"));
-    assert.ok(!JSON.parse(command.stdin).message.content.includes("只读权限："));
+    assert.equal(command.args.filter((arg: string) => arg === "--settings").length, 1);
+    const settings = JSON.parse(command.args[command.args.indexOf("--settings") + 1]);
+    assert.deepEqual(JSON.parse(probe.args[probe.args.indexOf("--settings") + 1]), settings);
+    const root = f.root.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "");
+    const skillDeny = ["run-spec", "setup-run-spec"].flatMap(name => [".agents", ".claude"].flatMap(directory => [
+      `read_file(${directory}/skills/${name})`, `read_file(${root}/${directory}/skills/${name})`,
+    ]));
+    assert.deepEqual([...settings.permissions.deny].sort(), [...skillDeny, ...(permission === "full" ? [] : ["mcp(*)", "execute_url(*)"]), ...(permission === "read-only" ? ["write_file(*)"] : [])].sort());
+    assert.ok(settings.permissions.allow.includes(`read_file(${root})`));
+    assert.equal(JSON.parse(command.stdin).message.content.includes("只读权限："), permission === "read-only");
+    if (permission !== "full") {
+      assert.equal(settings.allowNonWorkspaceAccess, false);
+      assert.equal(settings.toolPermission, "request-review");
+    }
+    if (permission === "workspace-write") assert.deepEqual([...settings.permissions.allow].sort(), ["command(*)", `read_file(${root})`, `write_file(${root})`].sort());
+    if (permission === "full") assert.deepEqual(settings.permissions.allow, [`read_file(${root})`]);
+    if (permission === "read-only") {
+      const patterns = settings.permissions.allow.filter((rule: string) => rule.startsWith("command(regex:")).map((rule: string) => new RegExp(`^(?:${rule.slice(14, -1)})$`));
+      const allows = (line: string) => patterns.some((pattern: RegExp) => pattern.test(line));
+      assert.equal(settings.permissions.allow.filter((rule: string) => rule.startsWith("command(")).length, patterns.length);
+      for (const subcommand of ["diff", "status", "show", "log", "merge-base", "rev-parse", "branch", "ls-files", "blame", "cat-file"]) {
+        assert.ok(allows(`git ${subcommand}`), subcommand);
+        assert.ok(allows(`git ${subcommand} HEAD`), subcommand);
+        assert.ok(allows(`git.exe ${subcommand} HEAD`), subcommand);
+      }
+      for (const resource of ["issue", "pr"]) for (const action of ["view", "list", "diff", "status"]) assert.ok(allows(`gh ${resource} ${action} 53`));
+      assert.ok(allows("gh api --method GET repos/fixture/repo"));
+      for (const utility of ["rg", "grep", "find", "ls", "pwd", "cat", "head", "tail", "wc", "stat", "jq"]) {
+        assert.ok(allows(utility), utility);
+        assert.ok(allows(`${utility} README.md`), utility);
+        assert.ok(allows(`${utility}.exe README.md`), utility);
+      }
+      for (const line of ["git add README.md", "git status-evil", "gh issue create", "gh api --method POST repos/fixture/repo", "grepper", "cat README.md; touch file", "git diff | tee file", "ls && rm file", "pwd > file"]) assert.ok(!allows(line), line);
+    }
+  } finally { f.cleanup(); }
+});
+
+test("agy CLI 多步回复只累加本步文本，init 清空前一会话", () => {
+  const f = fixture();
+  try {
+    const result = f.run("multi-step");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const events = f.read(".events.jsonl").trim().split("\n").map(line => JSON.parse(line));
+    assert.deepEqual(events.filter(event => event.kind === "say").map(event => event.text), ["准备", "准备审查", "本步", "本步完成", "新会话", "OK\n"]);
+    assert.match(f.read(".progress.log"), /=== Antigravity CLI 结束：exit=0/);
   } finally { f.cleanup(); }
 });
 
