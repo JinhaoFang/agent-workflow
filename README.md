@@ -11,7 +11,7 @@
 在目标仓库的根目录运行：
 
 ```bash
-npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
+npx skills add JinhaoFang/agent-workflow#workflow-v6 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
 ```
 
 然后由用户输入 `/setup-run-spec`，按它的步骤接入。
@@ -31,8 +31,16 @@ npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill se
 | `workflow-v3.1` | 判定标准第二版、验证环境与验证排队、可直接删除的被忽略文件、`accept` 核对提交、收尾目标核对 | `docs/reports/spec-94-workflow-v3-1.html`，效果评估 `docs/reports/workflow-v3-1-evaluation.html` |
 | `workflow-v4` | 从 video-studio 抽出后的第一版：收拢成五条思路，测试分层、验证台账、评分表，汇报模板按六点重做 | `docs/reports/spec-2-workflow-v4.html` |
 | `workflow-v5` | 按全流程核查修正授权边界和规则漂移；独立审查由用户选择；嵌套验证按实际执行统计，辅助派发显式关联，审查索引按需读取，派发明细可视化。角色与工具解绑：按席位和工作类型配置框架与模型，自带派发层支持 Codex、Claude Code、pi。汇报检查做成 `report-check` 命令；新增可选的 `verification` 技能 | `docs/reports/spec-16-workflow-v5.html`、`docs/reports/spec-22-agent-seats.html`、`docs/reports/spec-23-verification.html` |
+| `workflow-v6` | 第四框架 `agy` 全链路接入（派发隔离与自举边界、`doctor` 零配额探测与 24 KB 截断提示、`scorecard` 原生会话与子代理解析）；受限工具席位门禁与评分表时间窗/长停工/残缺隔离修正；汇报与评分表升级为 V6 交互式双栏驾驶舱（零滚动双工作台页签、白话因果叙事、四元组与三段式 Token SVG 图表、前端截图灯箱、`report-check` 多页签窄屏全展开巡检） | `docs/reports/spec-50-agy-integration.html`、`docs/reports/spec-51-report-v6.html` |
 
 v3.1 及以前的版本发布在 `JinhaoFang/video-studio`，同名 tag 两边都有，内容相同；已经从 video-studio 安装的仓库照常可用，换到本仓库只需要把命令里的仓库名改掉。
+
+## 从 v5 升级到 v6
+
+1. **一次重装与自检**：在目标仓库根目录运行上面的 `#workflow-v6` 安装命令（主会话或席位用 Codex、pi、agy 时保留 `-a codex`），跑 `node .claude/skills/run-spec/scripts/tickets.ts doctor`，核对全部通过后提交 `skills-lock.json` 里更新的哈希。
+2. **接入第四框架 `agy`（可选）**：个人 `~/.config/agent-workflow/seats.json` 的 `engineering`、`review`、`research` 席位可直接配 `agent: "agy"`（模型须写完整 ID，如 `gemini-4-carbon-high`）；`spec-review` 与 `watch` 受限工具席位仅支持 `claude` 或 `pi`（由 `doctor` 强校验）。`doctor` 同时检查已配置 `agy` 模型/强度有效性，并对超过 24,000 字节的 `AGENTS.md` / `GEMINI.md` / `SKILL.md` 提示截断风险。
+3. **评分表时间窗、无 Issue 专项与主会话补录**：同一会话跨多个 spec 或封账后继续问答时，用 `--started-at`、`--cutoff-at` 切出精确时间窗；交互式 `agy` 会话日志未记模型时可用 `--main-model`、`--main-effort` 补录；无 GitHub Issue 的单分支专项支持字符串 `--spec <标识>` 关联 `tickets.ts run` 与 `scorecard`；超过 45 分钟的长停工拆入 `longPause`，单条残缺派发不再清空整席位合计。
+4. **V6 交互式驾驶舱汇报与多页签检查**：新汇报复制新版 `report-template.html` 按精简后的 `report.md` 填写；评分表自动输出 `cockpit` 四元组与三段式 Token（首次新读材料 / 思考与写出 / 多轮历史缓存重读+轮数），页面内置 SVG 图表、双工作台页签切换、全展开长卷与前端截图灯箱。`tickets.ts report-check` 自动遍历点击 `[role="tab"]` 并在 `360px` 展开全部隐藏面板防溢出；历史已归档 V4/V5 HTML 快照保持原样兼容，无需重绘。
 
 ## 从 v4 升级到 v5
 
