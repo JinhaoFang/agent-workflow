@@ -39,11 +39,11 @@
 
 `doctor` 另外对 `spec-review`、`watch` 的每个实际配置检查 `restrictedCommand`，缺少时退出 1，列出当前支持的 `claude`、`pi`。个人席位文件不存在时提示可创建的绝对路径，继续检查。使用 agy 时，每组不同模型/强度分别通过 `--output-format json -p /model`、`/effort` 验证 `status:SUCCESS`、`command.data`、零耗时和零 Token；`/model` 返回的完整 ID 必须与配置一致，裸前缀即使被 CLI 自动补全也失败。根 `AGENTS.md`、`GEMINI.md` 及 `.claude/skills`、`.agents/skills` 已安装技能的 `SKILL.md` 超过 **24000 字节**时只提示截断风险，软链接别名按真实路径去重。
 
-`tickets.ts run <任务文件|任务文字> --seat <席位> [--spec <S>] [--name <记录名>]` 在当前工作区执行，记录统一写主工作区 `.codex-runs`；覆盖参数见 `run --help`。带 `--spec` 时逐份复用 `scorecard --record` 的精确关联存储，失败记录也保留关联；评分表把非规范命名的记录计为辅助派发，cleanup 沿用辅助原始证据保护。预览不启动模型、不写记录、清单、关联或 GitHub。已安装仓库无需迁移旧记录或配置。
+`tickets.ts run <任务文件|任务文字> --seat <席位> [--spec <S>] [--name <记录名>]` 在当前工作区执行，记录统一写主工作区 `.codex-runs`；覆盖参数见 `run --help`。`--spec <S>` 同时支持 Issue 编号与字符串专项标识，逐份复用 `scorecard --record` 的精确关联存储，失败记录也保留关联；评分表将 `review` 席位归为“审查”，其余非规范命名的记录计为辅助派发，cleanup 沿用辅助原始证据保护。预览不启动模型、不写记录、清单、关联或 GitHub。已安装仓库无需迁移旧记录或配置。
 
 `engineering`、`review`、`research` 与 `dispatch` 一样传 `--role engineering`，告知工程负责人角色和角色文档；角色写入进度头和全局 start 登记，预览也显示。`spec-review`、`watch` 不告知角色。已安装仓库使用前三种席位时需有 `docs/roles/engineering.md`，沿用 `dispatch` 的角色文档约定。
 
-`review` 列表的各项依次收到相同提示，记录名为 `<批次前缀>-<序号>-<框架>`；单项保留前缀本身。带 spec 的 review 默认前缀为 `review-<S>`，重名将整个前缀追加 `-2`、`-3`。原子创建的 `<前缀>.batch.json` 保存全部精确名，`review --record <前缀>` 按清单合计、逐份列出实际模型；缺失或失败仍保留已知用量并注明不完整。批次清单不作为额外派发计入评分表。
+`review` 列表的各项依次收到相同提示，记录名为 `<批次前缀>-<序号>-<框架>`；单项保留前缀本身。带 spec 的 review 默认前缀：整数编号为 `review-<S>`，字符串专项标识为 `review-spec-id-<S>`（避免纯数字开头与工单编号混淆），重名将整个前缀追加 `-2`、`-3`。原子创建的 `<前缀>.batch.json` 保存全部精确名，`review --record <前缀>` 按清单合计、逐份列出实际模型；缺失或失败仍保留已知用量并注明不完整。批次清单不作为额外派发计入评分表。
 
 Codex 审查已有 `.json` 汇总而根会话缺失时，仍从根会话 ID 查找子代理及后代；根用量取汇总，后代用量取各自会话，保留已知合计并注明根会话缺失、合计不完整。
 
