@@ -29,7 +29,8 @@ agy 三档均拒绝两项技能在 .agents/skills、.claude/skills 的相对及�
 agy 只读拒绝直接写工具、MCP 和浏览器执行，用跨平台 command(regex:...) 放行所列 git、gh 只读子命令及读取工具，附只读任务约束；正则不校验全部参数，没有操作系统只读沙箱，不使用 --mode plan。
 agy 无头可写档为 --mode accept-edits，显式允许仓库根 read_file/write_file 和 command(*) 以运行测试、静态检查与 git add/commit，拒绝 MCP 和浏览器执行。
 agy 只读与可写均为 allowNonWorkspaceAccess:false；shell、命令参数与子进程没有操作系统工作区边界。
-agy 终态须 result.status 为 SUCCESS、无模型错误、无 denied_actions 且进程退出 0；唯一例外是中途瞬时 API error (attempt N): 错误步经自动重试恢复并正常完成后续 DONE 回复（result.response 汇报非空、无 denied_actions、错误步后无新错误且进程退出 0）时按成功收尾，其余非 SUCCESS、结果后仍有活动、未恢复瞬时错误、模型/配额错误或缺结束事件仍判失败；会话号和 transcript 路径写入同名 JSON 与进度。
+agy 普通工具执行错误（非权限拦截的 step_type:tool + state:ERROR）按工具结束记录供模型自行处理，不计为模型失败；命中权限拒绝规则的工具错误（permission check failed / Permission denied for <工具>(...) / Matches user-configured deny rule）与 result.denied_actions 一律报「agy 权限拒绝」并判失败。
+agy 终态须 result.status 为 SUCCESS、无模型错误、无工具权限拒绝、无 denied_actions 且进程退出 0；唯一例外是中途瞬时 API error (attempt N): 错误步经自动重试恢复并正常完成后续 DONE 回复（result.response 汇报非空、无工具权限拒绝、无 denied_actions、错误步后无新错误且进程退出 0）时按成功收尾，其余非 SUCCESS、结果后仍有活动、未恢复瞬时错误、模型/配额错误或缺结束事件仍判失败；会话号和 transcript 路径写入同名 JSON 与进度。
 全局登记沿用 CODEX_DISPATCH_HOME 或 XDG_CONFIG_HOME/codex-dispatch/runs.jsonl；不修改旧记录。
 不提供 Windows 查看窗口、监控托管服务或配置写入；--watch-window 仅兼容接收。
 任务退出码保留框架非零值；适配器判定失败时即使进程退出 0 也失败；缺用量记 null。

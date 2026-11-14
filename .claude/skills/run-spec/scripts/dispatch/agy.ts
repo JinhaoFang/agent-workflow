@@ -4,6 +4,7 @@
  * 启动桥仅改变发现起点，任务仍使用原仓库绝对路径，不修改共享 .agents。
  * 只读采用非破坏命令允许列表和写工具拒绝规则，没有操作系统只读沙箱。
  * 中途瞬时 API 错误若经后续 DONE 回复步恢复且终态带非空响应，只记过程并判成功。
+ * 普通工具错误按工具结束记录供模型自行处理；命中权限拒绝规则的工具错误与 denied_actions 一律判失败。
  */
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -77,17 +78,26 @@ function actualSettings(events: Event[]): { model: string | null; effort: string
   const result = events.filter(event => event.event === "result").at(-1)?.result;
   return { model: response?.model ?? result?.model ?? model, effort: response?.effort ?? result?.effort ?? effort, sessionId: sessionPath ? sessionId : null, sessionPath };
 }
+const toolErrorMessage = (step: Event | null | undefined): string => {
+  const error = step?.tool_info?.error;
+  return String((typeof error === "string" ? error : error?.message) ?? step?.error ?? "");
+};
+const isDeniedToolStep = (step: Event | null | undefined): boolean =>
+  step?.step_type === "tool"
+  && /permission check failed|Permission denied for [A-Za-z0-9_]+\(|Matches user-configured deny rule/i.test(toolErrorMessage(step));
 const isErrorStep = (step: Event | null | undefined): boolean =>
-  step?.step_type === "error_message" || step?.step_type === "error" || step?.state === "ERROR";
+  step?.step_type === "error_message" || step?.step_type === "error"
+  || (step?.state === "ERROR" && step?.step_type !== "tool");
 const isRecoveredApiResult = (result: Event | undefined): boolean =>
   !result?.denied_actions?.length
   && typeof result?.response === "string" && result.response.trim().length > 0
   && /^API error \(attempt \d+\):/i.test(String(result?.error ?? ""));
 const texts = new Map<number, string>();
-let topError = false, hadStepError = false, recoveredStep = false, lastStepError = false;
+let topError = false, deniedTool = false, hadStepError = false, recoveredStep = false, lastStepError = false;
 const resetStream = () => {
   texts.clear();
   topError = false;
+  deniedTool = false;
   hadStepError = false;
   recoveredStep = false;
   lastStepError = false;
@@ -165,7 +175,7 @@ export const agy: Adapter = {
     if (event.event === "result") {
       const result = event.result ?? {};
       const usage = usageOf(result.usage);
-      const recovered = !topError && hadStepError && recoveredStep && !lastStepError && isRecoveredApiResult(result);
+      const recovered = !topError && !deniedTool && hadStepError && recoveredStep && !lastStepError && isRecoveredApiResult(result);
       return [...(typeof result.response === "string" && result.response ? [{ kind: "say", text: result.response }] : []),
         ...(recovered ? [{ kind: "text", text: `agy 中途瞬时错误已自动恢复：${result.error}` }]
           : result.status !== "SUCCESS" || result.error || result.denied_actions?.length ? [{ kind: "error", text: String(result.error || (result.denied_actions?.length ? `agy 权限拒绝：${JSON.stringify(result.denied_actions)}` : `agy 未正常完成：${result.status ?? "缺少状态"}`)) }] : []),
@@ -177,6 +187,10 @@ export const agy: Adapter = {
     }
     const step = event.event === "step_update" && event.step_update && typeof event.step_update === "object" ? event.step_update : null;
     if (!step) return [];
+    if (isDeniedToolStep(step)) {
+      deniedTool = true;
+      return [{ kind: "error", text: `agy 权限拒绝：${toolErrorMessage(step)}` }];
+    }
     if (isErrorStep(step)) {
       hadStepError = true;
       recoveredStep = false;
@@ -190,10 +204,15 @@ export const agy: Adapter = {
       texts.set(step.step_index, text);
       return [{ kind: "say", text }];
     }
-    if (step.step_type === "error" || step.state === "ERROR") return [{ kind: "error", text: String(step.error ?? step.text_delta ?? "agy 模型运行失败") }];
+    if (step.step_type === "error" || (step.state === "ERROR" && step.step_type !== "tool")) {
+      return [{ kind: "error", text: String(step.error ?? step.text_delta ?? "agy 模型运行失败") }];
+    }
     if (step.tool_info) {
       const tool = step.tool_info;
-      return [{ kind: "tool", id: String(step.step_index), phase: step.state === "DONE" ? "end" : "start", name: String(tool.name ?? step.tool_name ?? "工具"), detail: `${tool.name ?? step.tool_name} ${JSON.stringify(tool.parameters ?? {})}`, ...limitOutput(String(tool.output ?? "")) }];
+      const output = tool.output !== undefined && tool.output !== null && tool.output !== ""
+        ? tool.output
+        : (typeof tool.error === "string" ? tool.error : tool.error?.message) ?? "";
+      return [{ kind: "tool", id: String(step.step_index), phase: step.state === "DONE" || step.state === "ERROR" ? "end" : "start", name: String(tool.name ?? step.tool_name ?? "工具"), detail: `${tool.name ?? step.tool_name} ${JSON.stringify(tool.parameters ?? {})}`, ...limitOutput(String(output)) }];
     }
     return [];
   },
@@ -201,6 +220,7 @@ export const agy: Adapter = {
     const index = events.reduce((last, event, current) => event.event === "result" ? current : last, -1);
     const result = index >= 0 ? events[index]?.result : undefined;
     const steps = index >= 0 ? events.slice(0, index).flatMap(event => event.event === "step_update" && event.step_update && typeof event.step_update === "object" ? [event.step_update] : []) : [];
+    const denied = Boolean(result?.denied_actions?.length) || steps.some(isDeniedToolStep);
     const lastError = steps.reduce((found, step, current) => isErrorStep(step) ? current : found, -1);
     const clean = result?.status === "SUCCESS" && !result.error && lastError === -1;
     const recovered = lastError >= 0
@@ -209,7 +229,7 @@ export const agy: Adapter = {
       && isRecoveredApiResult(result);
     const actual = actualSettings(events);
     return {
-      success: code === 0 && !failed && index >= 0 && !result?.denied_actions?.length
+      success: code === 0 && !failed && index >= 0 && !denied
         && !events.some(event => event.event === "error")
         && !events.slice(index + 1).some(event => event.event === "step_update" || event.event === "init")
         && (clean || recovered),
