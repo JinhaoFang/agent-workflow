@@ -1,6 +1,6 @@
 /**
  * agy 派发 CLI 回放：真实临时 git 仓库、假 agy 和 gh，重放本机 1.5.9 事件。
- * 样本变体覆盖模型错误、限流、中断、未知用量/模型、权限和技能清单失败。
+ * 样本变体覆盖中途瞬时错误自动恢复、未恢复错误、限流、中断、未知用量/模型、权限和技能清单失败。
  * 工单派发入口实测框架并发配置、环境覆盖与限流重排；不调用真实模型或 GitHub。
  */
 import assert from "node:assert/strict";
@@ -57,6 +57,24 @@ if (scenario==='multi-step') rows.splice(2,2,
 if (scenario==='missing-usage') delete rows.at(-1).result.usage;
 if (scenario==='invalid-usage') rows.at(-1).result.usage.cache_read_tokens=-1;
 if (scenario==='cached') rows.at(-1).result.usage.cache_read_tokens=1500;
+const retryError = 'API error (attempt 1): UNAVAILABLE (code 503): The service is currently unavailable.';
+if (scenario.startsWith('recovered-')) {
+  rows[2].step_update.step_index=2;
+  rows[3].step_update.step_index=2;
+  rows.splice(2,0,{event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:1,state:'DONE',step_type:'error_message',error:retryError}});
+  rows.at(-1).result.status='ERROR';
+  rows.at(-1).result.error=retryError;
+}
+if (scenario==='recovered-empty') rows.at(-1).result.response='   ';
+if (scenario==='recovered-denied') rows.at(-1).result.denied_actions=[{action:'read_file'}];
+if (scenario==='recovered-quota') rows.at(-1).result.error='daily quota exhausted';
+if (scenario==='recovered-active') rows.splice(4,1);
+if (scenario==='recovered-second-error') rows.splice(-1,0,{event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:3,state:'DONE',step_type:'error_message',error:retryError}});
+if (scenario==='unrecovered-503') {
+  rows.splice(-1,0,{event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:2,state:'DONE',step_type:'error_message',error:retryError}});
+  rows.at(-1).result.status='ERROR';
+  rows.at(-1).result.error=retryError;
+}
 if (scenario==='model-error') rows.splice(-1,0,{event:'step_update',step_update:{step_type:'error',state:'DONE',error:'model failed'}});
 if (scenario==='quota') { rows.at(-1).result.status='ERROR'; rows.at(-1).result.error='daily quota exhausted'; }
 if (scenario==='denied') rows.at(-1).result.denied_actions=[{action:'read_file'}];
@@ -124,7 +142,26 @@ test("agy CLI 传数组与 NDJSON，隔离两项技能并关联会话", () => {
   } finally { f.cleanup(); }
 });
 
-for (const [scenario, status] of [["success", 0], ["model-error", 1], ["quota", 1], ["denied", 1], ["no-result", 1], ["unfinished", 1], ["missing-usage", 0], ["invalid-usage", 0], ["cached", 0], ["nonzero", 7], ["bad-skills", 2]] as const) test(`agy CLI 回放 ${scenario}`, () => {
+for (const [scenario, status] of [
+  ["success", 0],
+  ["recovered-retry", 0],
+  ["unrecovered-503", 1],
+  ["recovered-second-error", 1],
+  ["recovered-empty", 1],
+  ["recovered-denied", 1],
+  ["recovered-quota", 1],
+  ["recovered-active", 1],
+  ["model-error", 1],
+  ["quota", 1],
+  ["denied", 1],
+  ["no-result", 1],
+  ["unfinished", 1],
+  ["missing-usage", 0],
+  ["invalid-usage", 0],
+  ["cached", 0],
+  ["nonzero", 7],
+  ["bad-skills", 2],
+] as const) test(`agy CLI 回放 ${scenario}`, () => {
   const f = fixture();
   try {
     const result = f.run(scenario);
@@ -136,6 +173,27 @@ for (const [scenario, status] of [["success", 0], ["model-error", 1], ["quota", 
     if (["missing-usage", "invalid-usage", "no-result", "bad-skills"].includes(scenario)) assert.equal(summary.usage, null);
     if (scenario === "cached") assert.deepEqual(summary.usage, { input: 12514, cached: 1500, output: 429 });
     if (scenario === "bad-skills") assert.equal(f.calls().length, 1);
+    if (scenario === "recovered-retry") {
+      assert.equal(f.read(".md"), "OK\n");
+      assert.deepEqual(summary.usage, { input: 11014, cached: 0, output: 429 });
+      const progress = f.read(".progress.log");
+      assert.match(progress, /agy 中途瞬时错误已自动恢复：API error \(attempt 1\): UNAVAILABLE \(code 503\): The service is currently unavailable\./);
+      assert.doesNotMatch(progress, /出错：/);
+      assert.match(progress, /=== Antigravity CLI 结束：exit=0/);
+      const events = f.read(".events.jsonl").trim().split("\n").map(line => JSON.parse(line));
+      assert.ok(!events.some(event => event.kind === "error"));
+      assert.ok(events.some(event => event.kind === "text" && event.text === "agy 中途瞬时错误已自动恢复：API error (attempt 1): UNAVAILABLE (code 503): The service is currently unavailable."));
+    }
+    if (["unrecovered-503", "recovered-second-error", "recovered-empty", "recovered-denied", "recovered-quota", "recovered-active"].includes(scenario)) {
+      const progress = f.read(".progress.log");
+      assert.doesNotMatch(progress, /agy 中途瞬时错误已自动恢复/);
+      assert.match(progress, /出错：/);
+    }
+    const evidence = process.env.RUN_SPEC_TEST_EVIDENCE;
+    if (evidence && ["recovered-retry", "unrecovered-503", "model-error", "quota", "denied"].includes(scenario)) {
+      mkdirSync(evidence, { recursive: true });
+      writeFileSync(join(evidence, `replay-${scenario}.json`), JSON.stringify({ scenario, exit: result.status, success: summary.success, report: existsSync(join(f.root, ".codex-runs/sample.md")) ? f.read(".md") : null, progress: f.read(".progress.log").trim().split("\n").slice(1) }, null, 2) + "\n");
+    }
   } finally { f.cleanup(); }
 });
 

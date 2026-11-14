@@ -3,6 +3,7 @@
  * 在当前检出内创建短命的完整技能副本和排除清单，并验证实际可见集；
  * 启动桥仅改变发现起点，任务仍使用原仓库绝对路径，不修改共享 .agents。
  * 只读采用非破坏命令允许列表和写工具拒绝规则，没有操作系统只读沙箱。
+ * 中途瞬时 API 错误若经后续 DONE 回复步恢复且终态带非空响应，只记过程并判成功。
  */
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -76,7 +77,21 @@ function actualSettings(events: Event[]): { model: string | null; effort: string
   const result = events.filter(event => event.event === "result").at(-1)?.result;
   return { model: response?.model ?? result?.model ?? model, effort: response?.effort ?? result?.effort ?? effort, sessionId: sessionPath ? sessionId : null, sessionPath };
 }
+const isErrorStep = (step: Event | null | undefined): boolean =>
+  step?.step_type === "error_message" || step?.step_type === "error" || step?.state === "ERROR";
+const isRecoveredApiResult = (result: Event | undefined): boolean =>
+  !result?.denied_actions?.length
+  && typeof result?.response === "string" && result.response.trim().length > 0
+  && /^API error \(attempt \d+\):/i.test(String(result?.error ?? ""));
 const texts = new Map<number, string>();
+let topError = false, hadStepError = false, recoveredStep = false, lastStepError = false;
+const resetStream = () => {
+  texts.clear();
+  topError = false;
+  hadStepError = false;
+  recoveredStep = false;
+  lastStepError = false;
+};
 
 export const agy: Adapter = {
   id: "agy", label: "Antigravity CLI", writesReport: false,
@@ -89,7 +104,7 @@ export const agy: Adapter = {
     } catch (error) { return { installed: false, version: null, error: (error as Error).message }; }
   },
   command({ root, prompt, settings, detection, env }) {
-    texts.clear();
+    resetStream();
     const launcher = detection.launcher ?? resolveLauncher(env, settings.path);
     const parent = join(root, ".codex-runs");
     mkdirSync(parent, { recursive: true });
@@ -143,20 +158,33 @@ export const agy: Adapter = {
     if (!event || typeof event !== "object") return [];
     if (event.event === "dispatch") return [{ kind: "text", text: `agy 可用技能：${event.skills.join("、")}`, argv: event.argv, cwd: event.cwd, skills: event.skills }];
     if (event.event === "init") {
-      texts.clear();
+      resetStream();
       const path = transcriptFor(event.conversation_id);
       return path ? [{ kind: "text", text: `agy 会话：${event.conversation_id}；记录：${path}`, session: event.conversation_id, transcript: path }] : [];
     }
     if (event.event === "result") {
       const result = event.result ?? {};
       const usage = usageOf(result.usage);
+      const recovered = !topError && hadStepError && recoveredStep && !lastStepError && isRecoveredApiResult(result);
       return [...(typeof result.response === "string" && result.response ? [{ kind: "say", text: result.response }] : []),
-        ...(result.status !== "SUCCESS" || result.error || result.denied_actions?.length ? [{ kind: "error", text: String(result.error || (result.denied_actions?.length ? `agy 权限拒绝：${JSON.stringify(result.denied_actions)}` : `agy 未正常完成：${result.status ?? "缺少状态"}`)) }] : []),
+        ...(recovered ? [{ kind: "text", text: `agy 中途瞬时错误已自动恢复：${result.error}` }]
+          : result.status !== "SUCCESS" || result.error || result.denied_actions?.length ? [{ kind: "error", text: String(result.error || (result.denied_actions?.length ? `agy 权限拒绝：${JSON.stringify(result.denied_actions)}` : `agy 未正常完成：${result.status ?? "缺少状态"}`)) }] : []),
         { kind: "turn", usage: { input: usage?.input ?? null, output: usage?.output ?? null } }];
     }
-    if (event.event === "error") return [{ kind: "error", text: String(event.error ?? event.message ?? "agy 运行失败") }];
-    const step = event.event === "step_update" ? event.step_update : null;
+    if (event.event === "error") {
+      topError = true;
+      return [{ kind: "error", text: String(event.error ?? event.message ?? "agy 运行失败") }];
+    }
+    const step = event.event === "step_update" && event.step_update && typeof event.step_update === "object" ? event.step_update : null;
     if (!step) return [];
+    if (isErrorStep(step)) {
+      hadStepError = true;
+      recoveredStep = false;
+      lastStepError = true;
+    } else {
+      lastStepError = false;
+      if (hadStepError && step.step_type === "agent_response" && step.state === "DONE") recoveredStep = true;
+    }
     if (step.step_type === "agent_response" && typeof step.text_delta === "string") {
       const text = (texts.get(step.step_index) ?? "") + step.text_delta;
       texts.set(step.step_index, text);
@@ -171,10 +199,20 @@ export const agy: Adapter = {
   },
   outcome({ code, failed, events }) {
     const index = events.reduce((last, event, current) => event.event === "result" ? current : last, -1);
-    const result = events[index]?.result;
+    const result = index >= 0 ? events[index]?.result : undefined;
+    const steps = index >= 0 ? events.slice(0, index).flatMap(event => event.event === "step_update" && event.step_update && typeof event.step_update === "object" ? [event.step_update] : []) : [];
+    const lastError = steps.reduce((found, step, current) => isErrorStep(step) ? current : found, -1);
+    const clean = result?.status === "SUCCESS" && !result.error && lastError === -1;
+    const recovered = lastError >= 0
+      && steps.slice(lastError + 1).some(step => step.step_type === "agent_response" && step.state === "DONE")
+      && !isErrorStep(steps.at(-1))
+      && isRecoveredApiResult(result);
     const actual = actualSettings(events);
     return {
-      success: code === 0 && !failed && result?.status === "SUCCESS" && !result.error && !result.denied_actions?.length && !events.some(event => event.event === "error" || event.step_update?.step_type === "error" || event.step_update?.state === "ERROR") && !events.slice(index + 1).some(event => event.event === "step_update" || event.event === "init"),
+      success: code === 0 && !failed && index >= 0 && !result?.denied_actions?.length
+        && !events.some(event => event.event === "error")
+        && !events.slice(index + 1).some(event => event.event === "step_update" || event.event === "init")
+        && (clean || recovered),
       usage: usageOf(result?.usage),
       actualModel: actual.model, actualEffort: actual.effort,
       sessionId: actual.sessionId, sessionPath: actual.sessionPath,
