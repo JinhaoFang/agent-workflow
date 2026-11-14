@@ -2,7 +2,7 @@
  * 汇报浏览器检查：tickets.ts report-check <文件> [--out <目录>] [--chromium <路径>]。
  * 只用 Node 内置 WebSocket 和 CDP；依次查参数、RUN_SPEC_CHROMIUM、Playwright 缓存、PATH。
  * 用 file:// 空白页比较全局名，收集各配色/尺寸及页签切换中的控制台错误和未捕获异常；
- * 浅色与深色桌面存在 [role="tab"] 时均逐个点击检查可见时间线存在且不溢出，并恢复初始激活态后再截 dark-1280；
+ * 浅色与深色桌面存在 [role="tab"] 时均逐个点击并恢复初始激活态，每步（含恢复步）均检查可见时间线存在且不溢出，恢复后再截 dark-1280；
  * 手机展开全部 details、触发 [data-action="expand-all"] 并解除 [role="tabpanel"][hidden]，以固定 360 比 scrollWidth。
  * 视口、配色、页签或折叠变化后，等待至少 250 毫秒及连续三帧尺寸稳定，再测量并截图；
  * 浅色、深色、手机按 800 像素高度分段编号。
@@ -393,6 +393,7 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
         })(${JSON.stringify(tabState)})`);
         const restored = await measure();
         globals.push(...restored.globals);
+        timelines.push(restored.timeline);
       }
       return { globals, timelines };
     };
@@ -490,10 +491,10 @@ chromium、chromium-browser、google-chrome；显式指定的路径无效时直�
 缓存：Linux ~/.cache/ms-playwright（支持 XDG_CACHE_HOME），macOS ~/Library/Caches/ms-playwright，
 Windows %LOCALAPPDATA%/ms-playwright；先查 chromium_headless_shell-*，再查 chromium-*。
 找不到时可用 --chromium 指定，或安装 Playwright 的 chromium-headless-shell。
-四项均输出通过/失败和数值：控制台 console.error 与未捕获异常为零（含浅色/深色桌面 [role="tab"] 逐项切换巡检）；
+四项均输出通过/失败和数值：控制台 console.error 与未捕获异常为零（含浅色/深色桌面 [role="tab"] 逐项切换与恢复初始激活页签巡检）；
 和 file:// 空白页的 Object.keys(window) 比无新增全局名；
 360 像素、展开全部 <details>、触发 [data-action="expand-all"] 并解除 [role="tabpanel"][hidden] 后 document.documentElement.scrollWidth <= 360（不与 innerWidth 比）；
-浅色与深色 1280×800 下初始及每次切换 [role="tab"] 后均须至少存在 1 个可见时间线 ${timelineSelector} 且 scrollWidth <= clientWidth（任一步缺失、隐藏或溢出均失败），巡检后恢复初始激活页签再截 dark-1280-*.png。
+浅色与深色 1280×800 下初始、每次切换 [role="tab"] 及恢复初始激活页签后均须至少存在 1 个可见时间线 ${timelineSelector} 且 scrollWidth <= clientWidth（任一步缺失、隐藏或溢出均失败），深色巡检恢复初始激活页签后再截 dark-1280-*.png。
 检查浅色和深色桌面以及浅色手机；等待页面加载、字体完成。
 视口、配色、页签切换或展开折叠后，至少等 250 毫秒，再确认页面和时间线尺寸连续三帧不变后测量并截图。
 按视口高度 800 像素分段截图：浅色 1280×800、深色 1280×800、手机 360×800（已展开全部折叠与页签面板）。

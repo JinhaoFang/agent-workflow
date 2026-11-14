@@ -3,7 +3,7 @@
  * 从命令行核对四项结果、退出码、固定 360 的量法、分段 PNG 和临时目录清理；
  * 核对启动首行包含浏览器 PID 和临时用户目录绝对路径，成功、检查失败及启动失败后该目录均已删除。
  * 长页覆盖按序分段、每段不高于视口、手机展开折叠和延迟重排、清理后保留全部截图；
- * 多页签样本覆盖浅色与深色桌面 [role="tab"] 巡检与恢复初始态、切换抛错、非默认页签时间线溢出或消失隐藏及手机解除隐藏面板。
+ * 多页签样本覆盖浅色与深色桌面 [role="tab"] 巡检与恢复初始态（含深色恢复步时间线移除、隐藏或 2000px 溢出拦截，report.2、report.5）、切换抛错、非默认页签时间线溢出或消失隐藏及手机解除隐藏面板。
  * 延迟溢出样本覆盖视口切换后 150 毫秒才出现的窄屏失败；分段 PNG 共用一处断言。
  * 另测时间线溢出/缺失、路径优先级、Playwright 缓存/PATH 查找、参数和启动失败。
  * 不访问 GitHub；隔离 HOME、缓存和 PATH 证明缺少 Chromium 时明确以 2 退出。
@@ -101,7 +101,7 @@ test("report-check 帮助、参数、缺失文件和缺失 Chromium 的退出码
   try {
     const help = repo.run(["report-check", "--help"]);
     assert.equal(help.status, 0, help.stderr);
-    for (const text of ["RUN_SPEC_CHROMIUM", "file://", "<= 360", '[data-slot="timeline"]', "--out", "--chromium", "chromium-headless-shell", "light-1280-01.png", "dark-1280-01.png", "mobile-360-01.png", "1280×800", "360×800", "不输出整页长图", "每组张数和目录", "浏览器现场：PID=<进程号>，用户目录=<绝对路径>"]) {
+    for (const text of ["RUN_SPEC_CHROMIUM", "file://", "<= 360", '[data-slot="timeline"]', "恢复初始激活页签", "--out", "--chromium", "chromium-headless-shell", "light-1280-01.png", "dark-1280-01.png", "mobile-360-01.png", "1280×800", "360×800", "不输出整页长图", "每组张数和目录", "浏览器现场：PID=<进程号>，用户目录=<绝对路径>"]) {
       assert.ok(help.stdout.includes(text), text);
     }
     assert.match(repo.run(["--help"]).stdout, /report-check <汇报文件>/);
@@ -468,6 +468,76 @@ test("report-check 点击非默认页签后时间线被移除或 display:none �
       assertBrowserSite(v5Result.stdout, repo.temporary);
       assert.ok(results(v5Result.stdout).every((item) => item.passed), v5Result.stdout);
     }
+    assert.deepEqual(readdirSync(repo.temporary), []);
+  } finally {
+    rmSync(repo.root, { recursive: true, force: true });
+  }
+});
+
+test("report-check 深色恢复初始页签时时间线移除、隐藏或撑宽至 2000px 均仅时间线不滚动以 1 失败，正常多页签退出 0（report.2、report.5）", { skip }, () => {
+  const repo = repository();
+  try {
+    const base = readFileSync(fixture("tabs-ok"), "utf8");
+    for (const mode of ["remove", "hide", "overflow"] as const) {
+      const action = mode === "remove"
+        ? "timelineEl.remove();"
+        : mode === "hide"
+          ? 'timelineEl.style.display = "none";'
+          : 'timelineInner.style.width = "2000px";';
+      const badHtml = base
+        .replace(
+          "</style>",
+          '[data-slot="timeline"] { overflow-x: auto; }\n.restore-probe { width: 100%; height: 20px; }\n</style>',
+        )
+        .replace(
+          '<div data-slot="timeline" aria-label="时间线"></div>',
+          '<div data-slot="timeline" aria-label="时间线"><div class="restore-probe"></div></div>',
+        )
+        .replace(
+          'const expandButton = document.querySelector(\'[data-action="expand-all"]\');',
+          'const expandButton = document.querySelector(\'[data-action="expand-all"]\'); const timelineEl = document.querySelector(\'[data-slot="timeline"]\'); const timelineInner = document.querySelector(".restore-probe"); let sawDarkTab2 = false;',
+        )
+        .replace(
+          "for (const panel of panels) panel.hidden = panel.id !== targetId;",
+          `for (const panel of panels) panel.hidden = panel.id !== targetId; if (matchMedia("(prefers-color-scheme: dark)").matches) { if (targetId === "panel-2") sawDarkTab2 = true; else if (sawDarkTab2 && targetId === "panel-1") { ${action} } }`,
+        );
+      writeFileSync(repo.input, badHtml);
+      const outDir = join(repo.root, `深色恢复步-${mode}`);
+      const badResult = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", outDir], {
+        PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+      });
+      assert.equal(badResult.status, 1, badResult.stdout + badResult.stderr);
+      assertBrowserSite(badResult.stdout, repo.temporary);
+      const checks = results(badResult.stdout);
+      assert.equal(checks.length, 4, badResult.stdout);
+      assert.deepEqual(checks.filter((item) => !item.passed).map((item) => item.name), ["时间线不滚动"]);
+      assert.match(badResult.stdout, /新增=0（基准=file:\/\/），名字=\[\]/);
+      if (mode === "overflow") {
+        assert.match(badResult.stdout, /巡检步=10（空区域步=0）/);
+        assert.match(badResult.stdout, /"scrollWidth":2000/);
+      } else {
+        assert.match(badResult.stdout, /巡检步=10（空区域步=1）/);
+      }
+      assertScreenshots(badResult.stdout, outDir, [
+        ["light-1280", 1280, [800]],
+        ["dark-1280", 1280, [800]],
+        ["mobile-360", 360, [800, 800, undefined]],
+      ]);
+    }
+    copyFileSync(fixture("tabs-ok"), repo.input);
+    const okOut = join(repo.root, "深色恢复步正常对照");
+    const okResult = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", okOut], {
+      PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+    });
+    assert.equal(okResult.status, 0, okResult.stdout + okResult.stderr);
+    assertBrowserSite(okResult.stdout, repo.temporary);
+    assert.ok(results(okResult.stdout).every((item) => item.passed), okResult.stdout);
+    assert.match(okResult.stdout, /巡检步=10（空区域步=0）/);
+    assertScreenshots(okResult.stdout, okOut, [
+      ["light-1280", 1280, [800]],
+      ["dark-1280", 1280, [800]],
+      ["mobile-360", 360, [800, 800, undefined]],
+    ]);
     assert.deepEqual(readdirSync(repo.temporary), []);
   } finally {
     rmSync(repo.root, { recursive: true, force: true });

@@ -2,8 +2,9 @@
  * scorecard <spec> 从只读本机记录生成过程数据 JSON；--session 可重复传四框架会话，
  * JSONL，--out 写文件，--post 用稳定标记创建或更新折叠评论。cleanup 共用归属
  * 和截点检查；只有显式 --no-scorecard 才绕过。所有缺数以 value:null 和中文
- * reason 表示，missing 汇总字段路径。保留 version:2 既有字段不变，并新增顶层
- * cockpit 预计算全局与完整四元组席位的三段式 Token、工具轮数与耗时指标。
+ * reason 表示，missing 汇总字段路径。保留 version:2 既有字段不变，主会话明细
+ * 补充活跃时段 spans，并新增顶层 cockpit 预计算全局与完整四元组席位（cockpit.seats
+ * 含合并有序区间 spans）的三段式 Token、工具轮数与耗时指标。
  * 数据口径和兼容约定完整写在 --help。Claude 用户输入排除压缩摘要，优先认 origin.kind，并关联 AskUserQuestion 问答。
  */
 import { attribution, codexSessionMetrics, firstWrite, mainSessions, sessionPath, sessionSettings, type SessionOptions } from "./scorecard-sessions.ts";
@@ -390,7 +391,7 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     cockpitRuns.push({
       source: item.session, role: item.role, seat: item.seat, agent: item.agent, framework: item.framework,
       configuredModel: item.model, actualModel: item.actualModel, configuredEffort: item.effort, actualEffort: item.actualEffort,
-      spans: sessionMeta?.spans ?? null, durationMinutes: null, firstEditMinutes: null,
+      spans: (item.spans as Span[] | null | undefined) ?? sessionMeta?.spans ?? null, durationMinutes: null, firstEditMinutes: null,
       tokens: validTokens, turns: sessionMeta?.turns ?? null, usageReason: reason, anomalyReason: reason,
     });
   }
@@ -475,8 +476,9 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     const anomalies = group.filter((run) => run.anomalyReason !== null).map((run) => ({ source: run.source, reason: run.anomalyReason! }));
     const spanGroups = group.map((run) => run.spans).filter((item): item is Span[] => item !== null);
     const durations = group.map((run) => run.durationMinutes).filter((item): item is number => item !== null);
-    const activeMinutes = spanGroups.length || durations.length
-      ? (spanGroups.length ? lane(spanGroups.flat()).minutes : 0) + durations.reduce((sum, value) => sum + value, 0)
+    const mergedLane = spanGroups.length ? lane(spanGroups.flat()) : null;
+    const activeMinutes = mergedLane || durations.length
+      ? (mergedLane?.minutes ?? 0) + durations.reduce((sum, value) => sum + value, 0)
       : null;
     const firstEdits = group.map((run) => run.firstEditMinutes).filter((item): item is number => item !== null);
     return {
@@ -489,6 +491,7 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       effort: resolvedEffort,
       actualEffort: group.some((run) => run.actualEffort !== null) ? resolvedEffort : null,
       runs: group.length,
+      spans: mergedLane ? mergedLane.spans : [],
       activeMinutes,
       medianFirstEditMinutes: median(firstEdits),
       usage: summed ? { value: toCockpitUsage(summed, turns), reason: null } : { value: null, reason: first.usageReason ?? "此四元组席位没有完整用量的有效记录" },
@@ -632,7 +635,7 @@ agy 只认 USER_EXPLICIT/USER_INPUT 人工输入、MODEL/PLANNER_RESPONSE 模型
 所有主会话和子代理事件在时间窗内统计；父子关联先于切片建立，窗前启动但窗内仍工作的子代理计入，完全窗外的不计。
 共享会话 ID 的文件和重叠快照先按事件身份合并去重，再区分主会话和子代理；传入顺序不影响统计。
 Codex 累计快照减去窗前最后基线，窗外事件不计耗时、介入或 Token。
-mainFrameworks 列出框架；mainSessions、subagents 与 dispatches.identity 统一给 role/seat、agent/framework、配置 model/effort 与实际 actualModel/actualEffort。
+mainFrameworks 列出框架；mainSessions、subagents 与 dispatches.identity 统一给 role/seat、agent/framework、配置 model/effort 与实际 actualModel/actualEffort；mainSessions 另给单会话设计负责人活跃区间 spans（无有效主会话事件为 null）。
 designLead=每个给定主会话中相邻 user/assistant（含普通工具事件）间隔 <=10 分钟的整段；
 waitingUser=负责人文字回复或 AskUserQuestion tool_use 提问，到下一条用户输入 >10 且 <=45 分钟的整段（恰好10分钟不计）；
 time.longPause 单列 >45 分钟的停工次数 count、并集 minutes/spans 及原始 intervals，不混入 waitingUser。
@@ -661,7 +664,7 @@ subagentNotifications 读取给定会话任务通知的 subagent_tokens 总数�
 inputTokens 包含缓存输入；Claude 包含 cache_read 和 cache_creation，pi 包含 cacheRead 和 cacheWrite；cachedInputTokens 只计缓存读取，outputTokens 为输出。
 主会话或子代理任一关联用量不完整时对应汇总为 null；派发组累计有效记录并列异常，不完整的审查/子代理不推成 0。
 cockpit：保持 version:2 既有字段不变，顶层新增 {totals,seats} 供 V6 驾驶舱消费；三段式 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
-cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三段式 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.seats 按完整四元组（role/seat·agent/framework·actualModel??model·actualEffort??effort）聚合，逐项给四元组字段、runs、activeMinutes（并集或累计有效活跃分钟）、medianFirstEditMinutes（可写席位首次编辑分钟中位数，只读席位或无数据为 null）、usage、complete 与 anomalies。
+cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三段式 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.seats 按完整四元组（role/seat·agent/framework·actualModel??model·actualEffort??effort）聚合，逐项给四元组字段、runs、spans（合并后的有序无重叠区间数组 [{start,end}]，无区间记录为 []）、activeMinutes（并集或累计有效活跃分钟）、medianFirstEditMinutes（可写席位首次编辑分钟中位数，只读席位或无数据为 null）、usage、complete 与 anomalies。
 cleanup 要求已发布评分表覆盖当前全部显式关联集合，不能只比较时间戳；不扩大原有删除范围。
 cleanup 新记录检查复用台账及派发归属，比较结构化时间及派发文件修改时间（也捕获补写汇报）；不因其他 spec 的记录变更而拦截。
 数字 spec 查询直接子工单；字符串 spec 只含字母、数字、连字符，跳过 GitHub，读取本地台账、绑定与当前分支最近 30 条提交，不能 --post。

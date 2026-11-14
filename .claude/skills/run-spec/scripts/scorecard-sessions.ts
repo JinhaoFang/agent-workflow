@@ -2,7 +2,7 @@
  * 四框架会话只读采集：按闭区间切片，区分主会话与原生子代理，统一四元组和用量。
  * agy 只读 transcript.jsonl，不猜全局设置；模型/强度可显式补录并标明来源。
  * 同会话多文件先按事件身份合并，再关联子代理、确定默认起点和裁剪时间窗；
- * 明确晚于 cutoffAt 启动的子代理在入队前跳过，同时输出会话活跃时段与工具轮数供驾驶舱聚合。
+ * 明确晚于 cutoffAt 启动的子代理在入队前跳过，同时在主会话明细与会话指标中输出活跃时段及工具轮数供驾驶舱聚合。
  * Codex 累计快照扣除窗前基线，其余按回复去重相加；未知用量与轮数保留 null。
  * 活跃间隔最多十分钟，确认等待超过十分钟且不超过四十五分钟，更长单列停工。
  */
@@ -311,7 +311,8 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
       });
       details.push({ session, path, ...attribution(data.child ? "subagent" : "design", framework, { actualModel: model, actualEffort: effort }),
         sources: { actualModel: actual.model ? "session" : model ? "manual" : null, actualEffort: actual.effort ? "session" : effort ? "manual" : null },
-        usage: data.child ? result.childUsage : result.mainUsage, child: data.child, startedAt: result.startedAt, cutoffAt: result.cutoffAt });
+        usage: data.child ? result.childUsage : result.mainUsage, child: data.child, startedAt: result.startedAt, cutoffAt: result.cutoffAt,
+        ...(data.child ? {} : { spans: result.hasMain ? result.director.spans : null }) });
     }
     for (const event of events) byEvent.set(event.uuid, event);
   }

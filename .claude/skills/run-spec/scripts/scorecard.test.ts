@@ -1,7 +1,7 @@
 /**
  * 评分表 CLI 测试：真实临时 git 仓库和 bare origin、持久化假的 gh，固定台账、
  * 派发/进度与四框架会话记录；完整比较预期 JSON，检查缺数、时段并集、归属、
- * cockpit 三段式 Token 与四元组席位矩阵、工具轮数与旧记录降级、窗后空子代理跳过、
+ * cockpit 三段式 Token 与四元组席位矩阵（含多主会话四元组独立活跃时段 spans）、工具轮数与旧记录降级、窗后空子代理跳过、
  * Claude 摘要与来源过滤、AskUserQuestion 问答、更新同一评论和 cleanup 删除前拦截。
  * SCORECARD_EVIDENCE 可指定输出
  * 固定输入、预期/实际 JSON、手算过程和测试命令记录的验收目录。
@@ -248,13 +248,13 @@ const expected = (collectedAt: string, claude: string) => {
   const identity = (seat: string, framework = "codex") => ({ role: seat, seat, agent: framework, framework, model: null, actualModel: null, effort: null, actualEffort: null });
   const spans = (...bounds: [number, number][]) => ({ spans: bounds.map(([a, b]) => ({ start: at(a), end: at(b) })), minutes: bounds.reduce((sum, [a, b]) => sum + b - a, 0) });
   const dispatch = (record: string, ticket: number | null, category: string, start: number, end: number, usage: ReturnType<typeof tokens>) => ({ record, ticket, seat: ticket ? "engineering" : "review", workType: "default", framework: "codex", identity: identity(ticket ? "engineering" : "review"), model: null, effort: null, permission: null, actualModel: null, actualEffort: null, category: value(category), start: value(at(start)), end: value(at(end)), minutes: value(end - start), exitCode: value(0), usage: value(usage) });
-  const cockpitSeat = (role: string, framework: string, activeMinutes: number | null, medianFirstEditMinutes: number | null, freshInput: number, output: number, cachedReplay: number, turns: number | null) => ({
-    ...identity(role, framework), runs: 1, activeMinutes, medianFirstEditMinutes,
+  const cockpitSeat = (role: string, framework: string, seatSpans: { start: string; end: string }[], activeMinutes: number | null, medianFirstEditMinutes: number | null, freshInput: number, output: number, cachedReplay: number, turns: number | null) => ({
+    ...identity(role, framework), runs: 1, spans: seatSpans, activeMinutes, medianFirstEditMinutes,
     usage: value({ freshInput, output, cachedReplay, input: freshInput + cachedReplay, turns }),
     complete: true, anomalies: [],
   });
   const reason = "只读席位不统计首次编辑";
-  return { version: 2, spec: 2, startedAt: at(0), mainFrameworks: ["claude"], mainSessions: [{ session: "claude:main", path: claude, ...identity("design", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(150, 20, 10), child: false, startedAt: at(0), cutoffAt: at(51) }],
+  return { version: 2, spec: 2, startedAt: at(0), mainFrameworks: ["claude"], mainSessions: [{ session: "claude:main", path: claude, ...identity("design", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(150, 20, 10), child: false, startedAt: at(0), cutoffAt: at(51), spans: [{ start: at(0), end: at(21) }, { start: at(45), end: at(50) }] }],
     subagents: [{ session: "claude:main:sidechain:claude:main", path: claude, child: true, ...identity("subagent", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(6, 2, 4) }, { session: "codex:child", ...identity("subagent"), usage: tokens(20, 10, 2) }], subagentAnomalies: [], batches: [],
     dispatchLanes: value([{ framework: "codex", anomalies: [], time: value(spans([0, 20])) }]), cutoffAt: at(51), collectedAt, verification: value({ runs: [
     { layer: "full", target: { kind: "ticket", number: 5 }, caller: "land", branch: "ticket/5", start: at(3), end: at(8), queuedMinutes: 2, minutes: 5, exitCode: 1 },
@@ -268,12 +268,12 @@ const expected = (collectedAt: string, claude: string) => {
     cockpit: {
       totals: { value: { freshInput: 452, output: 90, cachedReplay: 934, input: 1386, turns: null }, reason: null, complete: true, anomalies: [] },
       seats: [
-        cockpitSeat("design", "claude", 26, null, 130, 10, 20, 2),
-        cockpitSeat("engineering", "codex", 20, 4, 200, 50, 800, 2),
-        cockpitSeat("review", "codex", 10, null, 100, 20, 100, null),
-        cockpitSeat("spec-review", "claude", null, null, 8, 4, 2, null),
-        cockpitSeat("subagent", "claude", null, null, 4, 4, 2, 0),
-        cockpitSeat("subagent", "codex", 15, null, 10, 2, 10, null),
+        cockpitSeat("design", "claude", [{ start: at(0), end: at(21) }, { start: at(45), end: at(50) }], 26, null, 130, 10, 20, 2),
+        cockpitSeat("engineering", "codex", [{ start: at(0), end: at(20) }], 20, 4, 200, 50, 800, 2),
+        cockpitSeat("review", "codex", [{ start: at(5), end: at(15) }], 10, null, 100, 20, 100, null),
+        cockpitSeat("spec-review", "claude", [], null, null, 8, 4, 2, null),
+        cockpitSeat("subagent", "claude", [], null, null, 4, 4, 2, 0),
+        cockpitSeat("subagent", "codex", [{ start: at(0), end: at(15) }], 15, null, 10, 2, 10, null),
       ],
     },
     missing: [],
@@ -1376,32 +1376,32 @@ test("cockpit 按完整四元组聚合席位矩阵，校验三段式 Token 恒�
     }
     assert.deepEqual(cleanCard.cockpit.seats.map((seat: Record<string, unknown>) => ({
       role: seat.role, framework: seat.framework, model: seat.model, effort: seat.effort,
-      runs: seat.runs, activeMinutes: seat.activeMinutes, medianFirstEditMinutes: seat.medianFirstEditMinutes,
+      runs: seat.runs, spans: seat.spans, activeMinutes: seat.activeMinutes, medianFirstEditMinutes: seat.medianFirstEditMinutes,
       usage: seat.usage,
     })), [
       {
         role: "design", framework: "agy", model: "gemini-4-carbon-high", effort: "high",
-        runs: 1, activeMinutes: 4, medianFirstEditMinutes: null,
+        runs: 1, spans: [{ start: moment(0), end: moment(4) }], activeMinutes: 4, medianFirstEditMinutes: null,
         usage: value({ freshInput: 600, output: 50, cachedReplay: 600, input: 1200, turns: 2 }),
       },
       {
         role: "engineering", framework: "agy", model: "gemini-4-carbon-high", effort: "high",
-        runs: 2, activeMinutes: 15, medianFirstEditMinutes: 4,
+        runs: 2, spans: [{ start: moment(5), end: moment(20) }], activeMinutes: 15, medianFirstEditMinutes: 4,
         usage: value({ freshInput: 500, output: 100, cachedReplay: 1000, input: 1500, turns: 4 }),
       },
       {
         role: "review", framework: "codex", model: "gpt-5.4", effort: "xhigh",
-        runs: 1, activeMinutes: 6, medianFirstEditMinutes: null,
+        runs: 1, spans: [{ start: moment(10), end: moment(16) }], activeMinutes: 6, medianFirstEditMinutes: null,
         usage: value({ freshInput: 50, output: 25, cachedReplay: 250, input: 300, turns: 3 }),
       },
       {
         role: "research", framework: "claude", model: "claude-opus-4-7", effort: "high",
-        runs: 1, activeMinutes: 3, medianFirstEditMinutes: null,
+        runs: 1, spans: [{ start: moment(6), end: moment(9) }], activeMinutes: 3, medianFirstEditMinutes: null,
         usage: value({ freshInput: 100, output: 15, cachedReplay: 20, input: 120, turns: 0 }),
       },
       {
         role: "subagent", framework: "agy", model: "gemini-4-carbon-flash", effort: "low",
-        runs: 1, activeMinutes: 1, medianFirstEditMinutes: null,
+        runs: 1, spans: [{ start: moment(2), end: moment(3) }], activeMinutes: 1, medianFirstEditMinutes: null,
         usage: value({ freshInput: 80, output: 10, cachedReplay: 20, input: 100, turns: 0 }),
       },
     ]);
@@ -1550,5 +1550,91 @@ test("统一事件按非空工具调用 ID 唯一计轮，agy 回退日志按复
     assert.equal(turnsByModel.get("model-resume-time"), 3);
     assert.equal(turnsByModel.get("model-resume-calls"), 5);
     assert.equal(card.cockpit.totals.value.turns, 13);
+  } finally { f.cleanup(); }
+});
+
+test("多 --session 不同四元组主会话各自保留 mainSessions 与 cockpit.seats 的活跃时段与分钟，互不混同", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    f.write(join(f.records, "review-spec-2-1.json"), JSON.stringify({
+      version: 1, spec: 2, framework: "claude", actualModel: "claude-sonnet-4-6", actualEffort: "medium",
+      durationMs: 180000, turns: 4,
+      usage: { input_tokens: 90, cache_read_input_tokens: 30, cache_creation_input_tokens: 0, output_tokens: 12 },
+    }));
+    const claudeMain = join(f.temporary, "design-claude.jsonl");
+    f.lines(claudeMain, [
+      { type: "user", uuid: "c-u0", sessionId: "lead-claude", timestamp: moment(0), origin: { kind: "human" }, message: { role: "user", content: "起草方案" } },
+      {
+        type: "assistant", uuid: "c-a6", sessionId: "lead-claude", timestamp: moment(6), effort: "high",
+        message: { id: "c-a6", model: "claude-opus-4-7", content: [{ type: "text", text: "请确认边界" }], usage: { input_tokens: 100, cache_read_input_tokens: 20, output_tokens: 10 } },
+      },
+      { type: "user", uuid: "c-u20", sessionId: "lead-claude", timestamp: moment(20), origin: { kind: "human" }, message: { role: "user", content: "确认通过" } },
+      {
+        type: "assistant", uuid: "c-a25", sessionId: "lead-claude", timestamp: moment(25), effort: "high",
+        message: { id: "c-a25", model: "claude-opus-4-7", content: [{ type: "tool_use", id: "c-tool-1", name: "Read" }], usage: { input_tokens: 80, cache_read_input_tokens: 30, output_tokens: 15 } },
+      },
+    ]);
+    const agyMain = agyFile(f, "lead-agy");
+    f.lines(agyMain, [
+      agyUser(3, 0),
+      agyStep(10, 1, { model: "gemini-4-carbon-high", effort: "high", input_tokens: 200, cache_read_tokens: 50, output_tokens: 20, tool_calls: [{ id: "a-tool-1", name: "read_file", args: {} }] }),
+    ]);
+    const result = f.run(["scorecard", "2", "--session", claudeMain, "--session", agyMain]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.deepEqual(card.time.designLead.value, {
+      spans: [{ start: moment(0), end: moment(10) }, { start: moment(20), end: moment(25) }],
+      minutes: 15,
+    });
+    assert.deepEqual(card.mainSessions.map((item: Record<string, unknown>) => ({
+      session: item.session, framework: item.framework, actualModel: item.actualModel, actualEffort: item.actualEffort, spans: item.spans,
+    })), [
+      {
+        session: "agy:lead-agy", framework: "agy", actualModel: "gemini-4-carbon-high", actualEffort: "high",
+        spans: [{ start: moment(3), end: moment(10) }],
+      },
+      {
+        session: "claude:lead-claude", framework: "claude", actualModel: "claude-opus-4-7", actualEffort: "high",
+        spans: [{ start: moment(0), end: moment(6) }, { start: moment(20), end: moment(25) }],
+      },
+    ]);
+    const designSeats = card.cockpit.seats.filter((seat: { seat: string }) => seat.seat === "design");
+    assert.equal(designSeats.length, 2);
+    assert.deepEqual(designSeats.map((seat: Record<string, unknown>) => ({
+      seat: seat.seat, framework: seat.framework, model: seat.model, effort: seat.effort,
+      runs: seat.runs, spans: seat.spans, activeMinutes: seat.activeMinutes,
+    })), [
+      {
+        seat: "design", framework: "agy", model: "gemini-4-carbon-high", effort: "high",
+        runs: 1, spans: [{ start: moment(3), end: moment(10) }], activeMinutes: 7,
+      },
+      {
+        seat: "design", framework: "claude", model: "claude-opus-4-7", effort: "high",
+        runs: 1, spans: [{ start: moment(0), end: moment(6) }, { start: moment(20), end: moment(25) }], activeMinutes: 11,
+      },
+    ]);
+    const specReviewSeat = card.cockpit.seats.find((seat: { seat: string }) => seat.seat === "spec-review");
+    assert.deepEqual(specReviewSeat.spans, []);
+    assert.equal(specReviewSeat.activeMinutes, 3);
+    const agyFollowup = agyFile(f, "lead-agy-2");
+    f.lines(agyFollowup, [
+      agyUser(8, 0),
+      agyStep(14, 1, { model: "gemini-4-carbon-high", effort: "high", input_tokens: 120, cache_read_tokens: 40, output_tokens: 10 }),
+    ]);
+    const mergedSameTuple = JSON.parse(f.run(["scorecard", "2", "--session", claudeMain, "--session", agyMain, "--session", agyFollowup]).stdout);
+    assert.equal(mergedSameTuple.mainSessions.length, 3);
+    const mergedDesign = mergedSameTuple.cockpit.seats.filter((seat: { seat: string }) => seat.seat === "design");
+    assert.equal(mergedDesign.length, 2);
+    assert.deepEqual(mergedDesign[0].spans, [{ start: moment(3), end: moment(14) }]);
+    assert.equal(mergedDesign[0].activeMinutes, 11);
+    assert.equal(mergedDesign[0].runs, 2);
+    assert.deepEqual(mergedDesign[1].spans, [{ start: moment(0), end: moment(6) }, { start: moment(20), end: moment(25) }]);
+    assert.equal(mergedDesign[1].activeMinutes, 11);
+    const outOfWindowMain = JSON.parse(f.run(["scorecard", "2", "--session", claudeMain, "--started-at", moment(30), "--cutoff-at", moment(35)]).stdout);
+    assert.equal(outOfWindowMain.mainSessions[0].spans, null);
+    const help = f.run(["scorecard", "--help"]);
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /cockpit\.seats[\s\S]*spans/);
   } finally { f.cleanup(); }
 });
