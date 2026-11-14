@@ -3,7 +3,7 @@
  * 从命令行核对四项结果、退出码、固定 360 的量法、分段 PNG 和临时目录清理；
  * 核对启动首行包含浏览器 PID 和临时用户目录绝对路径，成功、检查失败及启动失败后该目录均已删除。
  * 长页覆盖按序分段、每段不高于视口、手机展开折叠和延迟重排、清理后保留全部截图；
- * 多页签样本覆盖桌面 [role="tab"] 巡检与恢复初始态、切换抛错、非默认页签时间线溢出及手机解除隐藏面板。
+ * 多页签样本覆盖浅色与深色桌面 [role="tab"] 巡检与恢复初始态、切换抛错、非默认页签时间线溢出或消失隐藏及手机解除隐藏面板。
  * 延迟溢出样本覆盖视口切换后 150 毫秒才出现的窄屏失败；分段 PNG 共用一处断言。
  * 另测时间线溢出/缺失、路径优先级、Playwright 缓存/PATH 查找、参数和启动失败。
  * 不访问 GitHub；隔离 HOME、缓存和 PATH 证明缺少 Chromium 时明确以 2 退出。
@@ -340,7 +340,7 @@ test("report-check 点击非默认页签抛错或时间线溢出时仅对应检�
     assert.equal(errorResult.status, 1, errorResult.stdout + errorResult.stderr);
     assertBrowserSite(errorResult.stdout, repo.temporary);
     assert.deepEqual(results(errorResult.stdout).filter((item) => !item.passed).map((item) => item.name), ["控制台零报错"]);
-    assert.match(errorResult.stdout, /console\.error=1，未捕获异常=1/);
+    assert.match(errorResult.stdout, /console\.error=2，未捕获异常=2/);
     assert.match(errorResult.stdout, /页签切换控制台错误/);
     assert.match(errorResult.stdout, /页签切换未捕获异常/);
     assertScreenshots(errorResult.stdout, errorOut, [
@@ -361,6 +361,113 @@ test("report-check 点击非默认页签抛错或时间线溢出时仅对应检�
     assertBrowserSite(timelineResult.stdout, repo.temporary);
     assert.deepEqual(results(timelineResult.stdout).filter((item) => !item.passed).map((item) => item.name), ["时间线不滚动"]);
     assert.match(timelineResult.stdout, /"scrollWidth":2000/);
+    assert.deepEqual(readdirSync(repo.temporary), []);
+  } finally {
+    rmSync(repo.root, { recursive: true, force: true });
+  }
+});
+
+test("report-check 仅深色配色点击非默认页签触发控制台错误或时间线横向溢出时均失败退出 1", { skip }, () => {
+  const repo = repository();
+  try {
+    const base = readFileSync(fixture("tabs-ok"), "utf8");
+    const darkErrorHtml = base.replace(
+      "for (const panel of panels) panel.hidden = panel.id !== targetId;",
+      'for (const panel of panels) panel.hidden = panel.id !== targetId; if (targetId === "panel-2" && matchMedia("(prefers-color-scheme: dark)").matches) { console.error("深色非默认页签控制台错误"); throw new Error("深色非默认页签未捕获异常"); }',
+    );
+    writeFileSync(repo.input, darkErrorHtml);
+    const darkErrorOut = join(repo.root, "深色页签报错截图");
+    const darkErrorResult = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", darkErrorOut], {
+      PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+    });
+    assert.equal(darkErrorResult.status, 1, darkErrorResult.stdout + darkErrorResult.stderr);
+    assertBrowserSite(darkErrorResult.stdout, repo.temporary);
+    assert.deepEqual(results(darkErrorResult.stdout).filter((item) => !item.passed).map((item) => item.name), ["控制台零报错"]);
+    assert.match(darkErrorResult.stdout, /console\.error=1，未捕获异常=1/);
+    assert.match(darkErrorResult.stdout, /深色非默认页签控制台错误/);
+    assert.match(darkErrorResult.stdout, /深色非默认页签未捕获异常/);
+    assertScreenshots(darkErrorResult.stdout, darkErrorOut, [
+      ["light-1280", 1280, [800]],
+      ["dark-1280", 1280, [800]],
+      ["mobile-360", 360, [800, 800, undefined]],
+    ]);
+    const darkTimelineHtml = base
+      .replace(
+        "</style>",
+        '[data-slot="timeline"] { overflow-x: auto; }\n@media (prefers-color-scheme: dark) { body[data-active-tab="panel-2"] .dark-only-wide { width: 2000px; height: 20px; } }\n</style>',
+      )
+      .replace(
+        '<div data-slot="timeline" aria-label="时间线"></div>',
+        '<div data-slot="timeline" aria-label="时间线"><div class="dark-only-wide"></div></div>',
+      )
+      .replace(
+        "for (const panel of panels) panel.hidden = panel.id !== targetId;",
+        "document.body.dataset.activeTab = targetId; for (const panel of panels) panel.hidden = panel.id !== targetId;",
+      );
+    writeFileSync(repo.input, darkTimelineHtml);
+    const darkTimelineOut = join(repo.root, "深色页签时间线溢出截图");
+    const darkTimelineResult = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", darkTimelineOut], {
+      PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+    });
+    assert.equal(darkTimelineResult.status, 1, darkTimelineResult.stdout + darkTimelineResult.stderr);
+    assertBrowserSite(darkTimelineResult.stdout, repo.temporary);
+    assert.deepEqual(results(darkTimelineResult.stdout).filter((item) => !item.passed).map((item) => item.name), ["时间线不滚动"]);
+    assert.match(darkTimelineResult.stdout, /"scrollWidth":2000/);
+    assertScreenshots(darkTimelineResult.stdout, darkTimelineOut, [
+      ["light-1280", 1280, [800]],
+      ["dark-1280", 1280, [800]],
+      ["mobile-360", 360, [800, 800, undefined]],
+    ]);
+    assert.deepEqual(readdirSync(repo.temporary), []);
+  } finally {
+    rmSync(repo.root, { recursive: true, force: true });
+  }
+});
+
+test("report-check 点击非默认页签后时间线被移除或 display:none 隐藏时失败退出 1，V5 单视图继续通过", { skip }, () => {
+  const repo = repository();
+  try {
+    const base = readFileSync(fixture("tabs-ok"), "utf8");
+    const removedHtml = base.replace(
+      'const expandButton = document.querySelector(\'[data-action="expand-all"]\');',
+      'const expandButton = document.querySelector(\'[data-action="expand-all"]\'); const mainEl = document.querySelector("main"); const timelineEl = document.querySelector(\'[data-slot="timeline"]\');',
+    ).replace(
+      "for (const panel of panels) panel.hidden = panel.id !== targetId;",
+      'for (const panel of panels) panel.hidden = panel.id !== targetId; if (targetId === "panel-2") timelineEl.remove(); else if (!timelineEl.isConnected) mainEl.prepend(timelineEl);',
+    );
+    writeFileSync(repo.input, removedHtml);
+    const removedOut = join(repo.root, "页签时间线移除截图");
+    const removedResult = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", removedOut], {
+      PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+    });
+    assert.equal(removedResult.status, 1, removedResult.stdout + removedResult.stderr);
+    assertBrowserSite(removedResult.stdout, repo.temporary);
+    assert.deepEqual(results(removedResult.stdout).filter((item) => !item.passed).map((item) => item.name), ["时间线不滚动"]);
+    assert.match(removedResult.stdout, /空区域步=2/);
+    const hiddenHtml = base.replace(
+      "for (const panel of panels) panel.hidden = panel.id !== targetId;",
+      'for (const panel of panels) panel.hidden = panel.id !== targetId; document.querySelector(\'[data-slot="timeline"]\').style.display = targetId === "panel-2" ? "none" : "";',
+    );
+    writeFileSync(repo.input, hiddenHtml);
+    const hiddenOut = join(repo.root, "页签时间线隐藏截图");
+    const hiddenResult = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", hiddenOut], {
+      PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+    });
+    assert.equal(hiddenResult.status, 1, hiddenResult.stdout + hiddenResult.stderr);
+    assertBrowserSite(hiddenResult.stdout, repo.temporary);
+    assert.deepEqual(results(hiddenResult.stdout).filter((item) => !item.passed).map((item) => item.name), ["时间线不滚动"]);
+    assert.match(hiddenResult.stdout, /空区域步=2/);
+    const v5Report = resolve(import.meta.dirname, "../../../../docs/reports/spec-16-workflow-v5.html");
+    if (existsSync(v5Report)) {
+      copyFileSync(v5Report, repo.input);
+      const v5Out = join(repo.root, "V5单视图截图");
+      const v5Result = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", v5Out], {
+        PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+      });
+      assert.equal(v5Result.status, 0, v5Result.stdout + v5Result.stderr);
+      assertBrowserSite(v5Result.stdout, repo.temporary);
+      assert.ok(results(v5Result.stdout).every((item) => item.passed), v5Result.stdout);
+    }
     assert.deepEqual(readdirSync(repo.temporary), []);
   } finally {
     rmSync(repo.root, { recursive: true, force: true });

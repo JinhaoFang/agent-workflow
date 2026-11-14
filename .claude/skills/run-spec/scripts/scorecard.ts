@@ -63,25 +63,18 @@ const dispatchTurns = (
     return !at || inWindow(at, window);
   });
   if (unifiedRows.length) {
-    const byId = new Map<string, { start: number; end: number; other: number }>();
+    const keyedCalls = new Set<string>();
     let unkeyedStart = 0;
     let unkeyedEnd = 0;
     let unkeyedOther = 0;
     for (const row of unifiedRows) {
       if (row.kind !== "tool" && row.kind !== "cmd") continue;
-      if (typeof row.id === "string" && row.id) {
-        const key = `${row.kind}:${row.id}`;
-        const item = byId.get(key) ?? { start: 0, end: 0, other: 0 };
-        if (row.phase === "start") item.start++;
-        else if (row.phase === "end") item.end++;
-        else item.other++;
-        byId.set(key, item);
-      } else if (row.phase === "start") unkeyedStart++;
+      if (typeof row.id === "string" && row.id) keyedCalls.add(`${row.kind}:${row.id}`);
+      else if (row.phase === "start") unkeyedStart++;
       else if (row.phase === "end") unkeyedEnd++;
       else unkeyedOther++;
     }
-    const toolCount = [...byId.values()].reduce((sum, item) => sum + Math.max(item.start, item.end, item.other), 0)
-      + Math.max(unkeyedStart, unkeyedEnd) + unkeyedOther;
+    const toolCount = keyedCalls.size + Math.max(unkeyedStart, unkeyedEnd) + unkeyedOther;
     if (toolCount > 0) return toolCount;
     const contentCount = unifiedRows.filter((row) => ["say", "think", "file", "plan"].includes(row.kind)).length;
     if (contentCount > 0) return 0;
@@ -106,15 +99,21 @@ const dispatchTurns = (
     return null;
   }
   if (framework === "agy") {
-    const source = transcriptRows.length ? transcriptRows.filter((row) => inWindow(row.created_at ?? row.timestamp, window)) : filteredRaw;
+    const source = transcriptRows.length ? transcriptRows.filter((row) => inWindow(row.created_at ?? row.timestamp ?? row._at ?? row.at, window)) : filteredRaw;
     const stepCalls = new Map<string, number>();
     let sawStep = false;
     source.forEach((row, index) => {
       if (row.type === "USER_INPUT") sawStep = true;
       if (row.type === "PLANNER_RESPONSE") {
         sawStep = true;
-        const key = row.step_index !== undefined ? String(row.step_index) : `row:${index}`;
-        stepCalls.set(key, Math.max(stepCalls.get(key) ?? 0, Array.isArray(row.tool_calls) ? row.tool_calls.length : 0));
+        const calls = Array.isArray(row.tool_calls) ? row.tool_calls : [];
+        const at = timestamp(row.created_at ?? row.timestamp ?? row._at ?? row.at);
+        const hasStepIndex = row.step_index !== undefined && row.step_index !== null;
+        const callSignature = calls.map((call: Json) => [call?.id ?? null, call?.name ?? null]);
+        const key = !hasStepIndex && at === null
+          ? `row:${index}`
+          : JSON.stringify([hasStepIndex ? row.step_index : null, row.source ?? null, row.type, at, callSignature]);
+        stepCalls.set(key, Math.max(stepCalls.get(key) ?? 0, calls.length));
       }
     });
     if (sawStep) return [...stepCalls.values()].reduce((sum, count) => sum + count, 0);

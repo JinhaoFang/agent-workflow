@@ -101,6 +101,14 @@ if(scenario==='nonzero') process.exitCode=7;
   return { root, home, temporary, config, env, run, read, calls: () => readFileSync(calls, "utf8").trim().split("\n").map(line => JSON.parse(line)), summary: () => JSON.parse(read(".json")), cleanup: () => rmSync(temporary, { recursive: true, force: true }) };
 };
 
+test("dispatch-task.ts --help 同步包含 agy 瞬时 API 错误自动恢复成功特例", () => {
+  const help = spawnSync(process.execPath, [entry, "--help"], { encoding: "utf8" });
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /API error \(attempt N\):/);
+  assert.match(help.stdout, /自动重试恢复.*DONE.*汇报非空.*无 denied_actions.*进程退出 0/s);
+  assert.match(help.stdout, /其余非 SUCCESS.*未恢复瞬时错误.*模型\/配额错误或缺结束事件仍判失败/);
+});
+
 test("agy CLI 传数组与 NDJSON，隔离两项技能并关联会话", () => {
   const f = fixture();
   try {

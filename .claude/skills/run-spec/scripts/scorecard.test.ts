@@ -1365,7 +1365,7 @@ test("cockpit 按完整四元组聚合席位矩阵，校验三段式 Token 恒�
     assert.equal(cleanResult.status, 0, cleanResult.stderr);
     const cleanCard = JSON.parse(cleanResult.stdout);
     assert.deepEqual(cleanCard.cockpit.totals, {
-      value: { freshInput: 1330, output: 200, cachedReplay: 1890, input: 3220, turns: 10 },
+      value: { freshInput: 1330, output: 200, cachedReplay: 1890, input: 3220, turns: 9 },
       reason: null,
       complete: true,
       anomalies: [],
@@ -1387,7 +1387,7 @@ test("cockpit 按完整四元组聚合席位矩阵，校验三段式 Token 恒�
       {
         role: "engineering", framework: "agy", model: "gemini-4-carbon-high", effort: "high",
         runs: 2, activeMinutes: 15, medianFirstEditMinutes: 4,
-        usage: value({ freshInput: 500, output: 100, cachedReplay: 1000, input: 1500, turns: 5 }),
+        usage: value({ freshInput: 500, output: 100, cachedReplay: 1000, input: 1500, turns: 4 }),
       },
       {
         role: "review", framework: "codex", model: "gpt-5.4", effort: "xhigh",
@@ -1466,5 +1466,89 @@ test("cutoffAt 之后启动的子代理即使已在磁盘生成空文件也在�
     assert.deepEqual(card.subagents.map((item: { session: string }) => item.session), ["agy:cutoff-active-child"]);
     assert.deepEqual(card.usage.subagents.value, tokens(30, 20, 3));
     assert.equal(card.cockpit.totals.complete, true);
+  } finally { f.cleanup(); }
+});
+
+test("统一事件按非空工具调用 ID 唯一计轮，agy 回退日志按复合身份区分续跑同 step_index 步骤", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    f.write(join(f.records, "same-id-multi.json"), JSON.stringify({
+      v: 1, framework: "agy", seat: "engineering", permission: "workspace-write",
+      actualModel: "model-keyed-single", actualEffort: "high",
+      success: true, usage: { input: 200, cached: 100, output: 20 }, started: moment(0), at: moment(5), exit: 0,
+    }));
+    f.lines(join(f.records, "same-id-multi.events.jsonl"), [
+      { v: 1, seq: 1, at: Date.parse(moment(1)), kind: "tool", phase: "start", id: "call-1", name: "edit_file" },
+      { v: 1, seq: 2, at: Date.parse(moment(1)), kind: "tool", phase: "start", id: "call-1", name: "edit_file" },
+      { v: 1, seq: 3, at: Date.parse(moment(2)), kind: "tool", phase: "progress", id: "call-1", name: "edit_file" },
+      { v: 1, seq: 4, at: Date.parse(moment(3)), kind: "tool", phase: "end", id: "call-1", name: "edit_file" },
+      { v: 1, seq: 5, at: Date.parse(moment(3)), kind: "tool", phase: "end", id: "call-1", name: "edit_file" },
+    ]);
+    f.write(join(f.records, "mixed-unkeyed.json"), JSON.stringify({
+      v: 1, framework: "claude", seat: "research", permission: "read-only",
+      actualModel: "model-mixed-unkeyed", actualEffort: "medium",
+      success: true, usage: { input: 150, cached: 50, output: 10 }, started: moment(0), at: moment(5), exit: 0,
+    }));
+    f.lines(join(f.records, "mixed-unkeyed.events.jsonl"), [
+      { v: 1, seq: 1, at: Date.parse(moment(1)), kind: "cmd", phase: "start", id: "cmd-1", name: "bash" },
+      { v: 1, seq: 2, at: Date.parse(moment(1)), kind: "cmd", phase: "start", id: "cmd-1", name: "bash" },
+      { v: 1, seq: 3, at: Date.parse(moment(2)), kind: "cmd", phase: "end", id: "cmd-1", name: "bash" },
+      { v: 1, seq: 4, at: Date.parse(moment(2)), kind: "tool", phase: "start", id: "", name: "Read" },
+      { v: 1, seq: 5, at: Date.parse(moment(3)), kind: "tool", phase: "start", name: "Grep" },
+      { v: 1, seq: 6, at: Date.parse(moment(3)), kind: "tool", phase: "end", name: "Read" },
+      { v: 1, seq: 7, at: Date.parse(moment(4)), kind: "tool", phase: "progress", name: "Glob" },
+    ]);
+    const resumeTranscript = agyFile(f, "resume-session");
+    f.lines(resumeTranscript, [
+      agyUser(0, 0),
+      {
+        source: "MODEL", type: "PLANNER_RESPONSE", step_index: 1,
+        created_at: "2026-10-31T00:01:00Z",
+        tool_calls: [{ id: "tc-1", name: "read_file", args: { truncated: true } }],
+      },
+      {
+        source: "MODEL", type: "PLANNER_RESPONSE", step_index: 1,
+        created_at: "2026-10-31T00:01:00.000Z",
+        tool_calls: [{ id: "tc-1", name: "read_file", args: { Path: "a.ts" } }],
+      },
+      agyUser(3, 0),
+      {
+        source: "MODEL", type: "PLANNER_RESPONSE", step_index: 1,
+        created_at: "2026-10-31T00:04:00.000Z",
+        tool_calls: [{ id: "tc-1", name: "read_file", args: { Path: "b.ts" } }, { id: "tc-2", name: "edit_file", args: { Path: "b.ts" } }],
+      },
+    ]);
+    f.write(join(f.records, "agy-resume-time.json"), JSON.stringify({
+      v: 1, framework: "agy", seat: "engineering", permission: "workspace-write",
+      sessionId: "resume-session", actualModel: "model-resume-time", actualEffort: "high",
+      success: true, usage: { input: 300, cached: 200, output: 30 }, started: moment(0), at: moment(6), exit: 0,
+    }));
+    f.write(join(f.records, "agy-resume-calls.json"), JSON.stringify({
+      v: 1, framework: "agy", seat: "review", permission: "read-only",
+      actualModel: "model-resume-calls", actualEffort: "high",
+      success: true, usage: { input: 240, cached: 120, output: 24 }, started: moment(0), at: moment(6), exit: 0,
+    }));
+    f.lines(join(f.records, "agy-resume-calls.log"), [
+      { source: "MODEL", type: "PLANNER_RESPONSE", step_index: 1, created_at: moment(2), tool_calls: [{ id: "c1", name: "read_file" }] },
+      { source: "MODEL", type: "PLANNER_RESPONSE", step_index: 1, created_at: moment(2), tool_calls: [{ id: "c2", name: "read_file" }, { id: "c3", name: "run_command" }] },
+      { source: "MODEL", type: "PLANNER_RESPONSE", tool_calls: [{ name: "read_file" }] },
+      { source: "MODEL", type: "PLANNER_RESPONSE", tool_calls: [{ name: "read_file" }] },
+    ]);
+    const result = f.run([
+      "scorecard", "turns-dedup-regression",
+      "--record", "same-id-multi",
+      "--record", "mixed-unkeyed",
+      "--record", "agy-resume-time",
+      "--record", "agy-resume-calls",
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    const turnsByModel = new Map(card.cockpit.seats.map((seat: { model: string; usage: { value: { turns: number } } }) => [seat.model, seat.usage.value.turns]));
+    assert.equal(turnsByModel.get("model-keyed-single"), 1);
+    assert.equal(turnsByModel.get("model-mixed-unkeyed"), 4);
+    assert.equal(turnsByModel.get("model-resume-time"), 3);
+    assert.equal(turnsByModel.get("model-resume-calls"), 5);
+    assert.equal(card.cockpit.totals.value.turns, 13);
   } finally { f.cleanup(); }
 });

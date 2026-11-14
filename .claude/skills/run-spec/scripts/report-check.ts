@@ -2,7 +2,7 @@
  * 汇报浏览器检查：tickets.ts report-check <文件> [--out <目录>] [--chromium <路径>]。
  * 只用 Node 内置 WebSocket 和 CDP；依次查参数、RUN_SPEC_CHROMIUM、Playwright 缓存、PATH。
  * 用 file:// 空白页比较全局名，收集各配色/尺寸及页签切换中的控制台错误和未捕获异常；
- * 桌面存在 [role="tab"] 时逐个点击检查可见时间线并恢复初始激活态；
+ * 浅色与深色桌面存在 [role="tab"] 时均逐个点击检查可见时间线存在且不溢出，并恢复初始激活态后再截 dark-1280；
  * 手机展开全部 details、触发 [data-action="expand-all"] 并解除 [role="tabpanel"][hidden]，以固定 360 比 scrollWidth。
  * 视口、配色、页签或折叠变化后，等待至少 250 毫秒及连续三帧尺寸稳定，再测量并截图；
  * 浅色、深色、手机按 800 像素高度分段编号。
@@ -273,8 +273,14 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
     const measure = (): Promise<Measurements> => evaluate(`(async () => {
       await document.fonts.ready;
       await new Promise(resolve => setTimeout(resolve, 250));
+      const isDisplayed = (node) => {
+        for (let current = node; current; current = current.parentElement) {
+          if (getComputedStyle(current).display === 'none') return false;
+        }
+        return true;
+      };
       const visibleTimelines = () => [...document.querySelectorAll(${JSON.stringify(timelineSelector)})]
-        .filter(element => !element.closest('[hidden], details:not([open])') && getComputedStyle(element).display !== 'none');
+        .filter(element => !element.closest('[hidden], details:not([open])') && isDisplayed(element));
       await new Promise(resolve => {
         let previous = '';
         let stableFrames = 0;
@@ -316,6 +322,80 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
       }
       console.log(`截图组 ${group}：${count} 张，目录：${out}`);
     };
+    const patrolTabs = async (): Promise<{ globals: string[]; timelines: Timeline[][] }> => {
+      const tabState = await evaluate<{ count: number; initialByList: number[]; orphanInitial: number[] }>(`(() => {
+        const isActive = (tab) =>
+          tab.getAttribute('aria-selected') === 'true' ||
+          tab.dataset.active === 'true' ||
+          tab.classList.contains('active') ||
+          tab.classList.contains('on');
+        const lists = [...document.querySelectorAll('[role="tablist"]')];
+        const allTabs = [...document.querySelectorAll('[role="tab"]')];
+        if (lists.length > 0) {
+          return {
+            count: allTabs.length,
+            initialByList: lists.map((list) => {
+              const tabs = [...list.querySelectorAll('[role="tab"]')];
+              const found = tabs.findIndex(isActive);
+              return found >= 0 ? found : 0;
+            }),
+            orphanInitial: allTabs.map((tab, index) => (!tab.closest('[role="tablist"]') && isActive(tab) ? index : -1)).filter((index) => index >= 0),
+          };
+        }
+        const activeOrphans = allTabs.map((tab, index) => (isActive(tab) ? index : -1)).filter((index) => index >= 0);
+        return {
+          count: allTabs.length,
+          initialByList: [],
+          orphanInitial: activeOrphans.length > 0 ? activeOrphans : (allTabs.length > 0 ? [0] : []),
+        };
+      })()`);
+      const globals: string[] = [];
+      const timelines: Timeline[][] = [];
+      if (tabState.count > 0) {
+        for (let index = 0; index < tabState.count; index++) {
+          await evaluate(`(async () => {
+            const tab = document.querySelectorAll('[role="tab"]')[${index}];
+            if (!tab || typeof tab.click !== 'function') return;
+            await new Promise((resolve) => {
+              setTimeout(() => {
+                try { tab.click(); } catch (error) { setTimeout(() => { throw error; }, 0); }
+                setTimeout(resolve, 0);
+              }, 0);
+            });
+          })()`);
+          const step = await measure();
+          globals.push(...step.globals);
+          timelines.push(step.timeline);
+        }
+        await evaluate(`(async (state) => {
+          const clickSafe = (tab) => new Promise((resolve) => {
+            if (!tab || typeof tab.click !== 'function') return resolve();
+            setTimeout(() => {
+              try { tab.click(); } catch (error) { setTimeout(() => { throw error; }, 0); }
+              setTimeout(resolve, 0);
+            }, 0);
+          });
+          const isActive = (tab) =>
+            tab.getAttribute('aria-selected') === 'true' ||
+            tab.dataset.active === 'true' ||
+            tab.classList.contains('active') ||
+            tab.classList.contains('on');
+          for (let listIndex = 0; listIndex < state.initialByList.length; listIndex++) {
+            const list = document.querySelectorAll('[role="tablist"]')[listIndex];
+            if (!list) continue;
+            const target = list.querySelectorAll('[role="tab"]')[state.initialByList[listIndex]];
+            if (target && !isActive(target)) await clickSafe(target);
+          }
+          for (const tabIndex of state.orphanInitial) {
+            const target = document.querySelectorAll('[role="tab"]')[tabIndex];
+            if (target && !isActive(target)) await clickSafe(target);
+          }
+        })(${JSON.stringify(tabState)})`);
+        const restored = await measure();
+        globals.push(...restored.globals);
+      }
+      return { globals, timelines };
+    };
     console.log(`汇报：${file}\nChromium：${program}`);
     await viewport(1280, false);
     await navigate(pathToFileURL(blank).href);
@@ -323,78 +403,10 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
     await navigate(pathToFileURL(file).href);
     const light = await measure();
     await screenshot("light-1280", 1280);
-    const tabState = await evaluate<{ count: number; initialByList: number[]; orphanInitial: number[] }>(`(() => {
-      const isActive = (tab) =>
-        tab.getAttribute('aria-selected') === 'true' ||
-        tab.dataset.active === 'true' ||
-        tab.classList.contains('active') ||
-        tab.classList.contains('on');
-      const lists = [...document.querySelectorAll('[role="tablist"]')];
-      const allTabs = [...document.querySelectorAll('[role="tab"]')];
-      if (lists.length > 0) {
-        return {
-          count: allTabs.length,
-          initialByList: lists.map((list) => {
-            const tabs = [...list.querySelectorAll('[role="tab"]')];
-            const found = tabs.findIndex(isActive);
-            return found >= 0 ? found : 0;
-          }),
-          orphanInitial: allTabs.map((tab, index) => (!tab.closest('[role="tablist"]') && isActive(tab) ? index : -1)).filter((index) => index >= 0),
-        };
-      }
-      const activeOrphans = allTabs.map((tab, index) => (isActive(tab) ? index : -1)).filter((index) => index >= 0);
-      return {
-        count: allTabs.length,
-        initialByList: [],
-        orphanInitial: activeOrphans.length > 0 ? activeOrphans : (allTabs.length > 0 ? [0] : []),
-      };
-    })()`);
-    const patrolGlobals: string[] = [];
-    const patrolTimelines: Timeline[] = [];
-    if (tabState.count > 0) {
-      for (let index = 0; index < tabState.count; index++) {
-        await evaluate(`(async () => {
-          const tab = document.querySelectorAll('[role="tab"]')[${index}];
-          if (!tab || typeof tab.click !== 'function') return;
-          await new Promise((resolve) => {
-            setTimeout(() => {
-              try { tab.click(); } catch (error) { setTimeout(() => { throw error; }, 0); }
-              setTimeout(resolve, 0);
-            }, 0);
-          });
-        })()`);
-        const step = await measure();
-        patrolGlobals.push(...step.globals);
-        patrolTimelines.push(...step.timeline);
-      }
-      await evaluate(`(async (state) => {
-        const clickSafe = (tab) => new Promise((resolve) => {
-          if (!tab || typeof tab.click !== 'function') return resolve();
-          setTimeout(() => {
-            try { tab.click(); } catch (error) { setTimeout(() => { throw error; }, 0); }
-            setTimeout(resolve, 0);
-          }, 0);
-        });
-        const isActive = (tab) =>
-          tab.getAttribute('aria-selected') === 'true' ||
-          tab.dataset.active === 'true' ||
-          tab.classList.contains('active') ||
-          tab.classList.contains('on');
-        for (let listIndex = 0; listIndex < state.initialByList.length; listIndex++) {
-          const list = document.querySelectorAll('[role="tablist"]')[listIndex];
-          if (!list) continue;
-          const target = list.querySelectorAll('[role="tab"]')[state.initialByList[listIndex]];
-          if (target && !isActive(target)) await clickSafe(target);
-        }
-        for (const tabIndex of state.orphanInitial) {
-          const target = document.querySelectorAll('[role="tab"]')[tabIndex];
-          if (target && !isActive(target)) await clickSafe(target);
-        }
-      })(${JSON.stringify(tabState)})`);
-      await measure();
-    }
+    const lightPatrol = await patrolTabs();
     await viewport(1280, true);
     const dark = await measure();
+    const darkPatrol = await patrolTabs();
     await screenshot("dark-1280", 1280);
     await viewport(360, false);
     await evaluate(`(async () => {
@@ -429,13 +441,18 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
     })()`);
     const mobile = await measure();
     await screenshot("mobile-360", 360);
-    const added = [...new Set([...light.globals, ...patrolGlobals, ...dark.globals, ...mobile.globals])].filter((key) => !baseline.has(key)).sort();
-    const timeline = [...light.timeline, ...patrolTimelines, ...dark.timeline];
+    const added = [...new Set([...light.globals, ...lightPatrol.globals, ...dark.globals, ...darkPatrol.globals, ...mobile.globals])].filter((key) => !baseline.has(key)).sort();
+    const timelineSteps = [light.timeline, ...lightPatrol.timelines, dark.timeline, ...darkPatrol.timelines];
+    const timeline = timelineSteps.flat();
+    const emptyTimelineSteps = timelineSteps.filter((step) => step.length === 0).length;
+    const timelinePassed = timelineSteps.every((step) =>
+      step.length > 0 && step.every((item) => item.clientWidth > 0 && item.scrollWidth <= item.clientWidth),
+    );
     const checks = [
       { name: "控制台零报错", passed: errors.length === 0 && exceptions.length === 0, detail: `console.error=${errors.length}，未捕获异常=${exceptions.length}` },
       { name: "无新增全局名", passed: added.length === 0, detail: `新增=${added.length}（基准=file://），名字=${JSON.stringify(added)}` },
       { name: "窄屏不横向滚动", passed: mobile.scrollWidth <= 360, detail: `scrollWidth=${mobile.scrollWidth}，设定宽度=360，innerWidth=${mobile.innerWidth}，已展开折叠=${mobile.openDetails}/${mobile.details}` },
-      { name: "时间线不滚动", passed: light.timeline.length > 0 && dark.timeline.length > 0 && timeline.every((item) => item.clientWidth > 0 && item.scrollWidth <= item.clientWidth), detail: `选择器=${timelineSelector}，浅色区域=${light.timeline.length}，深色区域=${dark.timeline.length}，尺寸=${JSON.stringify(timeline)}（1280×800）` },
+      { name: "时间线不滚动", passed: timelinePassed, detail: `选择器=${timelineSelector}，浅色区域=${light.timeline.length}，深色区域=${dark.timeline.length}，巡检步=${timelineSteps.length}（空区域步=${emptyTimelineSteps}），尺寸=${JSON.stringify(timeline)}（1280×800）` },
     ];
     for (const check of checks) console.log(`[${check.passed ? "通过" : "失败"}] ${check.name}：${check.detail}`);
     for (const error of errors) console.log(`控制台错误：${error}`);
@@ -473,10 +490,10 @@ chromium、chromium-browser、google-chrome；显式指定的路径无效时直�
 缓存：Linux ~/.cache/ms-playwright（支持 XDG_CACHE_HOME），macOS ~/Library/Caches/ms-playwright，
 Windows %LOCALAPPDATA%/ms-playwright；先查 chromium_headless_shell-*，再查 chromium-*。
 找不到时可用 --chromium 指定，或安装 Playwright 的 chromium-headless-shell。
-四项均输出通过/失败和数值：控制台 console.error 与未捕获异常为零（含桌面 [role="tab"] 逐项切换巡检）；
+四项均输出通过/失败和数值：控制台 console.error 与未捕获异常为零（含浅色/深色桌面 [role="tab"] 逐项切换巡检）；
 和 file:// 空白页的 Object.keys(window) 比无新增全局名；
 360 像素、展开全部 <details>、触发 [data-action="expand-all"] 并解除 [role="tabpanel"][hidden] 后 document.documentElement.scrollWidth <= 360（不与 innerWidth 比）；
-1280×800 下默认及各页签可见时间线 ${timelineSelector} 的 scrollWidth <= clientWidth（区域缺失也失败），巡检后恢复初始激活页签。
+浅色与深色 1280×800 下初始及每次切换 [role="tab"] 后均须至少存在 1 个可见时间线 ${timelineSelector} 且 scrollWidth <= clientWidth（任一步缺失、隐藏或溢出均失败），巡检后恢复初始激活页签再截 dark-1280-*.png。
 检查浅色和深色桌面以及浅色手机；等待页面加载、字体完成。
 视口、配色、页签切换或展开折叠后，至少等 250 毫秒，再确认页面和时间线尺寸连续三帧不变后测量并截图。
 按视口高度 800 像素分段截图：浅色 1280×800、深色 1280×800、手机 360×800（已展开全部折叠与页签面板）。
