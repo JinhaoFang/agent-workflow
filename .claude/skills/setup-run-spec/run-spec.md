@@ -11,7 +11,7 @@
 npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
 ```
 
-`-a claude-code` 总要带（脚本路径以它为准），只用 Claude Code 的可去掉 `-a codex`；派发层会对执行者屏蔽这两个技能。更新完运行自检：`node .claude/skills/run-spec/scripts/tickets.ts doctor`，再提交 `skills-lock.json` 里变了的两项哈希，`land` 要求主工作区干净。
+`-a claude-code` 总要带（脚本路径以它为准），主会话或席位用 Codex、pi、agy 的保留 `-a codex`，只用 Claude Code 可去掉；派发层对执行者屏蔽这两个技能。更新完运行自检 `node .claude/skills/run-spec/scripts/tickets.ts doctor`，再提交 `skills-lock.json` 里变了的两项哈希（`land` 要求工作区干净）。
 
 ## 脚本读取的配置
 

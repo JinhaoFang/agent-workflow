@@ -42,7 +42,7 @@ Node 版本满足要求、git 输出当前目标分支、两条命令退出 0，
 |---|---|---|
 | [report](features/report.md) | `tickets.ts report-check` | 四项通过，三组截图全部亲自看过 |
 | [install](features/install.md) | 本目录 `install.mjs` → 提交导出 → 本地 `skills add` → 已安装 `doctor` | 三技能、两框架入口的文件集合和 SHA-256 与指定提交一致，doctor 通过 |
-| [dispatch](features/dispatch.md) | `tickets.ts run --seat research --agent … --dry-run` | 三框架预览设置和只读任务正确，未生成派发记录 |
+| [dispatch](features/dispatch.md) | `tickets.ts run --seat research --agent … --dry-run` | 四框架预览设置和只读任务正确，未生成派发记录 |
 
 每次按对应功能页的确切命令执行；子功能共用一次驱动，证据覆盖每个编号。汇报每次启动自己的 Chromium 和临时用户目录；安装每次新建自己的提交导出目录和临时 git 仓库。两者可并行，但证据目录必须不同。派发预览不占模型实例；真实派发会消耗额度，只在工单明确要求时做。
 

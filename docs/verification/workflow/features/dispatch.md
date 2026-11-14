@@ -7,10 +7,11 @@
 | dispatch.1 | Codex 的 research 席位、read-only 权限、任务及记录名正确 | 正常退出，模型可用技能中没有 run-spec、setup-run-spec，用量和记录齐全 |
 | dispatch.2 | Claude 的相同设置正确 | 同上；实际强度未知保留 null |
 | dispatch.3 | pi 的相同设置正确 | 同上；只读依赖工具限制和提示，按 doctor 的权限损失解释 |
+| dispatch.4 | agy 的相同设置正确 | 同上；只读依赖非破坏权限与提示约束，按 doctor 的权限损失解释，并可在 `transcript.jsonl` 核对会话轨迹 |
 
 ## 用户从哪里进入
 
-设计负责人用 `tickets.ts run --seat research --agent codex|claude|pi` 启动最小只读辅助任务。设置、隔离和记录的约定见 [派发层说明](../../../../.claude/skills/run-spec/scripts/dispatch/README.md)，CLI 参数见 `tickets.ts run --help`。真实派发会消耗额度，先预览；#42 只预览，不能去掉 `--dry-run`。
+设计负责人用 `tickets.ts run --seat research --agent codex|claude|pi|agy` 启动最小只读辅助任务。设置、隔离和记录的约定见 [派发层说明](../../../../.claude/skills/run-spec/scripts/dispatch/README.md)，CLI 参数见 `tickets.ts run --help`。真实派发会消耗额度，先预览；未获真实派发授权时不能去掉 `--dry-run`。
 
 ## 怎么驱动
 
@@ -21,20 +22,21 @@
    ./docs/verification/workflow/record.mjs --out "$WORKFLOW_EVIDENCE_ROOT/dispatch/codex" -- node .claude/skills/run-spec/scripts/tickets.ts run '只读阅读 README.md，概括本仓库两个主要技能的用途，并列出本会话可用技能名，核对没有 run-spec、setup-run-spec。只输出结果，不改文件、不提交、不操作 GitHub、不派发子代理。' --seat research --agent codex --permission read-only --name verification-workflow-codex --dry-run
    ./docs/verification/workflow/record.mjs --out "$WORKFLOW_EVIDENCE_ROOT/dispatch/claude" -- node .claude/skills/run-spec/scripts/tickets.ts run '只读阅读 README.md，概括本仓库两个主要技能的用途，并列出本会话可用技能名，核对没有 run-spec、setup-run-spec。只输出结果，不改文件、不提交、不操作 GitHub、不派发子代理。' --seat research --agent claude --permission read-only --name verification-workflow-claude --dry-run
    ./docs/verification/workflow/record.mjs --out "$WORKFLOW_EVIDENCE_ROOT/dispatch/pi" -- node .claude/skills/run-spec/scripts/tickets.ts run '只读阅读 README.md，概括本仓库两个主要技能的用途，并列出本会话可用技能名，核对没有 run-spec、setup-run-spec。只输出结果，不改文件、不提交、不操作 GitHub、不派发子代理。' --seat research --agent pi --permission read-only --name verification-workflow-pi --dry-run
+   ./docs/verification/workflow/record.mjs --out "$WORKFLOW_EVIDENCE_ROOT/dispatch/agy" -- node .claude/skills/run-spec/scripts/tickets.ts run '只读阅读 README.md，概括本仓库两个主要技能的用途，并列出本会话可用技能名，核对没有 run-spec、setup-run-spec。只输出结果，不改文件、不提交、不操作 GitHub、不派发子代理。' --seat research --agent agy --permission read-only --name verification-workflow-agy --dry-run
    ```
 
-   三次退出 0；每份输出显示对应框架、research 席位、read-only、角色为工程负责人，模型／强度及来源符合本机配置，任务全文正确，并打印「不启动模型、不写记录或关联」。模型或强度为框架默认是有效设置，不等于已测出实际模型。
-3. 对照源码核对隔离约定，作为预览的补充：`dispatch/codex.ts` 的 `isolationArgs()` 按名称禁用两个技能；`dispatch/claude.ts` 的 `skillOverrides` 将二者设为 `off`；`dispatch/pi.ts` 的 `--no-skills` 配合 `skillArgs()` 从 RPC 技能清单排除二者、重载其余技能。源码定位命令：
+   四次退出 0；每份输出显示对应框架、research 席位、read-only、角色为工程负责人，模型／强度及来源符合本机配置，任务全文正确，并打印「不启动模型、不写记录或关联」。模型或强度为框架默认是有效设置，不等于已测出实际模型。
+3. 对照源码核对隔离约定，作为预览的补充：`dispatch/codex.ts`、`dispatch/claude.ts`、`dispatch/pi.ts`、`dispatch/agy.ts` 各自通过 `isolationArgs()` 或运行期技能配置显式屏蔽 `run-spec`、`setup-run-spec` 并保留其余技能。源码定位命令：
 
    ```bash
-   ./docs/verification/workflow/record.mjs --out "$WORKFLOW_EVIDENCE_ROOT/dispatch/isolation-source" -- rg -n 'isolationArgs|skills.config|skillOverrides|no-skills|skillArgs|run-spec|setup-run-spec' .claude/skills/run-spec/scripts/dispatch/codex.ts .claude/skills/run-spec/scripts/dispatch/claude.ts .claude/skills/run-spec/scripts/dispatch/pi.ts
+   ./docs/verification/workflow/record.mjs --out "$WORKFLOW_EVIDENCE_ROOT/dispatch/isolation-source" -- grep -nE 'isolationArgs|skills.config|skillOverrides|no-skills|skillArgs|run-spec|setup-run-spec' .claude/skills/run-spec/scripts/dispatch/codex.ts .claude/skills/run-spec/scripts/dispatch/claude.ts .claude/skills/run-spec/scripts/dispatch/pi.ts .claude/skills/run-spec/scripts/dispatch/agy.ts
    ```
 
-   `run --dry-run` 不打印底层启动器参数，不启动模型，也不执行 pi 的技能发现；源码核对只能证明配置方式，不能当作“模型确实看不到”的运行证据。
+   `run --dry-run` 不打印底层启动器参数，不启动模型，也不执行运行期技能发现；源码核对只能证明配置方式，不能当作“模型确实看不到”的运行证据。
 4. 核对预览的副作用：以下只读命令在主工作区和当前检出的 `.codex-runs` 中确认这些记录前缀没有生成任何文件。若重名，先采用预览实际打印的名字核对；不要删除别人的记录。
 
    ```bash
-   ./docs/verification/workflow/record.mjs --out "$WORKFLOW_EVIDENCE_ROOT/dispatch/no-records" -- node --input-type=module -e 'import {execFileSync} from "node:child_process"; import {existsSync,readFileSync,readdirSync} from "node:fs"; import {join} from "node:path"; const evidence=process.env.WORKFLOW_EVIDENCE_ROOT; if(!evidence) throw new Error("缺少证据目录"); const expected=["codex","claude","pi"].map(agent=>readFileSync(join(evidence,"dispatch",agent,"stdout.log"),"utf8").match(/^记录 ([^\n]+)/m)?.[1]); if(expected.some(name=>!name)) throw new Error("预览记录名缺失"); const main=execFileSync("git",["worktree","list","--porcelain"],{encoding:"utf8"}).split("\n")[0].slice(9); let found=0; for(const root of new Set([process.cwd(),main])) { const path=join(root,".codex-runs"); const names=existsSync(path)?readdirSync(path).filter(name=>expected.some(prefix=>name.startsWith(prefix+"."))):[]; console.log(path,JSON.stringify(names)); found+=names.length; } process.exitCode=found?1:0;'
+   ./docs/verification/workflow/record.mjs --out "$WORKFLOW_EVIDENCE_ROOT/dispatch/no-records" -- node --input-type=module -e 'import {execFileSync} from "node:child_process"; import {existsSync,readFileSync,readdirSync} from "node:fs"; import {join} from "node:path"; const evidence=process.env.WORKFLOW_EVIDENCE_ROOT; if(!evidence) throw new Error("缺少证据目录"); const expected=["codex","claude","pi","agy"].map(agent=>readFileSync(join(evidence,"dispatch",agent,"stdout.log"),"utf8").match(/^记录 ([^\n]+)/m)?.[1]); if(expected.some(name=>!name)) throw new Error("预览记录名缺失"); const main=execFileSync("git",["worktree","list","--porcelain"],{encoding:"utf8"}).split("\n")[0].slice(9); let found=0; for(const root of new Set([process.cwd(),main])) { const path=join(root,".codex-runs"); const names=existsSync(path)?readdirSync(path).filter(name=>expected.some(prefix=>name.startsWith(prefix+"."))):[]; console.log(path,JSON.stringify(names)); found+=names.length; } process.exitCode=found?1:0;'
    ```
 
    输出空列表、退出 0。没有原始日志、事件、汇总、清单或评分表关联可供查用量；用量结论是“未派发，无实测值”。不带 `--spec` 的这些预览只读本机配置和 git，不查 GitHub、不改引用，也没有模型请求。
