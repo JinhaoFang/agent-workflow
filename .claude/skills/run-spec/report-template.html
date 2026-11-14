@@ -512,35 +512,55 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
   const ver = val(S && S.verification);
   const merges = val(S && S.merges);
 
-  const parseSpanList = (rawSpans, defaultDesc) => {
-    if (!Array.isArray(rawSpans)) return [];
-    return rawSpans.map((s) => ({
-      a: Date.parse(s && s.start),
-      b: Date.parse(s && s.end),
-      kind: "ok",
-      desc: (s && s.desc) || defaultDesc
-    })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b)).map((s) => ({
-      ...s,
-      b: Math.max(s.b, s.a + 1000)
-    }));
-  };
-
-  const resolveMainSessionSpans = (ms, allLeadSpans) => {
-    const direct = parseSpanList(ms && val(ms.spans), "主会话统筹、定稿与验收");
-    if (direct.length) return direct;
-    const s0 = Date.parse((ms && ms.startedAt) || "");
-    const s1 = Date.parse((ms && ms.cutoffAt) || "");
-    if (Number.isFinite(s0) && Number.isFinite(s1) && s1 >= s0) {
-      const clipped = allLeadSpans
-        .filter((sp) => sp.b >= s0 && sp.a <= s1)
-        .map((sp) => ({ a: Math.max(sp.a, s0), b: Math.max(Math.min(sp.b, s1), Math.max(sp.a, s0) + 1000), kind: "ok", desc: "主会话统筹、定稿与验收" }));
-      if (clipped.length) return clipped;
-      return [{ a: s0, b: Math.max(s1, s0 + 1000), kind: "ok", desc: "主会话统筹、定稿与验收" }];
+  const parseSpanArray = (rawSpans, defaultDesc) => {
+    if (!Array.isArray(rawSpans)) return null;
+    const out = [];
+    for (const s of rawSpans) {
+      const a = Date.parse(s && s.start);
+      const b = Date.parse(s && s.end);
+      if (Number.isFinite(a) && Number.isFinite(b) && b >= a) {
+        out.push({ a, b, kind: "ok", desc: (s && s.desc) || defaultDesc });
+      }
     }
-    return [];
+    return out;
   };
 
-  const rawLeadSpans = parseSpanList((val(S && S.time && S.time.designLead) || {}).spans, "主会话统筹、定稿与验收");
+  const mergeIntervals = (items, defaultDesc) => {
+    const sorted = [...items].sort((x, y) => x.a - y.a || x.b - y.b);
+    const merged = [];
+    for (const it of sorted) {
+      const last = merged[merged.length - 1];
+      if (last && it.a <= last.b) {
+        if (it.b > last.b) last.b = it.b;
+      } else {
+        merged.push({ a: it.a, b: it.b, kind: it.kind || "ok", desc: it.desc || defaultDesc });
+      }
+    }
+    return merged;
+  };
+
+  const intervalsMinutes = (items) => items.reduce((acc, it) => acc + (it.b - it.a) / 60000, 0);
+
+  const subtractIntervals = (base, known) => {
+    if (!known.length) return base;
+    const cuts = mergeIntervals(known, "");
+    let cur = base.map((x) => ({ ...x }));
+    for (const cut of cuts) {
+      const next = [];
+      for (const seg of cur) {
+        if (cut.b <= seg.a || cut.a >= seg.b) {
+          next.push(seg);
+        } else {
+          if (cut.a > seg.a) next.push({ ...seg, b: cut.a });
+          if (cut.b < seg.b) next.push({ ...seg, a: cut.b });
+        }
+      }
+      cur = next;
+    }
+    return cur.filter((seg) => seg.b > seg.a);
+  };
+
+  const rawLeadSpans = parseSpanArray((val(S && S.time && S.time.designLead) || {}).spans, "主会话统筹、定稿与验收");
 
   const buildActors = () => {
     const mainSess = (S && S.mainSessions) || [];
@@ -555,19 +575,23 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         const model = c.actualModel || c.model || "默认模型";
         const effort = c.actualEffort || c.effort || "默认";
         const isDesign = seatKey === "director" || seatKey === "design" || seatKey === "main";
-        const rawSeatSpans = val(c.spans);
-        let actorSpans = Array.isArray(rawSeatSpans)
-          ? parseSpanList(rawSeatSpans, isDesign ? "主会话统筹、定稿与验收" : `${roleLabel} 活跃时段`)
-          : null;
-        if ((!actorSpans || !actorSpans.length) && isDesign && mainSess.length) {
+        const rawSeatSpans = c && c.spans !== undefined ? val(c.spans) : undefined;
+        let actorSpans = parseSpanArray(rawSeatSpans, isDesign ? "主会话统筹、定稿与验收" : `${roleLabel} 活跃时段`);
+        if (actorSpans !== null) {
+          actorSpans = mergeIntervals(actorSpans, isDesign ? "主会话统筹、定稿与验收" : `${roleLabel} 活跃时段`);
+        } else if (isDesign && mainSess.length) {
           const matched = mainSess.filter((ms) => {
             const mFw = ms.framework || ms.agent || "";
             const mModel = ms.actualModel || ms.model || "默认模型";
             const mEffort = ms.actualEffort || ms.effort || "默认";
             return mFw === fw && mModel === model && mEffort === effort;
           });
-          const recovered = matched.flatMap((ms) => resolveMainSessionSpans(ms, rawLeadSpans));
-          if (recovered.length) actorSpans = recovered;
+          const parsedMatched = matched.map((ms) =>
+            parseSpanArray(ms && ms.spans !== undefined ? val(ms.spans) : undefined, "主会话统筹、定稿与验收")
+          );
+          if (matched.length > 0 && parsedMatched.every((x) => x !== null)) {
+            actorSpans = mergeIntervals(parsedMatched.flat(), "主会话统筹、定稿与验收");
+          }
         }
         return {
           id: c.id || `actor-${idx}`,
@@ -596,7 +620,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     const list = [];
     const mainU = normUsage(S && S.usage && S.usage.mainSession);
     const dMin = (val(S && S.time && S.time.designLead) || {}).minutes ?? null;
-    if (mainSess.length > 1) {
+    if (mainSess.length) {
       const mGroups = new Map();
       for (const ms of mainSess) {
         const fw = ms.framework || ms.agent || (S && S.mainFrameworks && S.mainFrameworks[0]) || "claude";
@@ -606,63 +630,72 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         if (!mGroups.has(key)) mGroups.set(key, { fw, model, effort, items: [] });
         mGroups.get(key).items.push(ms);
       }
-      if (mGroups.size > 1) {
-        let mIdx = 0;
-        for (const mg of mGroups.values()) {
-          mIdx += 1;
-          let fresh = 0, out = 0, cached = 0, hasTok = false, minSum = 0, hasMin = false, turns = 0, hasTurns = false, missingTurns = false;
-          const sp = [];
-          for (const ms of mg.items) {
-            const mu = normUsage(ms.usage);
-            if (mu) {
-              fresh += mu.fresh; out += mu.output; cached += mu.cached; hasTok = true;
-              if (mu.turns !== null) { turns += mu.turns; hasTurns = true; }
-              else { missingTurns = true; }
-            }
-            const msSpans = resolveMainSessionSpans(ms, rawLeadSpans);
-            sp.push(...msSpans);
-            if (typeof ms.minutes === "number") { minSum += ms.minutes; hasMin = true; }
-            else if (msSpans.length) { minSum += msSpans.reduce((acc, x) => acc + (x.b - x.a) / 60000, 0); hasMin = true; }
+      let mIdx = 0;
+      for (const mg of mGroups.values()) {
+        mIdx += 1;
+        let fresh = 0, out = 0, cached = 0, hasTok = false, turns = 0, hasTurns = false, missingTurns = false;
+        const parsedSpans = [];
+        let allHaveSpans = true;
+        for (const ms of mg.items) {
+          const mu = normUsage(ms.usage);
+          if (mu) {
+            fresh += mu.fresh; out += mu.output; cached += mu.cached; hasTok = true;
+            if (mu.turns !== null) { turns += mu.turns; hasTurns = true; }
+            else { missingTurns = true; }
+          } else if (mGroups.size > 1) {
+            missingTurns = true;
           }
-          list.push({
-            id: `seat-design-${mIdx}`,
-            seat: "design",
-            role: "设计负责人",
-            fw: mg.fw,
-            model: mg.model,
-            effort: mg.effort,
-            minutes: hasMin ? minSum : null,
-            runsText: mg.items.length > 1 ? `${mg.items.length} 段主会话` : "主会话",
-            turns: hasTurns && !missingTurns ? turns : null,
-            fresh: hasTok ? fresh : null,
-            output: hasTok ? out : null,
-            cached: hasTok ? cached : null,
-            spans: sp.length ? sp : null,
-            readDoc: "Spec 定稿与验收",
-            pass: "统筹全局",
-            note: null
-          });
+          const sp = parseSpanArray(ms && ms.spans !== undefined ? val(ms.spans) : undefined, "主会话统筹、定稿与验收");
+          if (sp === null) allHaveSpans = false;
+          else parsedSpans.push(...sp);
         }
+        const mergedSpans = allHaveSpans ? mergeIntervals(parsedSpans, "主会话统筹、定稿与验收") : null;
+        let grpMin = null;
+        let grpSpans = mergedSpans;
+        if (mergedSpans !== null) {
+          grpMin = intervalsMinutes(mergedSpans);
+        } else if (mGroups.size === 1) {
+          grpMin = dMin !== null ? dMin : (mg.items.length === 1 && typeof mg.items[0].minutes === "number" ? mg.items[0].minutes : null);
+          grpSpans = rawLeadSpans;
+        } else if (mg.items.length === 1 && typeof mg.items[0].minutes === "number") {
+          grpMin = mg.items[0].minutes;
+        }
+        const useMainU = !hasTok && mGroups.size === 1 ? mainU : null;
+        list.push({
+          id: mGroups.size === 1 ? "seat-design" : `seat-design-${mIdx}`,
+          seat: "design",
+          role: "设计负责人",
+          fw: mg.fw,
+          model: mg.model,
+          effort: mg.effort,
+          minutes: grpMin,
+          runsText: mg.items.length > 1 ? `${mg.items.length} 段主会话` : "主会话",
+          turns: hasTok ? (hasTurns && !missingTurns ? turns : null) : (useMainU ? useMainU.turns : null),
+          fresh: hasTok ? fresh : (useMainU ? useMainU.fresh : null),
+          output: hasTok ? out : (useMainU ? useMainU.output : null),
+          cached: hasTok ? cached : (useMainU ? useMainU.cached : null),
+          spans: grpSpans,
+          readDoc: "Spec 定稿与验收",
+          pass: "统筹全局",
+          note: null
+        });
       }
-    }
-    if (!list.length && (mainSess.length || mainU || dMin !== null)) {
-      const m0 = mainSess[0] || {};
-      const fw = m0.framework || m0.agent || (S && S.mainFrameworks && S.mainFrameworks[0]) || "claude";
-      const sp0 = mainSess.flatMap((ms) => resolveMainSessionSpans(ms, rawLeadSpans));
+    } else if (mainU || dMin !== null) {
+      const fw = (S && S.mainFrameworks && S.mainFrameworks[0]) || "claude";
       list.push({
         id: "seat-design",
         seat: "design",
         role: "设计负责人",
         fw,
-        model: m0.actualModel || m0.model || "主会话模型",
-        effort: m0.actualEffort || m0.effort || "默认",
+        model: "主会话模型",
+        effort: "默认",
         minutes: dMin,
-        runsText: mainSess.length > 1 ? `${mainSess.length} 段主会话` : "主会话",
+        runsText: "主会话",
         turns: mainU ? mainU.turns : null,
         fresh: mainU ? mainU.fresh : null,
         output: mainU ? mainU.output : null,
         cached: mainU ? mainU.cached : null,
-        spans: sp0.length ? sp0 : (rawLeadSpans.length ? rawLeadSpans : null),
+        spans: rawLeadSpans,
         readDoc: "Spec 定稿与验收",
         pass: "统筹全局",
         note: null
@@ -672,6 +705,12 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     const subs = (S && S.subagents) || [];
     if (subs.length || subU) {
       const s0 = subs[0] || {};
+      const parsedSubSpans = subs.map((x) => parseSpanArray(x && x.spans !== undefined ? val(x.spans) : undefined, "原生子代理活跃时段"));
+      const allSubHaveSpans = subs.length > 0 && parsedSubSpans.every((x) => x !== null);
+      const mergedSubSpans = allSubHaveSpans ? mergeIntervals(parsedSubSpans.flat(), "原生子代理活跃时段") : null;
+      const subMin = mergedSubSpans !== null
+        ? intervalsMinutes(mergedSubSpans)
+        : (subs.length === 1 && typeof subs[0].minutes === "number" ? subs[0].minutes : null);
       list.push({
         id: "seat-subagent",
         seat: "subagent",
@@ -679,12 +718,13 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         fw: s0.framework || s0.agent || (S && S.mainFrameworks && S.mainFrameworks[0]) || "claude",
         model: s0.actualModel || s0.model || "子代理模型",
         effort: s0.actualEffort || s0.effort || "默认",
-        minutes: subs.reduce((acc, x) => acc + (Number(x.minutes) || 0), 0) || null,
+        minutes: subMin,
         runsText: `${subs.length || 1} 次子代理`,
         turns: subU ? subU.turns : null,
         fresh: subU ? subU.fresh : null,
         output: subU ? subU.output : null,
         cached: subU ? subU.cached : null,
+        spans: mergedSubSpans,
         readDoc: "只读探索/辅助",
         pass: "自动拆账",
         note: null
@@ -705,11 +745,18 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     let idx = 0;
     for (const g of groups.values()) {
       idx += 1;
-      let fresh = 0, out = 0, cached = 0, hasTok = false, minSum = 0, hasMin = false, turns = 0, hasTurns = false, missingTurns = false, okCount = 0, reworkCount = 0;
+      let fresh = 0, out = 0, cached = 0, hasTok = false, durFallback = 0, hasDurFallback = false, turns = 0, hasTurns = false, missingTurns = false, okCount = 0, reworkCount = 0;
       const editMins = [];
+      const dispIntervals = [];
       for (const d of g.items) {
-        const m = val(d.minutes);
-        if (typeof m === "number") { minSum += m; hasMin = true; }
+        const st = Date.parse(val(d.start) || "");
+        const en = Date.parse(val(d.end) || "");
+        if (Number.isFinite(st) && Number.isFinite(en) && en >= st) {
+          dispIntervals.push({ a: st, b: en, kind: "ok", desc: "" });
+        } else {
+          const m = val(d.minutes);
+          if (typeof m === "number") { durFallback += m; hasDurFallback = true; }
+        }
         const u = normUsage(d.usage);
         if (u) {
           fresh += u.fresh; out += u.output; cached += u.cached; hasTok = true;
@@ -722,6 +769,9 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         const em = ov ? val(ov.minutes) : null;
         if (typeof em === "number") editMins.push(em);
       }
+      const mergedDisp = dispIntervals.length ? mergeIntervals(dispIntervals, "") : [];
+      const hasMin = mergedDisp.length > 0 || hasDurFallback;
+      const minSum = (mergedDisp.length ? intervalsMinutes(mergedDisp) : 0) + durFallback;
       editMins.sort((a, b) => a - b);
       const mid = editMins.length >> 1;
       const medEdit = !editMins.length ? null : editMins.length % 2 ? editMins[mid] : (editMins[mid - 1] + editMins[mid]) / 2;
@@ -793,33 +843,56 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 
   const collectAllSpans = () => {
     const lanes = [];
-    const dSpans = rawLeadSpans;
+    const dSpans = rawLeadSpans || [];
     const designActors = ACTORS.filter((a) => a.seat === "director" || a.seat === "design" || a.seat === "main");
-    let emittedDesignLane = false;
-    for (const da of designActors) {
-      const sp = Array.isArray(da.spans) && da.spans.length ? da.spans : (designActors.length === 1 ? dSpans : []);
-      if (sp.length) {
-        emittedDesignLane = true;
+    if (!designActors.length) {
+      if (dSpans.length) {
         lanes.push({
-          actorId: da.id,
-          label: `设计·${fwInfo(da.fw).label}·${compactModel(da.model)}(${da.effort})`,
-          fullLabel: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model} · ${da.effort}`,
+          actorId: "",
+          label: "设计负责人",
+          fullLabel: "设计负责人",
           color: "var(--design)",
-          spans: sp.map((s) => ({
-            ...s,
-            desc: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model}(${da.effort})`
-          }))
+          spans: dSpans
         });
       }
-    }
-    if (!emittedDesignLane && dSpans.length) {
-      lanes.push({
-        actorId: "",
-        label: "设计负责人(未拆分会话)",
-        fullLabel: "设计负责人（旧版评分表未记录分会话时段）",
-        color: "var(--design)",
-        spans: dSpans
-      });
+    } else {
+      let hasUnattributedDesign = false;
+      const knownDesignIntervals = [];
+      for (const da of designActors) {
+        let sp = null;
+        if (Array.isArray(da.spans)) {
+          sp = da.spans;
+          knownDesignIntervals.push(...sp);
+        } else if (designActors.length === 1) {
+          sp = dSpans;
+        } else {
+          hasUnattributedDesign = true;
+        }
+        if (sp && sp.length) {
+          lanes.push({
+            actorId: da.id,
+            label: `设计·${fwInfo(da.fw).label}·${compactModel(da.model)}(${da.effort})`,
+            fullLabel: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model} · ${da.effort}`,
+            color: "var(--design)",
+            spans: sp.map((s) => ({
+              ...s,
+              desc: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model}(${da.effort})`
+            }))
+          });
+        }
+      }
+      if (hasUnattributedDesign && dSpans.length) {
+        const remaining = subtractIntervals(dSpans, knownDesignIntervals);
+        if (remaining.length) {
+          lanes.push({
+            actorId: "",
+            label: "设计负责人(未拆分会话)",
+            fullLabel: "设计负责人（旧版评分表未记录分会话时段）",
+            color: "var(--design)",
+            spans: remaining
+          });
+        }
+      }
     }
     const subActors = ACTORS.filter((a) => a.seat === "subagent" && Array.isArray(a.spans) && a.spans.length);
     for (const sa of subActors) {
