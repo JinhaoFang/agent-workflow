@@ -40,7 +40,7 @@ const stdin = args.includes('-p') ? '' : fs.readFileSync(0,'utf8');
 fs.appendFileSync(process.env.AGY_CALLS,JSON.stringify({args,stdin,cwd:process.cwd(),manifest:JSON.parse(fs.readFileSync('.agents/skills.json','utf8')),skills:fs.readdirSync('.agents/skills')})+'\\n');
 if (args.includes('-p')) {
   const manifest = JSON.parse(fs.readFileSync('.agents/skills.json','utf8'));
-  console.log(JSON.stringify({status:'SUCCESS',command:{name:'skills',data:{skills:process.env.CASE==='bad-skills'?[{name:'run-spec'}]:[{name:'code-review'},{name:'third-party'}]}}}));
+  console.log(JSON.stringify({status:'SUCCESS',command:{name:'skills',data:{skills:process.env.CASE==='bad-skills'||!['run-spec','setup-run-spec'].every(name=>manifest.exclude.includes(name))?[{name:'run-spec'}]:[{name:'code-review'},{name:'third-party'}]}}}));
   return;
 }
 let rows = ${JSON.stringify(sample)}.trim().split('\\n').map(JSON.parse);
@@ -82,7 +82,7 @@ test("agy CLI 传数组与 NDJSON，隔离两项技能并关联会话", () => {
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const [probe, command] = f.calls();
     assert.equal(probe.args.at(-1), "/skills");
-    assert.deepEqual(probe.manifest.exclude, ["^run-spec$", "^setup-run-spec$"]);
+    assert.deepEqual(probe.manifest.exclude, ["run-spec", "setup-run-spec"]);
     assert.deepEqual(command.skills, ["code-review", "third-party"]);
     assert.ok(readFileSync(join(f.root, ".agents/skills/run-spec/SKILL.md"), "utf8").includes("name: run-spec"));
     assert.equal(command.args[command.args.indexOf("--add-dir") + 1], f.root);

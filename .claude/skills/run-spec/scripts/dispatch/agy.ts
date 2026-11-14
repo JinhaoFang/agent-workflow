@@ -94,7 +94,7 @@ export const agy: Adapter = {
         cpSync(realpathSync(source), join(directory, ".agents/skills", name), { recursive: true, dereference: true });
         if (skillName) expected.push(skillName);
       }
-      writeFileSync(join(directory, ".agents/skills.json"), JSON.stringify({ exclude: blocked.map(name => `^${name}$`) }));
+      writeFileSync(join(directory, ".agents/skills.json"), JSON.stringify({ exclude: blocked }));
       const permission = [...this.permissions[settings.permission].args];
       const settingsIndex = permission.indexOf("--settings");
       if (settingsIndex >= 0) {
