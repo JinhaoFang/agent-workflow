@@ -1,6 +1,7 @@
 /**
  * 评分表 CLI 测试：真实临时 git 仓库和 bare origin、持久化假的 gh，固定台账、
- * 派发/进度与三框架会话记录；完整比较预期 JSON，检查缺数、时段并集、归属、
+ * 派发/进度与四框架会话记录；完整比较预期 JSON，检查缺数、时段并集、归属、
+ * cockpit 三段式 Token 与四元组席位矩阵、工具轮数与旧记录降级、窗后空子代理跳过、
  * Claude 摘要与来源过滤、AskUserQuestion 问答、更新同一评论和 cleanup 删除前拦截。
  * SCORECARD_EVIDENCE 可指定输出
  * 固定输入、预期/实际 JSON、手算过程和测试命令记录的验收目录。
@@ -247,6 +248,11 @@ const expected = (collectedAt: string, claude: string) => {
   const identity = (seat: string, framework = "codex") => ({ role: seat, seat, agent: framework, framework, model: null, actualModel: null, effort: null, actualEffort: null });
   const spans = (...bounds: [number, number][]) => ({ spans: bounds.map(([a, b]) => ({ start: at(a), end: at(b) })), minutes: bounds.reduce((sum, [a, b]) => sum + b - a, 0) });
   const dispatch = (record: string, ticket: number | null, category: string, start: number, end: number, usage: ReturnType<typeof tokens>) => ({ record, ticket, seat: ticket ? "engineering" : "review", workType: "default", framework: "codex", identity: identity(ticket ? "engineering" : "review"), model: null, effort: null, permission: null, actualModel: null, actualEffort: null, category: value(category), start: value(at(start)), end: value(at(end)), minutes: value(end - start), exitCode: value(0), usage: value(usage) });
+  const cockpitSeat = (role: string, framework: string, activeMinutes: number | null, medianFirstEditMinutes: number | null, freshInput: number, output: number, cachedReplay: number, turns: number | null) => ({
+    ...identity(role, framework), runs: 1, activeMinutes, medianFirstEditMinutes,
+    usage: value({ freshInput, output, cachedReplay, input: freshInput + cachedReplay, turns }),
+    complete: true, anomalies: [],
+  });
   const reason = "只读席位不统计首次编辑";
   return { version: 2, spec: 2, startedAt: at(0), mainFrameworks: ["claude"], mainSessions: [{ session: "claude:main", path: claude, ...identity("design", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(150, 20, 10), child: false, startedAt: at(0), cutoffAt: at(51) }],
     subagents: [{ session: "claude:main:sidechain:claude:main", path: claude, child: true, ...identity("subagent", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(6, 2, 4) }, { session: "codex:child", ...identity("subagent"), usage: tokens(20, 10, 2) }], subagentAnomalies: [], batches: [],
@@ -259,6 +265,17 @@ const expected = (collectedAt: string, claude: string) => {
     overhead: value([{ record: "gh-5", firstEditAt: value(at(4)), minutes: value(4), inputTokens: value(100) }, { record: "review-2-batch", firstEditAt: value(null, reason), minutes: value(null, reason), inputTokens: value(null, reason) }]),
     userInterventions: value(4), failures: { dispatchWithoutReport: value(0), landStops: value(1), verificationLaunch: value(0) },
     usage: { dispatches: value([{ seat: "engineering", framework: "codex", identities: [identity("engineering")], anomalies: [], complete: true, usage: value(tokens(1000, 800, 50)) }, { seat: "review", framework: "codex", identities: [identity("review")], anomalies: [], complete: true, usage: value(tokens(200, 100, 20)) }]), mainSession: value(tokens(150, 20, 10)), independentReview: value(tokens(10, 2, 4)), subagents: value(tokens(26, 12, 6)), subagentNotifications: value(99) },
+    cockpit: {
+      totals: { value: { freshInput: 452, output: 90, cachedReplay: 934, input: 1386, turns: null }, reason: null, complete: true, anomalies: [] },
+      seats: [
+        cockpitSeat("design", "claude", 26, null, 130, 10, 20, 2),
+        cockpitSeat("engineering", "codex", 20, 4, 200, 50, 800, 2),
+        cockpitSeat("review", "codex", 10, null, 100, 20, 100, null),
+        cockpitSeat("spec-review", "claude", null, null, 8, 4, 2, null),
+        cockpitSeat("subagent", "claude", null, null, 4, 4, 2, 0),
+        cockpitSeat("subagent", "codex", 15, null, 10, 2, 10, null),
+      ],
+    },
     missing: [],
   };
 };
@@ -1275,5 +1292,179 @@ test("字符串 spec 跳过 GitHub，同前缀超过十条聚合并保留异常�
     assert.match(posted.stderr, /post-audit.*11.*90\.9%/);
     assert.match(posted.stderr, /post-audit-11/);
     assert.deepEqual(JSON.parse(readFileSync(f.comments, "utf8")), []);
+  } finally { f.cleanup(); }
+});
+
+test("cockpit 按完整四元组聚合席位矩阵，校验三段式 Token 恒等式、工具轮数去重与旧记录缺数降级", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const main = agyFile(f, "cockpit-main");
+    const child = agyFile(f, "cockpit-child");
+    f.lines(main, [
+      agyUser(0, 0),
+      agyStep(1, 1, { model: "gemini-4-carbon-high", effort: "high", input_tokens: 400, cache_read_tokens: 100, output_tokens: 30, tool_calls: [{ name: "invoke_subagent", id: "sub-1", args: {} }] }),
+      { type: "GENERIC", source: "MODEL", step_index: 2, created_at: moment(2), content: '{"conversationId":"cockpit-child"}' },
+      agyStep(4, 3, { model: "gemini-4-carbon-high", effort: "high", input_tokens: 200, cache_read_tokens: 500, output_tokens: 20, tool_calls: [{ name: "read_file", id: "read-1", args: {} }] }),
+    ]);
+    f.lines(child, [
+      agyUser(2, 0),
+      agyStep(3, 1, { model: "gemini-4-carbon-flash", effort: "low", input_tokens: 80, cache_read_tokens: 20, output_tokens: 10 }),
+    ]);
+    f.write(join(f.records, "eng-1.json"), JSON.stringify({
+      v: 1, framework: "agy", seat: "engineering", permission: "workspace-write",
+      model: "configured-model", effort: "medium", actualModel: "gemini-4-carbon-high", actualEffort: "high",
+      success: true, usage: { input: 1000, cached: 700, output: 60 }, started: moment(5), at: moment(15), exit: 0,
+    }));
+    f.lines(join(f.records, "eng-1.events.jsonl"), [
+      { v: 1, seq: 1, at: Date.parse(moment(6)), kind: "init", agent: "agy", model: "gemini-4-carbon-high" },
+      { v: 1, seq: 2, at: Date.parse(moment(7)), kind: "tool", phase: "start", id: "1", name: "edit_file" },
+      { v: 1, seq: 3, at: Date.parse(moment(7)), kind: "tool", phase: "end", id: "1", name: "edit_file" },
+      { v: 1, seq: 4, at: Date.parse(moment(8)), kind: "cmd", phase: "start", id: "2", name: "run_command" },
+      { v: 1, seq: 5, at: Date.parse(moment(8)), kind: "cmd", phase: "end", id: "2", name: "run_command" },
+      { v: 1, seq: 6, at: Date.parse(moment(9)), kind: "tool", phase: "end", id: "3", name: "read_file" },
+      { v: 1, seq: 7, at: Date.parse(moment(9)), kind: "tool", phase: "end", id: "3", name: "read_file" },
+      { v: 1, seq: 8, at: Date.parse(moment(15)), kind: "turn", usage: { input: 1000, cached: 700, output: 60 } },
+    ]);
+    f.write(join(f.records, "eng-2.json"), JSON.stringify({
+      v: 1, framework: "agy", seat: "engineering", permission: "workspace-write",
+      model: "gemini-4-carbon-high", effort: "high",
+      success: true, usage: { input: 500, cached: 300, output: 40 }, started: moment(12), at: moment(20), exit: 0,
+    }));
+    f.lines(join(f.records, "eng-2.events.jsonl"), [
+      { v: 1, seq: 1, at: Date.parse(moment(18)), kind: "tool", phase: "start", id: "w1", name: "write_file" },
+      { v: 1, seq: 2, at: Date.parse(moment(18)), kind: "tool", phase: "end", id: "w1", name: "write_file" },
+      { v: 1, seq: 3, at: Date.parse(moment(20)), kind: "turn", usage: { input: 500, cached: 300, output: 40 } },
+    ]);
+    f.write(join(f.records, "zero-say.json"), JSON.stringify({
+      v: 1, framework: "claude", seat: "research", permission: "read-only",
+      actualModel: "claude-opus-4-7", actualEffort: "high",
+      success: true, usage: { input: 120, cached: 20, output: 15 }, started: moment(6), at: moment(9), exit: 0,
+    }));
+    f.lines(join(f.records, "zero-say.events.jsonl"), [
+      { v: 1, seq: 1, at: Date.parse(moment(6)), kind: "init", agent: "claude" },
+      { v: 1, seq: 2, at: Date.parse(moment(8)), kind: "say", text: "无需工具直接结论" },
+      { v: 1, seq: 3, at: Date.parse(moment(9)), kind: "turn", usage: { input: 120, cached: 20, output: 15 } },
+    ]);
+    f.write(join(f.records, "turn-only.json"), JSON.stringify({
+      v: 1, framework: "codex", seat: "review", permission: "read-only",
+      actualModel: "gpt-5.4", actualEffort: "xhigh",
+      success: true, usage: { input: 300, cached: 250, output: 25 }, started: moment(10), at: moment(16), exit: 0,
+    }));
+    f.lines(join(f.records, "turn-only.events.jsonl"), [
+      { v: 1, seq: 1, at: Date.parse(moment(10)), kind: "init", agent: "codex" },
+      { v: 1, seq: 2, at: Date.parse(moment(13)), kind: "turn" },
+      { v: 1, seq: 3, at: Date.parse(moment(15)), kind: "turn" },
+      { v: 1, seq: 4, at: Date.parse(moment(16)), kind: "turn" },
+    ]);
+    const cleanResult = f.run([
+      "scorecard", "cockpit-v6",
+      "--session", main,
+      "--record", "eng-1", "--record", "eng-2", "--record", "zero-say", "--record", "turn-only",
+    ]);
+    assert.equal(cleanResult.status, 0, cleanResult.stderr);
+    const cleanCard = JSON.parse(cleanResult.stdout);
+    assert.deepEqual(cleanCard.cockpit.totals, {
+      value: { freshInput: 1330, output: 200, cachedReplay: 1890, input: 3220, turns: 10 },
+      reason: null,
+      complete: true,
+      anomalies: [],
+    });
+    assert.equal(cleanCard.cockpit.totals.value.freshInput + cleanCard.cockpit.totals.value.cachedReplay, cleanCard.cockpit.totals.value.input);
+    for (const seat of cleanCard.cockpit.seats) {
+      assert.equal(seat.usage.value.freshInput + seat.usage.value.cachedReplay, seat.usage.value.input);
+    }
+    assert.deepEqual(cleanCard.cockpit.seats.map((seat: Record<string, unknown>) => ({
+      role: seat.role, framework: seat.framework, model: seat.model, effort: seat.effort,
+      runs: seat.runs, activeMinutes: seat.activeMinutes, medianFirstEditMinutes: seat.medianFirstEditMinutes,
+      usage: seat.usage,
+    })), [
+      {
+        role: "design", framework: "agy", model: "gemini-4-carbon-high", effort: "high",
+        runs: 1, activeMinutes: 4, medianFirstEditMinutes: null,
+        usage: value({ freshInput: 600, output: 50, cachedReplay: 600, input: 1200, turns: 2 }),
+      },
+      {
+        role: "engineering", framework: "agy", model: "gemini-4-carbon-high", effort: "high",
+        runs: 2, activeMinutes: 15, medianFirstEditMinutes: 4,
+        usage: value({ freshInput: 500, output: 100, cachedReplay: 1000, input: 1500, turns: 5 }),
+      },
+      {
+        role: "review", framework: "codex", model: "gpt-5.4", effort: "xhigh",
+        runs: 1, activeMinutes: 6, medianFirstEditMinutes: null,
+        usage: value({ freshInput: 50, output: 25, cachedReplay: 250, input: 300, turns: 3 }),
+      },
+      {
+        role: "research", framework: "claude", model: "claude-opus-4-7", effort: "high",
+        runs: 1, activeMinutes: 3, medianFirstEditMinutes: null,
+        usage: value({ freshInput: 100, output: 15, cachedReplay: 20, input: 120, turns: 0 }),
+      },
+      {
+        role: "subagent", framework: "agy", model: "gemini-4-carbon-flash", effort: "low",
+        runs: 1, activeMinutes: 1, medianFirstEditMinutes: null,
+        usage: value({ freshInput: 80, output: 10, cachedReplay: 20, input: 100, turns: 0 }),
+      },
+    ]);
+    f.write(join(f.records, "legacy-only.json"), JSON.stringify({
+      v: 1, framework: "codex", seat: "engineering", permission: "workspace-write",
+      model: "gpt-5.4", effort: "medium",
+      success: true, usage: { input: 90, cached: 40, output: 8 }, started: moment(20), at: moment(22), exit: 0,
+    }));
+    f.write(join(f.records, "broken-eng.json"), JSON.stringify({
+      v: 1, framework: "agy", seat: "engineering", permission: "workspace-write",
+      actualModel: "gemini-4-carbon-high", actualEffort: "high",
+      success: false, usage: null, started: moment(22), at: moment(24), exit: 1,
+    }));
+    const degradedResult = f.run([
+      "scorecard", "cockpit-v6",
+      "--session", main,
+      "--record", "legacy-only", "--record", "broken-eng",
+    ]);
+    assert.equal(degradedResult.status, 0, degradedResult.stderr);
+    const degradedCard = JSON.parse(degradedResult.stdout);
+    assert.equal(degradedCard.cockpit.totals.complete, false);
+    assert.equal(degradedCard.cockpit.totals.value.turns, null);
+    assert.equal(degradedCard.cockpit.totals.value.input, 3310);
+    assert.equal(degradedCard.cockpit.totals.value.freshInput + degradedCard.cockpit.totals.value.cachedReplay, 3310);
+    assert.deepEqual(degradedCard.cockpit.totals.anomalies.map((item: { source: string }) => item.source), ["broken-eng"]);
+    const legacySeat = degradedCard.cockpit.seats.find((seat: { framework: string; role: string }) => seat.role === "engineering" && seat.framework === "codex");
+    assert.equal(legacySeat.usage.value.turns, null);
+    assert.equal(legacySeat.medianFirstEditMinutes, null);
+    const agyEngSeat = degradedCard.cockpit.seats.find((seat: { framework: string; role: string }) => seat.role === "engineering" && seat.framework === "agy");
+    assert.equal(agyEngSeat.runs, 3);
+    assert.equal(agyEngSeat.complete, false);
+    assert.equal(agyEngSeat.anomalies.length, 1);
+    const help = f.run(["scorecard", "--help"]);
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /cockpit/);
+    assert.match(help.stdout, /freshInput/);
+    assert.match(help.stdout, /cachedReplay/);
+    assert.match(help.stdout, /medianFirstEditMinutes/);
+  } finally { f.cleanup(); }
+});
+
+test("cutoffAt 之后启动的子代理即使已在磁盘生成空文件也在入队前跳过", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const main = agyFile(f, "cutoff-parent");
+    const activeChild = agyFile(f, "cutoff-active-child");
+    const postCutoffEmpty = agyFile(f, "cutoff-empty-child");
+    f.lines(main, [
+      agyUser(0, 0),
+      agyStep(1, 1, { model: "gemini-4-carbon-high", effort: "high", tool_calls: [{ name: "invoke_subagent", args: {} }] }),
+      { type: "GENERIC", source: "MODEL", step_index: 2, created_at: moment(2), content: '{"conversationId":"cutoff-active-child"}' },
+      agyStep(5, 3, { model: "gemini-4-carbon-high", effort: "high" }),
+      agyStep(31, 4, { model: "gemini-4-carbon-high", effort: "high", tool_calls: [{ name: "invoke_subagent", args: { conversationId: "cutoff-empty-child" } }] }),
+    ]);
+    f.lines(activeChild, [agyUser(2, 0), agyStep(3, 1, { model: "gemini-4-carbon-flash", effort: "low" })]);
+    f.write(postCutoffEmpty, "");
+    const result = f.run(["scorecard", "cutoff-skip-empty", "--session", main, "--cutoff-at", moment(30)]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.deepEqual(card.subagentAnomalies, []);
+    assert.deepEqual(card.subagents.map((item: { session: string }) => item.session), ["agy:cutoff-active-child"]);
+    assert.deepEqual(card.usage.subagents.value, tokens(30, 20, 3));
+    assert.equal(card.cockpit.totals.complete, true);
   } finally { f.cleanup(); }
 });

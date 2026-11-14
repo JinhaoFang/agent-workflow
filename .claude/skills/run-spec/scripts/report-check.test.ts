@@ -2,7 +2,8 @@
  * report-check 的 CLI 测试：真实临时 git 仓库、入库 HTML 样本、实际 Chromium。
  * 从命令行核对四项结果、退出码、固定 360 的量法、分段 PNG 和临时目录清理；
  * 核对启动首行包含浏览器 PID 和临时用户目录绝对路径，成功、检查失败及启动失败后该目录均已删除。
- * 长页覆盖按序分段、每段不高于视口、手机展开折叠和延迟重排、清理后保留全部截图。
+ * 长页覆盖按序分段、每段不高于视口、手机展开折叠和延迟重排、清理后保留全部截图；
+ * 多页签样本覆盖桌面 [role="tab"] 巡检与恢复初始态、切换抛错、非默认页签时间线溢出及手机解除隐藏面板。
  * 延迟溢出样本覆盖视口切换后 150 毫秒才出现的窄屏失败；分段 PNG 共用一处断言。
  * 另测时间线溢出/缺失、路径优先级、Playwright 缓存/PATH 查找、参数和启动失败。
  * 不访问 GitHub；隔离 HOME、缓存和 PATH 证明缺少 Chromium 时明确以 2 退出。
@@ -279,3 +280,89 @@ for (const absent of [false, true]) {
     }
   });
 }
+
+test("report-check 多页签驾驶舱正常样本巡检恢复初始态，360px 展开全部面板分段通过", { skip }, () => {
+  const repo = repository();
+  try {
+    copyFileSync(fixture("tabs-ok"), repo.input);
+    const directory = join(repo.root, "多页签正常截图");
+    const result = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", directory], {
+      PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assertBrowserSite(result.stdout, repo.temporary);
+    assert.equal(results(result.stdout).length, 4, result.stdout);
+    assert.ok(results(result.stdout).every((item) => item.passed), result.stdout);
+    assert.match(result.stdout, /已展开折叠=1\/1/);
+    assertScreenshots(result.stdout, directory, [
+      ["light-1280", 1280, [800]],
+      ["dark-1280", 1280, [800]],
+      ["mobile-360", 360, [800, 800, undefined]],
+    ]);
+    assert.deepEqual(readdirSync(repo.temporary), []);
+  } finally {
+    rmSync(repo.root, { recursive: true, force: true });
+  }
+});
+
+test("report-check 隐藏 tabpanel 含宽元素时在 360px 仅窄屏检查失败", { skip }, () => {
+  const repo = repository();
+  try {
+    copyFileSync(fixture("tabs-hidden-overflow"), repo.input);
+    const directory = join(repo.root, "隐藏面板溢出截图");
+    const result = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", directory], {
+      PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+    });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assertBrowserSite(result.stdout, repo.temporary);
+    assert.deepEqual(results(result.stdout).filter((item) => !item.passed).map((item) => item.name), ["窄屏不横向滚动"]);
+    const sizes = /scrollWidth=(\d+)，设定宽度=360/.exec(result.stdout);
+    assert.ok(sizes && Number(sizes[1]) >= 620, result.stdout);
+    assertScreenshots(result.stdout, directory, [
+      ["light-1280", 1280, [800]],
+      ["dark-1280", 1280, [800]],
+      ["mobile-360", 360, [800, undefined]],
+    ]);
+    assert.deepEqual(readdirSync(repo.temporary), []);
+  } finally {
+    rmSync(repo.root, { recursive: true, force: true });
+  }
+});
+
+test("report-check 点击非默认页签抛错或时间线溢出时仅对应检查失败", { skip }, () => {
+  const repo = repository();
+  try {
+    copyFileSync(fixture("tabs-error"), repo.input);
+    const errorOut = join(repo.root, "页签报错截图");
+    const errorResult = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", errorOut], {
+      PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+    });
+    assert.equal(errorResult.status, 1, errorResult.stdout + errorResult.stderr);
+    assertBrowserSite(errorResult.stdout, repo.temporary);
+    assert.deepEqual(results(errorResult.stdout).filter((item) => !item.passed).map((item) => item.name), ["控制台零报错"]);
+    assert.match(errorResult.stdout, /console\.error=1，未捕获异常=1/);
+    assert.match(errorResult.stdout, /页签切换控制台错误/);
+    assert.match(errorResult.stdout, /页签切换未捕获异常/);
+    assertScreenshots(errorResult.stdout, errorOut, [
+      ["light-1280", 1280, [800]],
+      ["dark-1280", 1280, [800]],
+      ["mobile-360", 360, [800]],
+    ]);
+    const timelineHtml = readFileSync(fixture("tabs-ok"), "utf8").replace(
+      '<section id="panel-2" role="tabpanel" class="panel-mid" hidden><h2>耗时与模型</h2><p>第二视角内容。</p></section>',
+      '<section id="panel-2" role="tabpanel" class="panel-mid" hidden><div data-slot="timeline" style="overflow-x:auto"><div style="width:2000px;height:20px"></div></div></section>',
+    );
+    writeFileSync(repo.input, timelineHtml);
+    const timelineOut = join(repo.root, "页签时间线溢出截图");
+    const timelineResult = repo.run(["report-check", repo.input, "--chromium", browser!, "--out", timelineOut], {
+      PATH: `${repo.bin}${delimiter}${process.env.PATH}`,
+    });
+    assert.equal(timelineResult.status, 1, timelineResult.stdout + timelineResult.stderr);
+    assertBrowserSite(timelineResult.stdout, repo.temporary);
+    assert.deepEqual(results(timelineResult.stdout).filter((item) => !item.passed).map((item) => item.name), ["时间线不滚动"]);
+    assert.match(timelineResult.stdout, /"scrollWidth":2000/);
+    assert.deepEqual(readdirSync(repo.temporary), []);
+  } finally {
+    rmSync(repo.root, { recursive: true, force: true });
+  }
+});

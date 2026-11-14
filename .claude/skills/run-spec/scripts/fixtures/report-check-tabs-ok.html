@@ -1,0 +1,76 @@
+<!doctype html>
+<!-- 多页签驾驶舱正常样本：双栏响应式网格、页签切换、全展开与隐藏面板；report-check 应四项通过且恢复初始页签。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多页签驾驶舱正常样本</title>
+<style>
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.6 system-ui, sans-serif; }
+.layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; max-width: 1180px; margin: 0 auto; padding: 16px; }
+.layout > * { min-width: 0; }
+@media (max-width: 960px) {
+  .layout { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+}
+aside { padding: 12px; background: rgba(60, 90, 140, 0.12); border-radius: 8px; }
+[data-slot="timeline"] { width: 100%; height: 40px; background: #3987e5; border-radius: 6px; margin-bottom: 12px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+[role="tablist"] { display: flex; flex-wrap: wrap; gap: 6px; }
+button { font: inherit; padding: 4px 10px; cursor: pointer; }
+[role="tabpanel"] { padding: 12px; background: rgba(80, 120, 80, 0.12); border-radius: 8px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.panel-short { height: 240px; }
+.panel-mid { height: 480px; }
+.panel-tall { height: 960px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <h1>驾驶舱导览</h1>
+    <button type="button" data-action="expand-all" aria-pressed="false">切换全展开长卷</button>
+    <details><summary>角色说明</summary><p>四元组归因明细。</p></details>
+  </aside>
+  <main>
+    <div data-slot="timeline" aria-label="时间线"></div>
+    <div class="toolbar">
+      <div role="tablist" aria-label="视角切换">
+        <button type="button" role="tab" aria-selected="true" data-target="panel-1">改动与交付</button>
+        <button type="button" role="tab" aria-selected="false" data-target="panel-2">耗时与模型</button>
+        <button type="button" role="tab" aria-selected="false" data-target="panel-3">逐单协作流</button>
+      </div>
+    </div>
+    <section id="panel-1" role="tabpanel" class="panel-short"><h2>改动与交付</h2><p>默认首屏单段高度。</p></section>
+    <section id="panel-2" role="tabpanel" class="panel-mid" hidden><h2>耗时与模型</h2><p>第二视角内容。</p></section>
+    <section id="panel-3" role="tabpanel" class="panel-tall" hidden><h2>逐单协作流</h2><p>第三视角高面板，未恢复初始态会使深色桌面变多段。</p></section>
+  </main>
+</div>
+<script>
+(() => {
+  "use strict";
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  const panels = [...document.querySelectorAll('[role="tabpanel"]')];
+  const expandButton = document.querySelector('[data-action="expand-all"]');
+  const selectTab = (targetId) => {
+    expandButton.setAttribute("aria-pressed", "false");
+    for (const tab of tabs) tab.setAttribute("aria-selected", String(tab.dataset.target === targetId));
+    for (const panel of panels) panel.hidden = panel.id !== targetId;
+  };
+  for (const tab of tabs) {
+    tab.addEventListener("click", () => selectTab(tab.dataset.target));
+  }
+  expandButton.addEventListener("click", () => {
+    const next = expandButton.getAttribute("aria-pressed") !== "true";
+    expandButton.setAttribute("aria-pressed", String(next));
+    if (next) {
+      for (const panel of panels) panel.hidden = false;
+    } else {
+      const current = tabs.find((tab) => tab.getAttribute("aria-selected") === "true") || tabs[0];
+      selectTab(current.dataset.target);
+    }
+  });
+})();
+</script>
+</body>
+</html>

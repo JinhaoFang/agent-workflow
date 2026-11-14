@@ -1,14 +1,15 @@
 /**
  * 四框架会话只读采集：按闭区间切片，区分主会话与原生子代理，统一四元组和用量。
  * agy 只读 transcript.jsonl，不猜全局设置；模型/强度可显式补录并标明来源。
- * 同会话多文件先按事件身份合并，再关联子代理、确定默认起点和裁剪时间窗。
- * Codex 累计快照扣除窗前基线，其余按回复去重相加；未知用量保留 null。
+ * 同会话多文件先按事件身份合并，再关联子代理、确定默认起点和裁剪时间窗；
+ * 明确晚于 cutoffAt 启动的子代理在入队前跳过，同时输出会话活跃时段与工具轮数供驾驶舱聚合。
+ * Codex 累计快照扣除窗前基线，其余按回复去重相加；未知用量与轮数保留 null。
  * 活跃间隔最多十分钟，确认等待超过十分钟且不超过四十五分钟，更长单列停工。
  */
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { claudeTokens, codexSessions, inWindow, jsonLines, lane, minutes, read, sessionTokens, span, sumTokens, timestamp, type Json, type Span, type TimeWindow, type Tokens } from "./scorecard-records.ts";
+import { claudeTokens, codexSessions, inWindow, jsonLines, lane, minutes, read, sessionTokens, span, sumTokens, timestamp, type CodexSession, type Json, type Span, type TimeWindow, type Tokens } from "./scorecard-records.ts";
 
 const analyze = (events: Json[]) => {
   const content = (event: Json): Json[] => typeof event.message?.content === "string" ? [{ type: "text", text: event.message.content }] : event.message?.content ?? [];
@@ -111,6 +112,34 @@ export const sessionSettings = (rows: Json[], framework: string, window: TimeWin
 };
 
 type SessionFile = { path: string; rows: Json[]; framework: string; session: string };
+export type SessionMetric = { spans: Span[] | null; turns: number | null };
+
+const codexToolTypes = ["function_call", "custom_tool_call", "local_shell_call", "web_search_call", "mcp_tool_call"];
+const subagentSpans = (times: (string | null)[]): Span[] | null => {
+  const valid = times.filter((at): at is string => at !== null).sort();
+  return valid.length >= 2 ? [span(valid[0], valid.at(-1)!)!] : null;
+};
+const countEventTurns = (events: Json[], sidechain: boolean): number => {
+  const ids = new Set<string>();
+  for (const event of events) {
+    if (event.type !== "assistant" || Boolean(event.isSidechain) !== sidechain || event.isMeta) continue;
+    const parts = typeof event.message?.content === "string" ? [] : event.message?.content ?? [];
+    parts.forEach((part: Json, index: number) => {
+      if (part.type === "tool_use") ids.add(`${event.sessionId ?? event.sourcePath}:${part.id ?? `${event.message?.id ?? event.uuid}:${index}`}`);
+    });
+  }
+  return ids.size;
+};
+export const codexSessionMetrics = (session: CodexSession, window: TimeWindow = {}): SessionMetric => {
+  const selected = session.events.filter((row) => inWindow(row.timestamp, window));
+  const responseItems = selected.filter((row) => row.type === "response_item");
+  const ids = new Set<string>();
+  responseItems.forEach((row, index) => {
+    const item = row.payload;
+    if (codexToolTypes.includes(item?.type)) ids.add(String(item.call_id ?? item.id ?? index));
+  });
+  return { turns: responseItems.length ? ids.size : null, spans: subagentSpans(selected.map((row) => timestamp(row.timestamp))) };
+};
 
 export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
   const byEvent = new Map<string, Json>();
@@ -120,6 +149,7 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
   const childPaths = new Set<string>();
   const childReferences = new Map<string, (string | null)[]>();
   const childFailures: string[] = [];
+  const sessionMetrics = new Map<string, SessionMetric>();
   const beforeCutoff = (at: string | null) => !options.cutoffAt || !at || at <= options.cutoffAt;
   const queue = paths.map(sessionPath);
   let codexIndex: ReturnType<typeof codexSessions> | undefined;
@@ -141,6 +171,7 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
     const session = `${framework}:${codex?.payload?.id ?? pi?.id ?? rows.find((event) => event.sessionId)?.sessionId ?? (framework === "agy" && basename(path) === "transcript.jsonl" ? basename(dirname(dirname(dirname(path)))) : path)}`;
     loaded.set(path, { path, rows, framework, session });
     const addChild = (file: string, at: string | null) => {
+      if (!beforeCutoff(at)) return;
       childPaths.add(file);
       childReferences.set(file, [...(childReferences.get(file) ?? []), at]);
       if (!queue.includes(file)) queue.push(file);
@@ -219,10 +250,11 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
       if (item?.type === "message" && ["user", "assistant"].includes(item.role)) {
         const parts = content(item.content);
         events.push({ ...base, type: item.role, isSynthetic: item.role === "user" && injected(parts), message: { content: parts } });
-      } else if (["function_call", "custom_tool_call"].includes(item?.type)) {
-        calls.set(item.call_id, item.name);
+      } else if (codexToolTypes.includes(item?.type)) {
+        const callId = item.call_id ?? item.id ?? key;
+        calls.set(callId, item.name ?? item.type);
         const question = /(?:^|\.)request_user_input(?:_async)?$/.test(item.name ?? "");
-        events.push({ ...base, type: "assistant", message: { content: [{ type: "tool_use", id: item.call_id, name: question ? "AskUserQuestion" : item.name }] } });
+        events.push({ ...base, type: "assistant", message: { content: [{ type: "tool_use", id: callId, name: question ? "AskUserQuestion" : item.name ?? item.type }] } });
       } else if (["function_call_output", "custom_tool_call_output"].includes(item?.type)) {
         let answered = false;
         if (/(?:^|\.)request_user_input$/.test(calls.get(item.call_id) ?? "")) {
@@ -260,13 +292,23 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
         const childEvents = events.filter((event) => event.isSidechain && (event.agentId ?? event.sessionId) === childId);
         const childModel = childEvents.map((event) => event.message?.model).filter((model) => typeof model === "string").at(-1) ?? null;
         const childEffort = childEvents.map((event) => event.effort ?? event.perTurnEffort).filter((effort) => typeof effort === "string").at(-1) ?? null;
-        details.push({ session: `${session}:sidechain:${childId}`, path, child: true, ...attribution("subagent", framework, { actualModel: childModel, actualEffort: childEffort }), sources: { actualModel: childModel ? "session" : null, actualEffort: childEffort ? "session" : null }, usage: analyze(childEvents).childUsage });
+        const sidechainKey = `${session}:sidechain:${childId}`;
+        sessionMetrics.set(sidechainKey, {
+          turns: childEvents.some((event) => event.type === "assistant" && !event.isMeta) ? countEventTurns(childEvents, true) : null,
+          spans: subagentSpans(childEvents.filter((event) => !event.isMeta).map((event) => timestamp(event.timestamp))),
+        });
+        details.push({ session: sidechainKey, path, child: true, ...attribution("subagent", framework, { actualModel: childModel, actualEffort: childEffort }), sources: { actualModel: childModel ? "session" : null, actualEffort: childEffort ? "session" : null }, usage: analyze(childEvents).childUsage });
       }
     }
     if (framework !== "claude" || data.child || result.hasMain || rows.some((row) => !row.isSidechain && ["user", "assistant"].includes(row.type))) {
       if (!data.child && !result.hasMain) failures.push(`${path} 时间窗内缺少可解析的主会话事件`);
       const model = actual.model ?? (!data.child ? options.mainModel : null) ?? null;
       const effort = actual.effort ?? (!data.child ? options.mainEffort : null) ?? null;
+      const hasDetails = framework === "codex" ? selected.some((row) => row.type === "response_item") : data.child ? events.some((event) => !event.isMeta && ["user", "assistant"].includes(event.type)) : result.hasMain;
+      sessionMetrics.set(session, {
+        turns: hasDetails ? countEventTurns(events, data.child) : null,
+        spans: data.child ? subagentSpans((framework === "codex" ? selected : events.filter((event) => !event.isMeta)).map((row) => timestamp(row.created_at ?? row.timestamp))) : (result.hasMain ? result.director.spans : null),
+      });
       details.push({ session, path, ...attribution(data.child ? "subagent" : "design", framework, { actualModel: model, actualEffort: effort }),
         sources: { actualModel: actual.model ? "session" : model ? "manual" : null, actualEffort: actual.effort ? "session" : effort ? "manual" : null },
         usage: data.child ? result.childUsage : result.mainUsage, child: data.child, startedAt: result.startedAt, cutoffAt: result.cutoffAt });
@@ -278,7 +320,7 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
   const children = details.filter((item) => item.child);
   const missingMainUsage = mainDetails.some((item) => item.usage === null);
   const usageReason = [...frameworks].map((framework) => ({ claude: "Claude assistant.message.usage", codex: "Codex 累计 token_count 或 thread_token_usage（扣除窗前基线）", pi: "pi assistant.message.usage", agy: "agy PLANNER_RESPONSE input_tokens + cache_read_tokens、output_tokens" })[framework]).join("、");
-  return { ...result, startedAt, sessions: mainDetails, children, childFailures, frameworks: [...frameworks].sort(), hasMain: result.hasMain && !failures.length,
+  return { ...result, startedAt, sessions: mainDetails, children, childFailures, sessionMetrics, frameworks: [...frameworks].sort(), hasMain: result.hasMain && !failures.length,
     hasChildren: result.hasChildren || childFailures.length > 0, childUsage: childFailures.length || children.some((item) => item.usage === null) ? null : result.childUsage,
     mainUsage: failures.length || missingMainUsage ? null : result.mainUsage,
     usageReason: failures.join("；") || (paths.length ? `主会话缺少完整有效用量：${usageReason || "未知格式"}` : "未提供 --session 主会话"),

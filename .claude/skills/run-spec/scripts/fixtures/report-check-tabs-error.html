@@ -1,0 +1,42 @@
+<!doctype html>
+<!-- 页签点击异常样本：初始加载无错，点击第二个页签触发 console.error 与未捕获异常；只有控制台检查应失败。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>页签点击异常样本</title>
+<style>
+:root { color-scheme: light dark; }
+body { margin: 0; font: 16px/1.6 system-ui, sans-serif; }
+main { max-width: 1080px; margin: auto; padding: 16px; }
+[data-slot="timeline"] { height: 40px; background: #3987e5; }
+</style>
+</head>
+<body><main>
+<h1>页签点击异常</h1>
+<div data-slot="timeline" aria-label="时间线"></div>
+<div role="tablist" aria-label="页签">
+  <button type="button" role="tab" aria-selected="true" data-target="ok-panel">概览</button>
+  <button type="button" role="tab" aria-selected="false" data-target="bad-panel">损坏视角</button>
+</div>
+<section id="ok-panel" role="tabpanel"><p>初始概览正常。</p></section>
+<section id="bad-panel" role="tabpanel" hidden><p>点击此页签将抛出运行期错误。</p></section>
+<details><summary>明细</summary><p>明细正常。</p></details>
+<script>
+(() => {
+  "use strict";
+  for (const tab of document.querySelectorAll('[role="tab"]')) {
+    tab.addEventListener("click", () => {
+      const target = tab.dataset.target;
+      for (const item of document.querySelectorAll('[role="tab"]')) item.setAttribute("aria-selected", String(item === tab));
+      for (const panel of document.querySelectorAll('[role="tabpanel"]')) panel.hidden = panel.id !== target;
+      if (target === "bad-panel") {
+        console.error("页签切换控制台错误");
+        throw new Error("页签切换未捕获异常");
+      }
+    });
+  }
+})();
+</script>
+</main></body>
+</html>

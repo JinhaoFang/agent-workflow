@@ -2,19 +2,175 @@
  * scorecard <spec> 从只读本机记录生成过程数据 JSON；--session 可重复传四框架会话，
  * JSONL，--out 写文件，--post 用稳定标记创建或更新折叠评论。cleanup 共用归属
  * 和截点检查；只有显式 --no-scorecard 才绕过。所有缺数以 value:null 和中文
- * reason 表示，missing 汇总字段路径。数据口径和兼容约定完整写在 --help。
- * Claude 用户输入排除压缩摘要，优先认 origin.kind，并关联 AskUserQuestion 问答。
+ * reason 表示，missing 汇总字段路径。保留 version:2 既有字段不变，并新增顶层
+ * cockpit 预计算全局与完整四元组席位的三段式 Token、工具轮数与耗时指标。
+ * 数据口径和兼容约定完整写在 --help。Claude 用户输入排除压缩摘要，优先认 origin.kind，并关联 AskUserQuestion 问答。
  */
-import { attribution, firstWrite, mainSessions, sessionPath, sessionSettings, type SessionOptions } from "./scorecard-sessions.ts";
+import { attribution, codexSessionMetrics, firstWrite, mainSessions, sessionPath, sessionSettings, type SessionOptions } from "./scorecard-sessions.ts";
 import { dispatchSummary } from "./dispatch/summary.ts";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { CheckFailure, entry, gh, git, github, specIdentifier, type Command, type SpecId, type Values } from "./shared.ts";
-import { claudeTokens, codexSessions, codexTokens, inWindow, jsonLines, lane, loadSession, mainRoot, minutes, read, sessionTokens, sourceSnapshot, registerRecordBindings, span, sumTokens, timestamp, type CodexSession, type Json, type Span, type Tokens } from "./scorecard-records.ts";
+import { claudeTokens, codexSessions, codexTokens, inWindow, jsonLines, lane, loadSession, mainRoot, minutes, read, sessionTokens, sourceSnapshot, registerRecordBindings, span, sumTokens, timestamp, type CodexSession, type Json, type Span, type TimeWindow, type Tokens } from "./scorecard-records.ts";
 
 type Metric<T> = { value: T | null; reason: string | null };
 type Missing = { field: string; reason: string };
+type CockpitUsage = { freshInput: number; output: number; cachedReplay: number; input: number; turns: number | null };
+type CockpitAnomaly = { source: string; reason: string };
+type CockpitRun = {
+  source: string;
+  role: string;
+  seat: string;
+  agent: string;
+  framework: string;
+  configuredModel: string | null;
+  actualModel: string | null;
+  configuredEffort: string | null;
+  actualEffort: string | null;
+  spans: Span[] | null;
+  durationMinutes: number | null;
+  firstEditMinutes: number | null;
+  tokens: Tokens | null;
+  turns: number | null;
+  usageReason: string | null;
+  anomalyReason: string | null;
+};
+const toCockpitUsage = (tokens: Tokens, turns: number | null): CockpitUsage => ({
+  freshInput: tokens.inputTokens - tokens.cachedInputTokens,
+  output: tokens.outputTokens,
+  cachedReplay: tokens.cachedInputTokens,
+  input: tokens.inputTokens,
+  turns,
+});
+const median = (values: number[]): number | null => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+};
+const dispatchTurns = (
+  unifiedRows: Json[],
+  rawRows: Json[],
+  savedRows: Json[],
+  transcriptRows: Json[],
+  framework: string,
+  linked: CodexSession[],
+  window: TimeWindow,
+): number | null => {
+  const filterOptional = (rows: Json[]) => rows.filter((row) => {
+    const at = timestamp(row.created_at ?? row.timestamp ?? row._at ?? row.at);
+    return !at || inWindow(at, window);
+  });
+  if (unifiedRows.length) {
+    const byId = new Map<string, { start: number; end: number; other: number }>();
+    let unkeyedStart = 0;
+    let unkeyedEnd = 0;
+    let unkeyedOther = 0;
+    for (const row of unifiedRows) {
+      if (row.kind !== "tool" && row.kind !== "cmd") continue;
+      if (typeof row.id === "string" && row.id) {
+        const key = `${row.kind}:${row.id}`;
+        const item = byId.get(key) ?? { start: 0, end: 0, other: 0 };
+        if (row.phase === "start") item.start++;
+        else if (row.phase === "end") item.end++;
+        else item.other++;
+        byId.set(key, item);
+      } else if (row.phase === "start") unkeyedStart++;
+      else if (row.phase === "end") unkeyedEnd++;
+      else unkeyedOther++;
+    }
+    const toolCount = [...byId.values()].reduce((sum, item) => sum + Math.max(item.start, item.end, item.other), 0)
+      + Math.max(unkeyedStart, unkeyedEnd) + unkeyedOther;
+    if (toolCount > 0) return toolCount;
+    const contentCount = unifiedRows.filter((row) => ["say", "think", "file", "plan"].includes(row.kind)).length;
+    if (contentCount > 0) return 0;
+    const turnCount = unifiedRows.filter((row) => row.kind === "turn").length;
+    if (turnCount > 0) return turnCount;
+  }
+  const filteredRaw = filterOptional(rawRows);
+  if (framework === "codex") {
+    const rawToolIds = new Set<string>();
+    filteredRaw.forEach((row, index) => {
+      if (["item.started", "item.completed"].includes(row.type) && ["command_execution", "mcp_tool_call", "web_search"].includes(row.item?.type))
+        rawToolIds.add(String(row.item?.id ?? index));
+    });
+    if (rawToolIds.size > 0) return rawToolIds.size;
+    if (filteredRaw.some((row) => row.type === "item.completed" && row.item?.type === "agent_message")) return 0;
+    const rawTurnCount = filteredRaw.filter((row) => row.type === "turn.completed").length;
+    if (rawTurnCount > 0) return rawTurnCount;
+    if (linked.length) {
+      const list = linked.map((session) => codexSessionMetrics(session, window).turns);
+      return list.every((value) => value !== null) ? list.reduce((sum, value) => sum + value!, 0) : null;
+    }
+    return null;
+  }
+  if (framework === "agy") {
+    const source = transcriptRows.length ? transcriptRows.filter((row) => inWindow(row.created_at ?? row.timestamp, window)) : filteredRaw;
+    const stepCalls = new Map<string, number>();
+    let sawStep = false;
+    source.forEach((row, index) => {
+      if (row.type === "USER_INPUT") sawStep = true;
+      if (row.type === "PLANNER_RESPONSE") {
+        sawStep = true;
+        const key = row.step_index !== undefined ? String(row.step_index) : `row:${index}`;
+        stepCalls.set(key, Math.max(stepCalls.get(key) ?? 0, Array.isArray(row.tool_calls) ? row.tool_calls.length : 0));
+      }
+    });
+    if (sawStep) return [...stepCalls.values()].reduce((sum, count) => sum + count, 0);
+    const resultRow = filteredRaw.filter((row) => row.type === "result" && Number.isSafeInteger(row.num_turns) && row.num_turns >= 0).at(-1);
+    return resultRow ? resultRow.num_turns : null;
+  }
+  if (framework === "pi") {
+    if (savedRows.length) {
+      const assistantRows = filterOptional(savedRows).filter((row) => row.type === "message" && row.message?.role === "assistant");
+      if (assistantRows.length) {
+        const byMessage = new Map<string, number>();
+        assistantRows.forEach((row, index) => {
+          const key = String(row.id ?? index);
+          const count = (Array.isArray(row.message?.content) ? row.message.content : []).filter((part: Json) => part.type === "toolCall").length;
+          byMessage.set(key, Math.max(byMessage.get(key) ?? 0, count));
+        });
+        return [...byMessage.values()].reduce((sum, count) => sum + count, 0);
+      }
+    }
+    const execIds = new Set<string>();
+    let unkeyedExec = 0;
+    for (const row of filteredRaw) if (row.type === "tool_execution_start") {
+      if (typeof row.toolCallId === "string" && row.toolCallId) execIds.add(row.toolCallId);
+      else unkeyedExec++;
+    }
+    if (execIds.size + unkeyedExec > 0) return execIds.size + unkeyedExec;
+    const messageRows = filteredRaw.filter((row) => ["message", "message_end"].includes(row.type) && row.message?.role === "assistant");
+    if (messageRows.length) {
+      const byMessage = new Map<string, number>();
+      messageRows.forEach((row, index) => {
+        const key = String(row.id ?? row.message?.id ?? index);
+        const count = (Array.isArray(row.message?.content) ? row.message.content : []).filter((part: Json) => part.type === "toolCall").length;
+        byMessage.set(key, Math.max(byMessage.get(key) ?? 0, count));
+      });
+      return [...byMessage.values()].reduce((sum, count) => sum + count, 0);
+    }
+    return null;
+  }
+  if (framework === "claude") {
+    const assistantRows = filteredRaw.filter((row) => row.type === "assistant" && row.message);
+    if (assistantRows.length) {
+      const callIds = new Set<string>();
+      assistantRows.forEach((row, rowIndex) => {
+        const messageKey = String(row.message?.id ?? row.uuid ?? `row:${rowIndex}`);
+        const parts = Array.isArray(row.message?.content) ? row.message.content : [];
+        parts.forEach((part: Json, partIndex: number) => {
+          if (part.type === "tool_use") callIds.add(part.id ? String(part.id) : `${messageKey}:${partIndex}:${part.name ?? ""}`);
+        });
+      });
+      return callIds.size;
+    }
+    const resultRow = filteredRaw.filter((row) => row.type === "result" && Number.isSafeInteger(row.num_turns) && row.num_turns >= 0).at(-1);
+    return resultRow ? resultRow.num_turns : null;
+  }
+  return null;
+};
 const marker = "<!-- run-spec-scorecard:v2 -->";
 const marked = (body: unknown): body is string => typeof body === "string" && /^<!-- run-spec-scorecard:v[12] -->/.test(body);
 const comments = (endpoint: string): Json[] => JSON.parse(gh(["api", "--method", "GET", `${endpoint}/comments`, "--paginate", "--slurp"])).flat();
@@ -135,19 +291,20 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     const tokens = normalized ? codexTokens(metadata.usage ? { input_tokens: metadata.usage.input, cached_input_tokens: metadata.usage.cached, output_tokens: metadata.usage.output } : undefined) : linked.length && usages.every((value) => value !== null) ? sumTokens(usages as Tokens[]) : null;
     const interval = span(item.start, item.end);
     const readOnly = metadata.permission === "read-only" || ["review", "research", "spec-review", "watch"].includes(seat);
-    let writeRows = [...item.raw];
+    const savedRows: Json[] = [];
     if (framework === "pi") {
-      const savedRows: Json[] = [];
       for (const file of new Set([...item.files.values()].map((file) => join(dirname(file), `${item.name}.pi-sessions`)))) {
         if (existsSync(file)) for (const child of readdirSync(file)) if (child.endsWith(".jsonl")) savedRows.push(...jsonLines(read(join(file, child))));
       }
-      if (savedRows.length) writeRows = savedRows;
     }
     const transcript = metadata.sessionPath ?? metadata.transcriptPath ?? metadata.sessionId ?? metadata.conversationId;
-    if (framework === "agy" && typeof transcript === "string" && existsSync(sessionPath(transcript))) writeRows = jsonLines(read(sessionPath(transcript)));
+    const transcriptRows = framework === "agy" && typeof transcript === "string" && existsSync(sessionPath(transcript)) ? jsonLines(read(sessionPath(transcript))) : [];
+    const writeRows = savedRows.length ? [...savedRows] : transcriptRows.length ? [...transcriptRows] : [...item.raw];
     const unified = read(item.files.get(".events.jsonl") ?? "");
-    writeRows.push(...jsonLines(unified.slice(0, unified.lastIndexOf("\n") + 1)));
+    const unifiedRows = item.ambiguity ? [] : jsonLines(unified.slice(0, unified.lastIndexOf("\n") + 1));
+    writeRows.push(...unifiedRows);
     writeRows.sort((a, b) => (timestamp(a.created_at ?? a.timestamp ?? a._at ?? a.at) ?? "").localeCompare(timestamp(b.created_at ?? b.timestamp ?? b._at ?? b.at) ?? ""));
+    const turns = item.ambiguity ? null : dispatchTurns(unifiedRows, item.raw, savedRows, transcriptRows, framework, linked, { startedAt: item.start, cutoffAt: item.end });
     const edit = readOnly ? undefined : (framework === "codex" ? linked.flatMap((session) => {
       const first = firstEdit({ ...session, events: session.events.filter((event) => inWindow(event.timestamp, { startedAt: item.start, cutoffAt: item.end })) });
       return first ? [first] : [];
@@ -163,6 +320,7 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       minutes: metric(`dispatches.${item.name}.minutes`, interval ? minutes(interval) : null, "派发起止不完整"),
       exitCode: metric(`dispatches.${item.name}.exitCode`, item.exitCode, "派发尚未结束或缺少退出码"),
       usage: metric(`dispatches.${item.name}.usage`, tokens, item.ambiguity ?? (ids.length > 1 ? "同名记录存在多个会话 ID，无法确定派发归属" : summary || framework !== "codex" ? "派发记录缺少完整的统一用量 usage" : "缺少唯一匹配 cwd/会话 ID 的 Codex 会话或完整累计 token_count")),
+      turns,
       overhead: { firstEditAt: editMetric(`overhead.${item.name}.firstEditAt`, edit?.at ?? null, "会话中未找到可识别的首次写改文件事件"),
         minutes: editMetric(`overhead.${item.name}.minutes`, edit && item.start && edit.at >= item.start ? minutes({ start: item.start, end: edit.at }) : null, "缺少派发开始或首次写改文件事件"),
         inputTokens: editMetric(`overhead.${item.name}.inputTokens`, edit?.input ?? null, "首次改文件之前缺少完整用量") } };
@@ -195,10 +353,11 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     return { framework, anomalies: dispatches.filter((item) => item.framework === framework && !span(item.start.value, item.end.value)).map((item) => ({ record: item.record, reason: item.minutes.reason })),
       time: metric(`dispatchLanes.${framework}`, valid.length ? lane(valid) : null, "此框架没有完整的派发起止") };
   });
-  const reviews = existsSync(join(root, ".codex-runs")) ? readdirSync(join(root, ".codex-runs")).filter((name) => new RegExp(`^review-spec-${spec}-[1-9]\\d*\\.json$`).test(name)).map((name) => {
-    const record = JSON.parse(read(join(root, ".codex-runs", name)));
-    return record.spec === spec ? claudeTokens(record.usage) : null;
-  }) : [];
+  const reviewRecords = existsSync(join(root, ".codex-runs")) ? readdirSync(join(root, ".codex-runs")).filter((name) => new RegExp(`^review-spec-${spec}-[1-9]\\d*\\.json$`).test(name)).sort((a, b) => a.localeCompare(b, "en", { numeric: true })).map((name) => ({
+    name,
+    record: JSON.parse(read(join(root, ".codex-runs", name))) as Json,
+  })) : [];
+  const reviews = reviewRecords.map(({ record }) => record.spec === spec ? claudeTokens(record.usage) : null);
   const childUsages = children.map((session) => sessionTokens(session, window));
   const childKnown = children.length > 0 && childUsages.every((usage) => usage !== null);
   const mainMissing = main.reason;
@@ -222,10 +381,141 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     const actual = sessionSettings(session.events, "codex", window);
     return { session: `codex:${session.id}`, ...attribution("subagent", "codex", { actualModel: actual.model, actualEffort: actual.effort }), usage: sessionTokens(session, window) };
   });
+  const cockpitRuns: CockpitRun[] = [];
+  const globalExtraAnomalies: CockpitAnomaly[] = [];
+  if (sessions.length > 0 && !main.hasMain && main.sessions.length === 0) globalExtraAnomalies.push({ source: "mainSession", reason: main.usageReason });
+  for (const item of main.sessions) {
+    const sessionMeta = main.sessionMetrics.get(item.session);
+    const validTokens = main.hasMain ? item.usage as Tokens | null : null;
+    const reason = validTokens ? null : main.usageReason;
+    cockpitRuns.push({
+      source: item.session, role: item.role, seat: item.seat, agent: item.agent, framework: item.framework,
+      configuredModel: item.model, actualModel: item.actualModel, configuredEffort: item.effort, actualEffort: item.actualEffort,
+      spans: sessionMeta?.spans ?? null, durationMinutes: null, firstEditMinutes: null,
+      tokens: validTokens, turns: sessionMeta?.turns ?? null, usageReason: reason, anomalyReason: reason,
+    });
+  }
+  for (const item of dispatches) {
+    const interval = span(item.start.value, item.end.value);
+    const badExit = item.exitCode.value !== 0;
+    const anomalyReason = item.usage.value === null ? item.usage.reason : badExit ? `派发退出码 ${item.exitCode.value ?? "未记录"}` : null;
+    cockpitRuns.push({
+      source: item.record, role: item.identity.role, seat: item.seat, agent: item.identity.agent, framework: item.framework,
+      configuredModel: item.model, actualModel: item.actualModel, configuredEffort: item.effort, actualEffort: item.actualEffort,
+      spans: interval ? [interval] : null, durationMinutes: null, firstEditMinutes: item.overhead.minutes.value,
+      tokens: item.usage.value, turns: item.turns, usageReason: item.usage.reason, anomalyReason,
+    });
+  }
+  for (const { name, record } of reviewRecords) {
+    const validSpec = record.spec === spec;
+    const parsedTokens = validSpec ? claudeTokens(record.usage) : null;
+    const framework = typeof record.framework === "string" && record.framework ? record.framework : "claude";
+    const actualModel = typeof record.actualModel === "string" ? record.actualModel : null;
+    const configuredModel = typeof record.model === "string" ? record.model : null;
+    const actualEffort = typeof record.actualEffort === "string" ? record.actualEffort : null;
+    const configuredEffort = typeof record.effort === "string" ? record.effort : null;
+    const durationMinutes = validSpec && Number.isFinite(record.durationMs) && record.durationMs >= 0 ? record.durationMs / 60000 : null;
+    const reason = parsedTokens ? null : validSpec ? (typeof record.usageUnavailableReason === "string" && record.usageUnavailableReason ? record.usageUnavailableReason : "独立审查 JSON 用量不完整") : "独立审查 JSON 的 spec 编号不匹配";
+    cockpitRuns.push({
+      source: name.slice(0, -5), role: "spec-review", seat: "spec-review", agent: framework, framework,
+      configuredModel, actualModel, configuredEffort, actualEffort,
+      spans: null, durationMinutes, firstEditMinutes: null,
+      tokens: parsedTokens, turns: Number.isSafeInteger(record.turns) && record.turns >= 0 ? record.turns : null,
+      usageReason: reason, anomalyReason: reason,
+    });
+  }
+  for (const item of main.children) {
+    const sessionMeta = main.sessionMetrics.get(item.session);
+    const reason = item.usage ? null : "子代理会话缺少完整有效用量";
+    cockpitRuns.push({
+      source: item.session, role: item.role, seat: item.seat, agent: item.agent, framework: item.framework,
+      configuredModel: item.model, actualModel: item.actualModel, configuredEffort: item.effort, actualEffort: item.actualEffort,
+      spans: sessionMeta?.spans ?? null, durationMinutes: null, firstEditMinutes: null,
+      tokens: item.usage, turns: sessionMeta?.turns ?? null, usageReason: reason, anomalyReason: reason,
+    });
+  }
+  childDetails.forEach((item, index) => {
+    const sessionMeta = codexSessionMetrics(children[index], window);
+    const reason = item.usage ? null : "子代理会话缺少完整有效用量";
+    cockpitRuns.push({
+      source: item.session, role: item.role, seat: item.seat, agent: item.agent, framework: item.framework,
+      configuredModel: item.model, actualModel: item.actualModel, configuredEffort: item.effort, actualEffort: item.actualEffort,
+      spans: sessionMeta.spans, durationMinutes: null, firstEditMinutes: null,
+      tokens: item.usage, turns: sessionMeta.turns, usageReason: reason, anomalyReason: reason,
+    });
+  });
+  for (const failure of main.childFailures) globalExtraAnomalies.push({ source: "subagent", reason: failure });
+  const roleOrder: Record<string, number> = { design: 0, engineering: 1, review: 2, "spec-review": 3, research: 4, watch: 5, subagent: 6 };
+  const seatGroups = new Map<string, CockpitRun[]>();
+  for (const run of cockpitRuns) {
+    const resolvedModel = run.actualModel ?? run.configuredModel ?? null;
+    const resolvedEffort = run.actualEffort ?? run.configuredEffort ?? null;
+    const key = JSON.stringify([run.seat, run.framework, resolvedModel, resolvedEffort]);
+    seatGroups.set(key, [...(seatGroups.get(key) ?? []), run]);
+  }
+  const cockpitSeats = [...seatGroups.values()].sort((leftGroup, rightGroup) => {
+    const left = leftGroup[0];
+    const right = rightGroup[0];
+    const rankDiff = (roleOrder[left.seat] ?? 7) - (roleOrder[right.seat] ?? 7);
+    if (rankDiff !== 0) return rankDiff;
+    const leftTuple = [left.seat, left.framework, left.actualModel ?? left.configuredModel ?? "", left.actualEffort ?? left.configuredEffort ?? ""];
+    const rightTuple = [right.seat, right.framework, right.actualModel ?? right.configuredModel ?? "", right.actualEffort ?? right.configuredEffort ?? ""];
+    for (let index = 0; index < leftTuple.length; index++) {
+      const diff = leftTuple[index].localeCompare(rightTuple[index]);
+      if (diff !== 0) return diff;
+    }
+    return 0;
+  }).map((group) => {
+    const first = group[0];
+    const role = group.map((run) => run.role).find((value) => value !== first.seat) ?? first.role;
+    const resolvedModel = first.actualModel ?? first.configuredModel ?? null;
+    const resolvedEffort = first.actualEffort ?? first.configuredEffort ?? null;
+    const valid = group.filter((run) => run.tokens !== null);
+    const summed = valid.length ? sumTokens(valid.map((run) => run.tokens!)) : null;
+    const turns = valid.length > 0 && valid.every((run) => run.turns !== null) ? valid.reduce((sum, run) => sum + run.turns!, 0) : null;
+    const anomalies = group.filter((run) => run.anomalyReason !== null).map((run) => ({ source: run.source, reason: run.anomalyReason! }));
+    const spanGroups = group.map((run) => run.spans).filter((item): item is Span[] => item !== null);
+    const durations = group.map((run) => run.durationMinutes).filter((item): item is number => item !== null);
+    const activeMinutes = spanGroups.length || durations.length
+      ? (spanGroups.length ? lane(spanGroups.flat()).minutes : 0) + durations.reduce((sum, value) => sum + value, 0)
+      : null;
+    const firstEdits = group.map((run) => run.firstEditMinutes).filter((item): item is number => item !== null);
+    return {
+      role,
+      seat: first.seat,
+      agent: first.agent,
+      framework: first.framework,
+      model: resolvedModel,
+      actualModel: group.some((run) => run.actualModel !== null) ? resolvedModel : null,
+      effort: resolvedEffort,
+      actualEffort: group.some((run) => run.actualEffort !== null) ? resolvedEffort : null,
+      runs: group.length,
+      activeMinutes,
+      medianFirstEditMinutes: median(firstEdits),
+      usage: summed ? { value: toCockpitUsage(summed, turns), reason: null } : { value: null, reason: first.usageReason ?? "此四元组席位没有完整用量的有效记录" },
+      complete: valid.length === group.length && anomalies.length === 0,
+      anomalies,
+    };
+  });
+  const validCockpitRuns = cockpitRuns.filter((run) => run.tokens !== null);
+  const cockpitAnomalies = [...globalExtraAnomalies, ...cockpitRuns.filter((run) => run.anomalyReason !== null).map((run) => ({ source: run.source, reason: run.anomalyReason! }))];
+  const totalCockpitTokens = validCockpitRuns.length ? sumTokens(validCockpitRuns.map((run) => run.tokens!)) : null;
+  const totalCockpitTurns = validCockpitRuns.length > 0 && validCockpitRuns.every((run) => run.turns !== null)
+    ? validCockpitRuns.reduce((sum, run) => sum + run.turns!, 0)
+    : null;
+  const cockpit = {
+    totals: {
+      value: totalCockpitTokens ? toCockpitUsage(totalCockpitTokens, totalCockpitTurns) : null,
+      reason: totalCockpitTokens ? null : (cockpitAnomalies[0]?.reason ?? "未记录：缺少有效主会话、派发、独立审查或子代理用量"),
+      complete: validCockpitRuns.length > 0 && validCockpitRuns.length === cockpitRuns.length && cockpitAnomalies.length === 0,
+      anomalies: cockpitAnomalies,
+    },
+    seats: cockpitSeats,
+  };
   return { version: 2, spec, startedAt: window.startedAt ?? main.startedAt, mainFrameworks: main.frameworks, mainSessions: main.sessions,
     subagents: [...main.children, ...childDetails], subagentAnomalies: main.childFailures, batches,
     dispatchLanes: metric("dispatchLanes", dispatchLanes.length || zeroDispatch ? dispatchLanes : null, "未记录：缺少派发记录"), ...(sources.recordBindings.length ? { recordBindings: sources.recordBindings } : {}), cutoffAt, collectedAt: new Date().toISOString(), verification, merges,
-    dispatches: metric("dispatches", dispatches.length || zeroDispatch ? dispatches.map(({ overhead: _overhead, ...item }) => item) : null, "未记录：缺少本 spec 派发记录"),
+    dispatches: metric("dispatches", dispatches.length || zeroDispatch ? dispatches.map(({ overhead: _overhead, turns: _turns, ...item }) => item) : null, "未记录：缺少本 spec 派发记录"),
     time: {
       dispatchSlots: metric("time.dispatchSlots", dispatchLane.some((item) => item !== null) || zeroDispatch ? lane(dispatchLane.filter((item): item is Span => item !== null)) : null, "派发起止记录缺失或有尚未结束的派发"),
       verification: metric("time.verification", validationLane ? lane(validationLane) : null, verificationReason),
@@ -247,7 +537,9 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       independentReview: metric("usage.independentReview", reviews.length && reviews.every((value) => value !== null) ? sumTokens(reviews as Tokens[]) : null, "未记录独立审查或 JSON 用量不完整"),
       subagents: metric("usage.subagents", (children.length && !childKnown) || (main?.hasChildren && !main.childUsage) ? null : childKnown && main?.childUsage ? sumTokens([...(childUsages as Tokens[]), main.childUsage]) : childKnown ? sumTokens(childUsages as Tokens[]) : main?.childUsage ?? null, "未记录可关联的子代理完整用量"),
       subagentNotifications: metric("usage.subagentNotifications", main?.notifiedTokens ?? null, "未提供 Claude 会话或任务通知没有 subagent_tokens"),
-    }, missing };
+    },
+    cockpit,
+    missing };
 };
 
 const scorecard = (values: Values, _numbers: number[], args: string[]): void => {
@@ -369,6 +661,8 @@ subagentNotifications 读取给定会话任务通知的 subagent_tokens 总数�
 这是只有总 token 的另一种来源，可能与子代理会话重叠，不与 subagents 相加，不能拆分的输入/输出不估算。
 inputTokens 包含缓存输入；Claude 包含 cache_read 和 cache_creation，pi 包含 cacheRead 和 cacheWrite；cachedInputTokens 只计缓存读取，outputTokens 为输出。
 主会话或子代理任一关联用量不完整时对应汇总为 null；派发组累计有效记录并列异常，不完整的审查/子代理不推成 0。
+cockpit：保持 version:2 既有字段不变，顶层新增 {totals,seats} 供 V6 驾驶舱消费；三段式 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
+cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三段式 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.seats 按完整四元组（role/seat·agent/framework·actualModel??model·actualEffort??effort）聚合，逐项给四元组字段、runs、activeMinutes（并集或累计有效活跃分钟）、medianFirstEditMinutes（可写席位首次编辑分钟中位数，只读席位或无数据为 null）、usage、complete 与 anomalies。
 cleanup 要求已发布评分表覆盖当前全部显式关联集合，不能只比较时间戳；不扩大原有删除范围。
 cleanup 新记录检查复用台账及派发归属，比较结构化时间及派发文件修改时间（也捕获补写汇报）；不因其他 spec 的记录变更而拦截。
 数字 spec 查询直接子工单；字符串 spec 只含字母、数字、连字符，跳过 GitHub，读取本地台账、绑定与当前分支最近 30 条提交，不能 --post。
