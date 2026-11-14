@@ -1,12 +1,13 @@
 /**
- * 三种主会话的只读归一化：Claude 保持原口径，Codex 取 response_item 与累计用量，
- * pi 取 message 与逐回复用量。只按会话内相邻事件计活跃时间，超过十分钟的文字
- * 回复或显式提问到人工输入计等待；系统注入、摘要、普通工具结果不计介入。
- * 文件格式按事件识别，与路径无关；未知格式和缺少累计用量保留缺数原因。
+ * 四框架会话只读采集：按闭区间切片，区分主会话与原生子代理，统一四元组和用量。
+ * agy 只读 transcript.jsonl，不猜全局设置；模型/强度可显式补录并标明来源。
+ * Codex 累计快照扣除窗前基线，其余按回复去重相加；未知用量保留 null。
+ * 活跃间隔最多十分钟，确认等待超过十分钟且不超过四十五分钟，更长单列停工。
  */
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { claudeTokens, codexTokens, jsonLines, lane, minutes, read, span, sumTokens, timestamp, type Json, type Span, type Tokens } from "./scorecard-records.ts";
+import { existsSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+import { claudeTokens, codexSessions, inWindow, jsonLines, lane, minutes, read, sessionTokens, span, sumTokens, timestamp, type Json, type Span, type TimeWindow, type Tokens } from "./scorecard-records.ts";
 
 const analyze = (events: Json[]) => {
   const content = (event: Json): Json[] => typeof event.message?.content === "string" ? [{ type: "text", text: event.message.content }] : event.message?.content ?? [];
@@ -25,6 +26,7 @@ const analyze = (events: Json[]) => {
   };
   const director: Span[] = [];
   const waiting: Span[] = [];
+  const pauses: Span[] = [];
   for (const path of new Set(main.map(conversationKey))) {
     const conversation = main.filter((event) => conversationKey(event) === path).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     for (let index = 1; index < conversation.length; index++) {
@@ -37,7 +39,8 @@ const analyze = (events: Json[]) => {
           (content(event).some((item) => item.type === "tool_use" && item.name === "AskUserQuestion") ||
             (content(event).some((item) => item.type === "text" && item.text?.trim()) && !content(event).some((item) => item.type === "tool_use"))));
         const wait = reply ? span(reply.timestamp, current.timestamp) : null;
-        if (wait && minutes(wait) > 10 && !conversation.slice(conversation.indexOf(reply!) + 1, index).some((event) => event.type === "assistant" || human(event))) waiting.push(wait);
+        if (wait && minutes(wait) > 10 && !conversation.slice(conversation.indexOf(reply!) + 1, index).some((event) => event.type === "assistant" || human(event)))
+          (minutes(wait) > 45 ? pauses : waiting).push(wait);
       }
     }
   }
@@ -56,9 +59,10 @@ const analyze = (events: Json[]) => {
     if (Number.isSafeInteger(count) && count >= 0 && (event.subagent_tokens !== undefined || /<task-notification>/.test(text)))
       notifications.set(event.taskId ?? text.match(/<task-id>([^<]+)<\/task-id>/)?.[1] ?? event.uuid ?? text, count);
   }
-  return { director: lane(director), waiting: lane(waiting), interventions: main.filter(human).length, mainUsage: usages(false), childUsage: usages(true),
+  return { director: lane(director), waiting: lane(waiting), longPause: { count: pauses.length, ...lane(pauses), intervals: pauses }, interventions: main.filter(human).length, mainUsage: usages(false), childUsage: usages(true),
     hasMain: main.length > 0, hasChildren: events.some((event) => event.isSidechain && event.type === "assistant"),
     notifiedTokens: notifications.size ? [...notifications.values()].reduce((sum, count) => sum + count, 0) : null,
+    startedAt: main.map((event) => event.timestamp as string).sort()[0] ?? null,
     cutoffAt: events.map((event) => timestamp(event.timestamp)).filter((at): at is string => at !== null).sort().at(-1) ?? null };
 };
 
@@ -69,27 +73,119 @@ const piTokens = (usage: Json | undefined): Tokens | null => {
   const counts = [usage?.input, usage?.cacheRead ?? 0, usage?.cacheWrite ?? 0, usage?.output];
   return counts.every((n) => Number.isSafeInteger(n) && n >= 0) ? { inputTokens: counts[0] + counts[1] + counts[2], cachedInputTokens: counts[1], outputTokens: counts[3] } : null;
 };
+export const agyTokens = (row: Json): Tokens | null => claudeTokens({ input_tokens: row.input_tokens, cache_read_input_tokens: row.cache_read_tokens, output_tokens: row.output_tokens });
+const agyBrain = () => process.env.AGY_BRAIN_DIR ?? join(homedir(), ".gemini/antigravity-cli/brain");
+const transcript = (directory: string) => join(directory, ".system_generated/logs/transcript.jsonl");
+export const sessionPath = (input: string): string => {
+  const path = resolve(input);
+  if (existsSync(path)) return statSync(path).isDirectory() ? transcript(path) : path;
+  if (/^[A-Za-z0-9-]+$/.test(input)) return transcript(join(agyBrain(), input));
+  return path;
+};
+export type SessionOptions = TimeWindow & { mainModel?: string; mainEffort?: string };
+export const attribution = (seat: string, agent: string, metadata: Json = {}) => ({
+  role: metadata.role ?? seat, seat, agent, framework: agent, model: metadata.model ?? null, actualModel: metadata.actualModel ?? null,
+  effort: metadata.effort ?? null, actualEffort: metadata.actualEffort ?? null,
+});
 
-export const mainSessions = (paths: string[]) => {
+export const sessionSettings = (rows: Json[], framework: string, window: TimeWindow = {}) => {
+  let model: string | null = null;
+  let effort: string | null = null;
+  for (const row of rows) {
+    const at = timestamp(row.created_at ?? row.timestamp ?? row._at ?? row.at);
+    if (row.isSidechain || row.parent_tool_use_id != null || window.cutoffAt && at && at > window.cutoffAt) continue;
+    if (row.type === "turn_context") {
+      if (typeof row.payload?.model === "string") model = row.payload.model;
+      if (typeof (row.payload?.effort ?? row.payload?.reasoning_effort) === "string") effort = row.payload.effort ?? row.payload.reasoning_effort;
+    }
+    if (row.type === "model_change") model = [row.provider, row.modelId].filter(Boolean).join("/") || model;
+    if (["thinking_level_change", "thinking_level_changed"].includes(row.type) && typeof (row.thinkingLevel ?? row.level) === "string") effort = row.thinkingLevel ?? row.level;
+    if (!inWindow(at, window)) continue;
+    if (typeof row.message?.model === "string" && row.message.model !== "<synthetic>") model = [row.message.provider, row.message.model].filter(Boolean).join("/");
+    if (typeof row.message?.thinkingLevel === "string") effort = row.message.thinkingLevel;
+    if (typeof (row.perTurnEffort ?? row.effort) === "string") effort = row.perTurnEffort ?? row.effort;
+    if (framework === "agy" && row.source === "MODEL" && row.type === "PLANNER_RESPONSE" && typeof row.model === "string") model = row.model;
+  }
+  return { model, effort };
+};
+
+export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
   const byEvent = new Map<string, Json>();
   const failures: string[] = [];
   const frameworks = new Set<string>();
-  for (const path of new Set(paths.map((file) => resolve(file)))) {
-    if (!existsSync(path)) throw new Error(`主会话文件不存在：${path}`);
+  const loaded = new Map<string, { path: string; rows: Json[]; framework: string; session: string; child: boolean }>();
+  const childPaths = new Set<string>();
+  const childFailures: string[] = [];
+  const queue = paths.map(sessionPath);
+  let codexIndex: ReturnType<typeof codexSessions> | undefined;
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const path = queue[cursor];
+    if (loaded.has(path)) continue;
+    if (!existsSync(path)) {
+      if (childPaths.has(path)) { childFailures.push(`子代理会话文件不存在：${path}`); continue; }
+      throw new Error(`主会话文件不存在：${path}`);
+    }
     const rows = jsonLines(read(path));
     const codex = rows.find((event) => event.type === "session_meta");
     const pi = rows.find((event) => event.type === "session");
-    const framework = codex ? "codex" : pi ? "pi" : rows.some((event) => ["user", "assistant"].includes(event.type) && event.message) ? "claude" : null;
-    if (!framework) { failures.push(`${path} 缺少可解析的 Claude、Codex 或 pi 主会话事件`); continue; }
-    frameworks.add(framework);
-    const session = `${framework}:${codex?.payload?.id ?? pi?.id ?? rows.find((event) => event.sessionId)?.sessionId ?? path}`;
+    const framework = codex ? "codex" : pi ? "pi" : rows.some((event) => event.created_at && ["USER_INPUT", "PLANNER_RESPONSE", "GENERIC"].includes(event.type)) ? "agy" : rows.some((event) => ["user", "assistant"].includes(event.type) && event.message) ? "claude" : null;
+    if (!framework) { (childPaths.has(path) ? childFailures : failures).push(`${path} 缺少可解析的 Claude、Codex、pi 或 agy 主会话事件`); continue; }
+    const session = `${framework}:${codex?.payload?.id ?? pi?.id ?? rows.find((event) => event.sessionId)?.sessionId ?? (framework === "agy" && basename(path) === "transcript.jsonl" ? basename(dirname(dirname(dirname(path)))) : path)}`;
+    loaded.set(path, { path, rows, framework, session, child: false });
+    const addChild = (file: string) => { childPaths.add(file); if (!queue.includes(file)) queue.push(file); };
+    if (framework === "agy") {
+      const brain = basename(path) === "transcript.jsonl" ? dirname(dirname(dirname(dirname(path)))) : agyBrain();
+      let pending = false;
+      let linked = false;
+      let invokedAt: string | null = null;
+      const finishInvocation = () => { if (pending && !linked) childFailures.push(`agy 子代理调用缺少可关联的 conversationId：${path}（${invokedAt}）`); };
+      for (const row of rows) {
+        if (row.source === "MODEL" && row.type === "PLANNER_RESPONSE") {
+          finishInvocation();
+          pending = inWindow(row.created_at, options) && (row.tool_calls ?? []).some((call: Json) => call.name === "invoke_subagent");
+          linked = false;
+          invokedAt = timestamp(row.created_at);
+        }
+        if (!pending) continue;
+        const text = row.type === "GENERIC" ? String(row.content ?? "") : JSON.stringify((row.tool_calls ?? []).filter((call: Json) => call.name === "invoke_subagent").map((call: Json) => call.args));
+        for (const match of text.matchAll(/["']?conversationId["']?\s*[:=]\s*["']([A-Za-z0-9-]+)["']/g)) {
+          linked = true;
+          const child = transcript(join(brain, match[1]));
+          if (child !== path) addChild(child);
+          else childFailures.push(`agy 子代理关联指向自身：${path}`);
+        }
+      }
+      finishInvocation();
+    }
+    if (framework === "codex" && codex) {
+      codexIndex ??= codexSessions();
+      for (const child of codexIndex) if (child.parent === codex.payload.id && inWindow(child.events[0].timestamp, options)) addChild(child.events[0].sourceFile);
+    }
+  }
+  const details: Json[] = [];
+  const seenSessions = new Set<string>();
+  const childSessions = new Set([...loaded.values()].filter((data) => childPaths.has(data.path)).map((data) => data.session));
+  for (const data of loaded.values()) {
+    const { path, rows, framework, session } = data;
+    data.child = childSessions.has(session);
+    if (seenSessions.has(session)) continue;
+    seenSessions.add(session);
+    if (!data.child) frameworks.add(framework);
+    const selected = rows.filter((row) => inWindow(row.created_at ?? row.timestamp, options));
     const events: Json[] = [];
     const calls = new Map<string, string>();
-    for (const [index, row] of rows.entries()) {
-      const at = timestamp(row.timestamp);
-      const key = row.uuid ?? row.id ?? row.payload?.id ?? `${row.timestamp}:${index}`;
-      const base = { timestamp: at, uuid: `${session}:${key}`, sessionId: session, sourcePath: path };
-      if (framework === "claude") { events.push({ ...row, ...base, sessionId: `${framework}:${row.sessionId ?? path}` }); continue; }
+    const actual = sessionSettings(rows, framework, options);
+    for (const [index, row] of selected.entries()) {
+      const at = timestamp(row.created_at ?? row.timestamp);
+      const key = framework === "agy" ? `${row.step_index ?? index}:${row.source}:${row.type}:${at}` : row.uuid ?? row.id ?? row.payload?.id ?? `${at}:${index}`;
+      const base = { timestamp: at, uuid: `${session}:${key}`, sessionId: session, sourcePath: path, isSidechain: data.child };
+      if (framework === "claude") { events.push({ ...row, ...base, isSidechain: data.child || row.isSidechain, sessionId: `${framework}:${row.sessionId ?? path}` }); continue; }
+      if (framework === "agy") {
+        if (row.source === "USER_EXPLICIT" && row.type === "USER_INPUT") events.push({ ...base, type: "user", origin: { kind: "human" }, message: { content: content(row.content) } });
+        if (row.source === "MODEL" && row.type === "PLANNER_RESPONSE") events.push({ ...base, type: "assistant", message: { id: key, usage: tokenUsage(agyTokens(row)), content: [...content(row.content), ...(row.tool_calls ?? []).map((call: Json) => ({ type: "tool_use", name: call.name, id: call.id }))] } });
+        if (row.type === "GENERIC") events.push({ ...base, type: "user", isSynthetic: true, message: { content: content(row.content) } });
+        continue;
+      }
       if (framework === "pi" && row.type === "message") {
         const message = row.message;
         if (!["user", "assistant", "toolResult"].includes(message?.role)) continue;
@@ -118,21 +214,50 @@ export const mainSessions = (paths: string[]) => {
       } else if (item?.type === "reasoning") events.push({ ...base, type: "assistant", message: { content: [] } });
     }
     if (framework === "codex") {
-      const snapshot = [...rows].reverse().find((event) => event.type === "event_msg" && event.payload?.type === "token_count" && event.payload.info?.total_token_usage || event.type === "token_usage_record" && event.payload?.thread_token_usage);
-      const usage = codexTokens(snapshot?.payload?.info?.total_token_usage ?? snapshot?.payload?.thread_token_usage);
-      events.push({ type: "assistant", uuid: `${session}:usage`, sessionId: session, sourcePath: path, isMeta: true,
+      const usage = sessionTokens({ id: session, parent: null, cwd: "", events: rows }, options);
+      const snapshot = selected.filter((row) => row.type === "token_usage_record" || row.type === "event_msg" && row.payload?.type === "token_count").at(-1);
+      events.push({ type: "assistant", uuid: `${session}:usage`, sessionId: session, sourcePath: path, isMeta: true, isSidechain: data.child,
         timestamp: snapshot?.timestamp, message: { id: "usage", usage: tokenUsage(usage) } });
     }
-    for (const event of events) {
-      const key = event.uuid;
-      const previous = byEvent.get(key);
-      if (!previous || (event.timestamp ?? "") >= (previous.timestamp ?? "")) byEvent.set(key, event);
+    const result = analyze(events);
+    if (framework === "claude" && !data.child) {
+      for (const childId of new Set(events.filter((event) => event.isSidechain && event.type === "assistant").map((event) => event.agentId ?? event.sessionId))) {
+        const childEvents = events.filter((event) => event.isSidechain && (event.agentId ?? event.sessionId) === childId);
+        const childModel = childEvents.map((event) => event.message?.model).filter((model) => typeof model === "string").at(-1) ?? null;
+        const childEffort = childEvents.map((event) => event.effort ?? event.perTurnEffort).filter((effort) => typeof effort === "string").at(-1) ?? null;
+        details.push({ session: `${session}:sidechain:${childId}`, path, child: true, ...attribution("subagent", framework, { actualModel: childModel, actualEffort: childEffort }), sources: { actualModel: childModel ? "session" : null, actualEffort: childEffort ? "session" : null }, usage: analyze(childEvents).childUsage });
+      }
     }
-    if (!events.some((event) => !event.isMeta && ["user", "assistant"].includes(event.type) && timestamp(event.timestamp))) failures.push(`${path} 缺少可解析的主会话事件`);
+    if (!data.child && !result.hasMain) failures.push(`${path} 时间窗内缺少可解析的主会话事件`);
+    const model = actual.model ?? (!data.child ? options.mainModel : null) ?? null;
+    const effort = actual.effort ?? (!data.child ? options.mainEffort : null) ?? null;
+    details.push({ session, path, ...attribution(data.child ? "subagent" : "design", framework, { actualModel: model, actualEffort: effort }),
+      sources: { actualModel: actual.model ? "session" : model ? "manual" : null, actualEffort: actual.effort ? "session" : effort ? "manual" : null },
+      usage: data.child ? result.childUsage : result.mainUsage, child: data.child, startedAt: result.startedAt, cutoffAt: result.cutoffAt });
+    for (const event of events) byEvent.set(event.uuid, event);
   }
   const result = analyze([...byEvent.values()]);
-  const usageReason = [...frameworks].map((framework) => ({ claude: "Claude assistant.message.usage", codex: "Codex 累计 token_count 或 thread_token_usage", pi: "pi assistant.message.usage" })[framework]).join("、");
-  return { ...result, frameworks: [...frameworks].sort(), hasMain: result.hasMain && !failures.length,
-    mainUsage: failures.length ? null : result.mainUsage, usageReason: failures.join("；") || (paths.length ? `主会话缺少完整有效用量：${usageReason || "未知格式"}` : "未提供 --session 主会话"),
+  const mainDetails = details.filter((item) => !item.child);
+  const children = details.filter((item) => item.child);
+  const missingMainUsage = mainDetails.some((item) => item.usage === null);
+  const usageReason = [...frameworks].map((framework) => ({ claude: "Claude assistant.message.usage", codex: "Codex 累计 token_count 或 thread_token_usage（扣除窗前基线）", pi: "pi assistant.message.usage", agy: "agy PLANNER_RESPONSE input_tokens + cache_read_tokens、output_tokens" })[framework]).join("、");
+  return { ...result, sessions: mainDetails, children, childFailures, frameworks: [...frameworks].sort(), hasMain: result.hasMain && !failures.length,
+    hasChildren: result.hasChildren || childFailures.length > 0, childUsage: childFailures.length || children.some((item) => item.usage === null) ? null : result.childUsage,
+    mainUsage: failures.length || missingMainUsage ? null : result.mainUsage,
+    usageReason: failures.join("；") || (paths.length ? `主会话缺少完整有效用量：${usageReason || "未知格式"}` : "未提供 --session 主会话"),
     reason: failures.join("；") || (paths.length ? "主会话缺少可解析的事件或有效 usage" : "未提供 --session 主会话") };
+};
+
+export const firstWrite = (rows: Json[], framework: string): { at: string; input: number | null } | null => {
+  let input: number | null = null;
+  for (const row of rows) {
+    const message = row.message;
+    const usage = framework === "agy" ? agyTokens(row) : framework === "pi" ? piTokens(message?.usage) : claudeTokens(message?.usage);
+    const names = row.kind === "tool" && row.phase === "start" ? [row.name] : framework === "agy" ? (row.tool_calls ?? []).map((call: Json) => call.name) : row.type === "tool_execution_start" ? [row.toolName] : content(message?.content).filter((part) => part.type === "tool_use").map((part) => part.name);
+    const allowed = framework === "agy" ? ["edit_file", "write_file"] : framework === "pi" ? ["edit", "write"] : ["Edit", "Write", "MultiEdit"];
+    const at = timestamp(row.created_at ?? row.timestamp ?? row._at ?? row.at);
+    if (at && names.some((name: string) => allowed.includes(name))) return { at, input: usage ? (input ?? 0) + usage.inputTokens : input };
+    if (usage) input = (input ?? 0) + usage.inputTokens;
+  }
+  return null;
 };

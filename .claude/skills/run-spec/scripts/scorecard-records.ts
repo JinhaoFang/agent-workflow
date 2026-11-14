@@ -2,7 +2,8 @@
  * 评分表的只读采集：按 spec 分支、直接子工单和持久精确归属采集记录，按
  * 记录名合并主工作区、工单 worktree 与 .kept 的派发副本；读取生命周期和进度。
  * Codex 会话按 session_meta.cwd、thread.started ID 和父会话关联，使用最后
- * 一个累计 token_count。公共台账不删除、不改写；截点包含记录文件修改时间，
+ * 一个累计 token_count；时间窗采集时扣除窗前基线。字符串 spec 只精确匹配
+ * 分支和绑定，不按前缀猜其他专项。公共台账不删除、不改写；截点包含记录文件修改时间，
  * 使尚在运行、补写汇报和没有结构化时间的旧记录也能触发 cleanup 拦截。
  * 显式归属可采集外部 runner 生命周期；同名多次运行只报告歧义，不猜归属。
  * cleanup 按实际待删除 worktree 和 .kept 清单核对辅助证据的主工作区完整副本，
@@ -13,12 +14,17 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { dispatchSummary } from "./dispatch/summary.ts";
 import { dispatchHome } from "./dispatchdock.ts";
-import { CheckFailure, git, matchesRecord, recordName } from "./shared.ts";
+import { CheckFailure, git, matchesRecord, recordName, type SpecId } from "./shared.ts";
 import { readRecordBindings, type RecordBinding } from "./scorecard-bindings.ts";
 export { readRecordBindings, registerRecordBindings, type RecordBinding } from "./scorecard-bindings.ts";
 
 export type Json = Record<string, any>;
 export type Span = { start: string; end: string };
+export type TimeWindow = { startedAt?: string | null; cutoffAt?: string | null };
+export const inWindow = (at: unknown, window: TimeWindow): boolean => {
+  const time = timestamp(at);
+  return Boolean(time && (!window.startedAt || time >= window.startedAt) && (!window.cutoffAt || time <= window.cutoffAt));
+};
 export type Tokens = { inputTokens: number; cachedInputTokens: number; outputTokens: number };
 export const timestamp = (value: unknown): string | null => {
   if (typeof value !== "string" && typeof value !== "number") return null;
@@ -77,9 +83,9 @@ export type LocalDispatch = {
   raw: Json[];
   prompt: string;
 };
-export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>, bindings: RecordBinding[] = readRecordBindings(root, spec, tickets)) => {
+export const sourceSnapshot = (root: string, spec: SpecId, tickets: Set<number>, bindings: RecordBinding[] = readRecordBindings(root, spec, tickets)) => {
   const ownedBranch = (branch: unknown): boolean => typeof branch === "string" &&
-    (branch.startsWith(`spec/${spec}-`) || [...tickets].some((ticket) => branch === `ticket/${ticket}`));
+    (branch === `spec/${spec}` || (typeof spec === "number" && branch.startsWith(`spec/${spec}-`)) || (typeof spec === "string" && branch === spec) || [...tickets].some((ticket) => branch === `ticket/${ticket}`));
   const ledgerFile = join(root, ".codex-runs/verification.jsonl");
   const allLedger = existsSync(ledgerFile) ? jsonLines(read(ledgerFile)) : null;
   const ledger = allLedger?.filter((row) => ownedBranch(row.branch)) ?? null;
@@ -96,7 +102,7 @@ export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>,
   }
   for (const row of bindings) touch(row.registeredAt);
   const owner = (name: string) => [...tickets].find((ticket) => matchesRecord(name, `gh-${ticket}`));
-  const ownedName = (name: string) => owner(name) !== undefined || matchesRecord(name, `review-${spec}`) || explicit.has(name);
+  const ownedName = (name: string) => owner(name) !== undefined || (typeof spec === "number" && matchesRecord(name, `review-${spec}`)) || explicit.has(name);
   const ensure = (name: string): LocalDispatch => {
     if (!dispatches.has(name)) dispatches.set(name, {
       name, ticket: owner(name) ?? null, kind: owner(name) !== undefined ? "ticket" : matchesRecord(name, `review-${spec}`) ? "review" : "auxiliary",
@@ -173,7 +179,8 @@ export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>,
       item.raw = [];
     }
   }
-  return { ledger, allLedger, recordBindings: [...explicit].sort(), dispatches: [...dispatches.values()].sort((a, b) => (a.start ?? a.name).localeCompare(b.start ?? b.name)), cutoffAt: cutoffAt as string | null };
+  const startedAt = [...(ledger ?? []).map((row) => timestamp(row.startedAt)), ...[...dispatches.values()].map((item) => item.start)].filter((at): at is string => at !== null).sort()[0] ?? null;
+  return { ledger, allLedger, recordBindings: [...explicit].sort(), dispatches: [...dispatches.values()].sort((a, b) => (a.start ?? a.name).localeCompare(b.start ?? b.name)), startedAt, cutoffAt: cutoffAt as string | null };
 };
 
 export const assertAuxiliaryEvidencePreserved = (root: string, spec: number, tickets: Set<number>, deletionRoots: string[]): void => {
@@ -231,7 +238,16 @@ export const loadSession = (session: CodexSession): CodexSession => {
   const text = read(session.events[0].sourceFile);
   return { ...session, events: jsonLines(text.slice(0, text.lastIndexOf("\n") + 1)) };
 };
-export const sessionTokens = (session: CodexSession): Tokens | null => codexTokens(
-  [...session.events].reverse().find((event) => event.type === "event_msg" && event.payload?.type === "token_count" && event.payload.info)?.payload.info.total_token_usage,
-);
+export const sessionTokens = (session: CodexSession, window: TimeWindow = {}): Tokens | null => {
+  const snapshots = session.events.filter((event) => event.type === "event_msg" && event.payload?.type === "token_count" && event.payload.info?.total_token_usage || event.type === "token_usage_record" && event.payload?.thread_token_usage);
+  const selected = snapshots.filter((event) => inWindow(event.timestamp, window));
+  if (!selected.length) return null;
+  const parse = (event: Json) => codexTokens(event.payload?.info?.total_token_usage ?? event.payload?.thread_token_usage);
+  const before = window.startedAt ? snapshots.filter((event) => timestamp(event.timestamp) && timestamp(event.timestamp)! < window.startedAt!).at(-1) : undefined;
+  const baseline = before ? parse(before) : sumTokens([]);
+  const last = parse(selected.at(-1)!);
+  if (!baseline || !last) return null;
+  const result = { inputTokens: last.inputTokens - baseline.inputTokens, cachedInputTokens: last.cachedInputTokens - baseline.cachedInputTokens, outputTokens: last.outputTokens - baseline.outputTokens };
+  return Object.values(result).every((count) => count >= 0) && result.cachedInputTokens <= result.inputTokens ? result : null;
+};
 export const mainRoot = (): string => git(process.cwd(), ["worktree", "list", "--porcelain"]).split("\n", 1)[0].slice(9);

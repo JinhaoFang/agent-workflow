@@ -139,6 +139,13 @@ export const issueNumber = (value: string | undefined): number => {
   return Number(value);
 };
 
+export type SpecId = number | string;
+export const specIdentifier = (value: string | undefined): SpecId => {
+  if (value && /^\d+$/.test(value)) return issueNumber(value);
+  if (!value || !/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/.test(value)) throw new Error("spec 标识必须是正整数或只含字母、数字、连字符的安全字符串。");
+  return value;
+};
+
 export const github = (dryRun: boolean) => {
   const repo = (
     JSON.parse(gh(["repo", "view", "--json", "nameWithOwner"])) as {

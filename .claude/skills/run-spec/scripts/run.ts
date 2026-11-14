@@ -11,12 +11,12 @@ import { run as dispatchTask } from "./dispatch/run.ts";
 import { taskDetails } from "./dispatch/protocol.ts";
 import { describeSeat, loadSeatConfiguration, resolveSeat, seatNames } from "./dispatch/settings.ts";
 import { registerRecordBindings, readRecordBindings } from "./scorecard-bindings.ts";
-import { entry, git, github, issueNumber, recordName, usageError, type Command, type Values } from "./shared.ts";
+import { entry, git, github, specIdentifier, recordName, usageError, type Command, type Values } from "./shared.ts";
 
 const run = async (values: Values, _numbers: number[], args: string[]): Promise<void> => {
   const seat = values.seat as string;
   if (!seatNames.includes(seat as typeof seatNames[number])) throw usageError("必须用 --seat 指定有效席位。", runCommand.help);
-  const spec = values.spec === undefined ? undefined : issueNumber(values.spec as string);
+  const spec = values.spec === undefined ? undefined : specIdentifier(values.spec as string);
   const cwd = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
   const root = git(cwd, ["worktree", "list", "--porcelain"]).split("\n")[0].slice(9);
   const overrides = Object.fromEntries(["work-type", "agent", "model", "effort", "permission"].flatMap(key => values[key] === undefined ? [] : [[key, values[key] as string]]));
@@ -36,9 +36,11 @@ const run = async (values: Values, _numbers: number[], args: string[]): Promise<
   }));
   let tickets = new Set<number>();
   if (spec !== undefined) {
-    const api = github(false);
-    api.issue(spec);
-    tickets = new Set(api.list(`${api.endpoint(spec)}/sub_issues`).map(issue => issue.number));
+    if (typeof spec === "number") {
+      const api = github(false);
+      api.issue(spec);
+      tickets = new Set(api.list(`${api.endpoint(spec)}/sub_issues`).map(issue => issue.number));
+    }
     for (const binding of readRecordBindings(root, spec, tickets)) used.add(binding.name);
   }
   const occupied = (prefix: string) => used.has(prefix) || settings.some((setting, index) => used.has(`${prefix}-${index + 1}-${setting.agent}`));
@@ -101,7 +103,8 @@ export const runCommand: Command = {
 覆盖参数：--work-type <工作类型> --agent <codex|claude|pi> --model <模型> --effort <强度> --permission <read-only|workspace-write|full>。
 在当前工作区执行，任务文件在启动前读取；review 列表每项收到同样的提示，逐份运行，失败继续其余项。
 engineering、review、research 告知工程负责人角色并要求阅读 docs/roles/engineering.md；spec-review、watch 不告知角色。
-记录统一写主工作区 .codex-runs；--spec 只读查询 spec 与子工单，用现有 scorecard --record 存储自动关联每份精确名。
+记录统一写主工作区 .codex-runs；--spec 接受正整数 Issue 号或安全字符串（字母、数字、连字符）。
+数字只读查询 spec 与子工单，字符串跳过全部 GitHub 查询；用现有 scorecard --record 存储自动关联每份精确名。
 review 带 --spec 时默认名 review-<S>；其余默认取可用的任务文件名或 task-<时间>。重名为批次前缀追加 -2、-3。
 多项记录名为 <前缀>-<序号>-<框架>，同名 <前缀>.batch.json 保存清单；review --record <前缀> 合计该清单。
 只读席位在提示中要求不改文件、不提交、不操作 GitHub；权限实际限制和损失见 doctor。

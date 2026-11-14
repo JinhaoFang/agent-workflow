@@ -335,3 +335,43 @@ test("concurrent run calls reserve different batch prefixes without overwriting 
     assert.deepEqual(JSON.parse(readFileSync(join(directory, "concurrent-2.batch.json"), "utf8")).records, ["concurrent-2"]);
   } finally { f.cleanup(); }
 });
+
+test("字符串 --spec 持久关联辅助派发、隔离数字归属且不查询 GitHub", () => {
+  const f = fixture();
+  try {
+    const args = ["run", "只读核对字符串专项", "--seat", "research", "--spec", "feishu-refactor", "--name", "audit-1"];
+    const preview = f.run([...args, "--dry-run"]);
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.ok(!existsSync(join(f.root, ".codex-runs")));
+    const first = f.run(args);
+    assert.equal(first.status, 0, first.stderr);
+    const bindings = JSON.parse(readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8"));
+    assert.deepEqual(bindings.records.map((row: { spec: string; name: string }) => [row.spec, row.name]), [["feishu-refactor", "audit-1"]]);
+    const result = f.run(["scorecard", "feishu-refactor"]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.equal(card.spec, "feishu-refactor");
+    assert.deepEqual(card.recordBindings, ["audit-1"]);
+    assert.equal(card.dispatches.value[0].record, "audit-1");
+    assert.equal(card.dispatches.value[0].seat, "research");
+    const review = f.run(["run", "只读审查", "--seat", "review", "--spec", "feishu-refactor"]);
+    assert.equal(review.status, 0, review.stderr);
+    assert.match(review.stdout, /review-feishu-refactor/);
+    const other = f.run(["run", "只读审查另一专项", "--seat", "review", "--spec", "feishu-refactor-extra"]);
+    assert.equal(other.status, 0, other.stderr);
+    const isolated = JSON.parse(f.run(["scorecard", "feishu-refactor"]).stdout);
+    assert.equal(isolated.dispatches.value.length, 2);
+    assert.ok(!isolated.recordBindings.includes("review-feishu-refactor-extra"));
+    assert.deepEqual(f.calls("gh.jsonl"), []);
+    const before = readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8");
+    for (const spec of ["../bad", "bad_name", "0", "--bad", "1;echo"]) {
+      const invalid = f.run(["run", "task", "--seat", "research", "--spec", spec]);
+      assert.equal(invalid.status, 2, invalid.stderr);
+      assert.match(invalid.stderr, /^出错：/);
+    }
+    assert.equal(readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8"), before);
+    const calls = f.calls("agents.jsonl").length;
+    assert.equal(f.run(["scorecard", "22", "--record", "audit-1"]).status, 2);
+    assert.equal(f.calls("agents.jsonl").length, calls);
+  } finally { f.cleanup(); }
+});
