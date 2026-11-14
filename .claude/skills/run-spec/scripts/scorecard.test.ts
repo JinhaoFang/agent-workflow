@@ -5,7 +5,7 @@
  * SCORECARD_EVIDENCE 可指定输出
  * 固定输入、预期/实际 JSON、手算过程和测试命令记录的验收目录。
  * TICKET_12_EVIDENCE 保存真实 CLI 的启动故障、失败调用和帮助文字证据。
- * TICKET_17_EVIDENCE 可保存全部 CLI 输出及关联台账，供本轮叶节点和辅助归属验收。
+ * TICKET_17_EVIDENCE、TICKET_57_EVIDENCE 可保存全部 CLI 输出及关联台账，供叶节点和辅助归属验收。
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -138,7 +138,7 @@ else if (args[0] === 'api' && args[2] === 'GET') {
   const chmod = spawnSync("chmod", ["+x", join(temporary, "gh")]);
   assert.equal(chmod.status, 0);
   let sequence = 0;
-  const evidenceRoot = process.env.TICKET_54_EVIDENCE ?? process.env.TICKET_17_EVIDENCE;
+  const evidenceRoot = process.env.TICKET_57_EVIDENCE ?? process.env.TICKET_54_EVIDENCE ?? process.env.TICKET_17_EVIDENCE;
   const evidence = evidenceRoot ? join(evidenceRoot, temporary.split("/").at(-1)!) : null;
   const run = (args: string[], cwd = root) => {
     const result = spawnSync(process.execPath, [cli, ...args], { cwd, encoding: "utf8", timeout: 30000, env: { ...process.env, PATH: `${temporary}${delimiter}${process.env.PATH}`, AGY_BRAIN_DIR: join(temporary, "brain"), CODEX_HOME: codex, CODEX_DISPATCH_HOME: dispatch, SCORECARD_FIXTURE: temporary } });
@@ -958,6 +958,134 @@ const agyFile = (f: ReturnType<typeof fixture>, id: string) => join(f.temporary,
 const clearSources = (f: ReturnType<typeof fixture>) => {
   for (const directory of [f.records, join(f.worktree, ".codex-runs"), f.dispatch, f.codex]) rmSync(directory, { recursive: true, force: true });
 };
+
+test("共享 sessionId 的 Claude 主日志、sidechain 与重叠快照合并不受传入顺序影响", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const response = (minute: number, id: string, extra = {}) => ({ type: "assistant", uuid: id, sessionId: "shared", timestamp: moment(minute), message: { id, model: "claude-fixture", content: [{ type: "text", text: "回复" }], usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 1 } }, ...extra });
+    const initial = [{ type: "user", uuid: "start", sessionId: "shared", timestamp: moment(0), message: { content: "开始" } }, response(1, "main-first")];
+    const child = response(2, "child-reply", { isSidechain: true, agentId: "child-a" });
+    const childLast = response(4, "child-last", { isSidechain: true, agentId: "child-a" });
+    const older = join(f.temporary, "claude-old.jsonl");
+    const newer = join(f.temporary, "claude-new.jsonl");
+    const sidechain = join(f.temporary, "claude-child.jsonl");
+    f.lines(older, initial);
+    f.lines(newer, [...initial, child, response(3, "main-last")]);
+    f.lines(sidechain, [child, childLast]);
+    let expected;
+    for (const paths of [[older, sidechain, newer], [older, newer, sidechain], [sidechain, older, newer], [sidechain, newer, older], [newer, older, sidechain], [newer, sidechain, older]]) {
+      const result = f.run(["scorecard", "shared-session", ...paths.flatMap((path) => ["--session", path])]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.deepEqual(card.usage.mainSession.value, tokens(24, 4, 2));
+      assert.deepEqual(card.usage.subagents.value, tokens(24, 4, 2));
+      assert.equal(card.mainSessions.length, 1);
+      assert.equal(card.subagents.length, 1);
+      assert.equal(card.subagents[0].session, "claude:shared:sidechain:child-a");
+      assert.equal(card.userInterventions.value, 1);
+      assert.equal(card.time.designLead.value.minutes, 3);
+      assert.deepEqual(card.subagentAnomalies, []);
+      const actual = { mainSessions: card.mainSessions, subagents: card.subagents, usage: card.usage, time: card.time, missing: card.missing };
+      if (expected) assert.deepEqual(actual, expected);
+      else expected = actual;
+    }
+  } finally { f.cleanup(); }
+});
+
+for (const framework of ["agy", "codex"]) {
+  test(`${framework} 窗前启动的子代理保留窗内用量，完全窗外子代理不计入`, () => {
+    const f = fixture();
+    try {
+      clearSources(f);
+      const childIds = ["active-child", "before-child", "after-child"];
+      let main: string;
+      if (framework === "agy") {
+        main = agyFile(f, "window-parent");
+        f.lines(main, [agyUser(0, 0), agyStep(1, 1, { tool_calls: [{ name: "invoke_subagent", args: {} }] }),
+          { type: "GENERIC", source: "MODEL", created_at: moment(2), content: childIds.map((conversationId) => JSON.stringify({ conversationId })).join("\n") }, agyUser(6, 3), agyStep(10, 4)]);
+        for (const [index, id] of childIds.entries()) f.lines(agyFile(f, id), index === 0
+          ? [agyUser(2, 0), agyStep(4, 1), agyStep(5, 2), agyStep(10, 3), agyStep(11, 4)]
+          : [agyUser(index === 1 ? 2 : 11, 0), agyStep(index === 1 ? 4 : 12, 1)]);
+      } else {
+        main = f.sessionFile("window-parent");
+        const meta = (id: string, minute: number, parent?: string) => ({ type: "session_meta", timestamp: moment(minute), payload: { id, cwd: f.root, ...(parent ? { parent_thread_id: parent } : {}) } });
+        const message = (minute: number) => ({ type: "response_item", timestamp: moment(minute), payload: { type: "message", role: "user", content: [{ type: "input_text", text: "继续" }] } });
+        const snapshot = (minute: number, n: number) => ({ type: "event_msg", timestamp: moment(minute), payload: { type: "token_count", info: { total_token_usage: { input_tokens: n, cached_input_tokens: n / 2, output_tokens: n / 10 } } } });
+        f.lines(main, [meta("window-parent", 0), message(0), message(6), snapshot(10, 100)]);
+        for (const [index, id] of childIds.entries()) f.lines(f.sessionFile(id), index === 0
+          ? [meta(id, 2, "window-parent"), message(2), snapshot(4, 100), snapshot(5, 130), snapshot(10, 160), snapshot(11, 1000)]
+          : [meta(id, index === 1 ? 2 : 11, "window-parent"), snapshot(index === 1 ? 4 : 12, 1000)]);
+      }
+      const result = f.run(["scorecard", "pre-window-child", "--session", main, "--started-at", moment(5), "--cutoff-at", moment(10)]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.deepEqual(card.usage.subagents.value, framework === "agy" ? tokens(60, 40, 6) : tokens(60, 30, 6));
+      assert.deepEqual(card.subagents.map((child: { session: string }) => child.session), [`${framework}:active-child`]);
+      assert.deepEqual(card.subagentAnomalies, []);
+      assert.equal(card.userInterventions.value, 1);
+      assert.equal(card.startedAt, moment(5));
+      assert.equal(card.cutoffAt, moment(10));
+      if (framework === "codex") {
+        f.write(join(f.records, "window-dispatch.log"), JSON.stringify({ type: "thread.started", thread_id: "window-parent", _at: moment(0) }) + "\n");
+        f.write(join(f.records, "window-dispatch.json"), JSON.stringify({ v: 1, framework: "codex", seat: "engineering", permission: "workspace-write", success: true, usage: { input: 100, cached: 50, output: 10 }, started: moment(0), at: moment(10), exit: 0 }));
+        const dispatchResult = f.run(["scorecard", "dispatch-window", "--record", "window-dispatch", "--started-at", moment(5), "--cutoff-at", moment(10)]);
+        assert.equal(dispatchResult.status, 0, dispatchResult.stderr);
+        const dispatchCard = JSON.parse(dispatchResult.stdout);
+        assert.deepEqual(dispatchCard.usage.subagents.value, tokens(60, 30, 6));
+        assert.deepEqual(dispatchCard.subagents.map((child: { session: string }) => child.session), ["codex:active-child"]);
+      }
+    } finally { f.cleanup(); }
+  });
+}
+
+test("Claude 同 message.id 的流分片在首次编辑前只累计一份输入 Token", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const name = "claude-fragments";
+    f.write(join(f.records, `${name}.json`), JSON.stringify({ v: 1, framework: "claude", seat: "engineering", permission: "workspace-write", success: true, usage: { input: 180, cached: 30, output: 5 }, started: moment(0), at: moment(10), exit: 0 }));
+    const fragment = (minute: number, id: string, input: number, cache: number, tool: string) => ({ type: "assistant", timestamp: moment(minute), message: { id, content: [{ type: "tool_use", name: tool }], usage: { input_tokens: input, cache_read_input_tokens: cache, output_tokens: 1 } } });
+    f.lines(join(f.records, `${name}.log`), [fragment(1, "read", 100, 20, "Read"), fragment(2, "read", 100, 20, "Read"), fragment(3, "write", 50, 10, "Read"), fragment(4, "write", 50, 10, "Edit"), fragment(5, "later", 999, 0, "Write")]);
+    const result = f.run(["scorecard", "first-write", "--record", name]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.equal(card.overhead.value[0].firstEditAt.value, moment(4));
+    assert.equal(card.overhead.value[0].minutes.value, 4);
+    assert.equal(card.overhead.value[0].inputTokens.value, 180);
+  } finally { f.cleanup(); }
+});
+
+test("默认起点包含主会话写 spec 阶段，默认截点沿用本地记录，显式边界精确切分", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    f.lines(join(f.records, "verification.jsonl"), [{ ...f.ledger[1], branch: "spec/draft-window", startedAt: moment(5), finishedAt: moment(10), verification: { startedAt: moment(5), finishedAt: moment(10), exitCode: 0 } }]);
+    const reply = (minute: number) => ({ type: "assistant", uuid: `reply-${minute}`, sessionId: "draft", timestamp: moment(minute), message: { id: `reply-${minute}`, content: [{ type: "text", text: "写 spec" }], usage: { input_tokens: 10, output_tokens: 1 } } });
+    f.lines(f.claude, [{ type: "user", uuid: "draft-start", sessionId: "draft", timestamp: moment(0), message: { content: "起草 spec" } }, reply(1), reply(5), reply(10), reply(11)]);
+    const args = ["scorecard", "draft-window", "--session", f.claude];
+    for (const [bounds, start, end, count] of [[[], 0, 10, 3], [["--started-at", moment(5)], 5, 10, 2], [["--started-at", moment(5), "--cutoff-at", moment(11)], 5, 11, 3]] as const) {
+      const result = f.run([...args, ...bounds]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.equal(card.startedAt, moment(start));
+      assert.equal(card.cutoffAt, moment(end));
+      assert.deepEqual(card.usage.mainSession.value, tokens(count * 10, 0, count));
+      assert.equal(card.mainSessions[0].startedAt, moment(start === 0 ? 0 : 5));
+      assert.equal(card.mainSessions[0].cutoffAt, moment(end));
+    }
+    f.lines(join(f.records, "verification.jsonl"), [{ ...f.ledger[1], branch: "spec/draft-window", startedAt: moment(-5), finishedAt: moment(10), verification: { startedAt: moment(-5), finishedAt: moment(10), exitCode: 0 } }]);
+    const earlierLocal = f.run(args);
+    assert.equal(earlierLocal.status, 0, earlierLocal.stderr);
+    const earlierCard = JSON.parse(earlierLocal.stdout);
+    assert.equal(earlierCard.startedAt, moment(-5));
+    assert.deepEqual(earlierCard.usage.mainSession.value, tokens(30, 0, 3));
+    const help = f.run(["scorecard", "--help"]);
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /较早/);
+    assert.match(help.stdout, /写 spec/);
+  } finally { f.cleanup(); }
+});
 
 test("agy 会话 ID、目录、路径解析与子代理去重，缺模型只接受手工补录，Token 含缓存", () => {
   const f = fixture();

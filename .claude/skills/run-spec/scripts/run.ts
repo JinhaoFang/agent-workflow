@@ -27,9 +27,10 @@ const run = async (values: Values, _numbers: number[], args: string[]): Promise<
   const task = details.spec ? readFileSync(join(cwd, details.spec), "utf8") : args[0];
   if (!task.trim()) throw usageError("任务内容不能为空。", runCommand.help);
   const fallbackName = /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(details.name) ? details.name : `task-${Date.now()}`;
-  const requested = values.name as string | undefined ?? (seat === "review" && spec ? `review-${spec}` : fallbackName);
+  const reviewPrefix = `review-${typeof spec === "string" ? `spec-id-${spec}` : spec}`;
+  const requested = values.name as string | undefined ?? (seat === "review" && spec ? reviewPrefix : fallbackName);
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(requested) || ["scorecard-records", "verification"].includes(requested)) throw usageError("记录名只含字母、数字、下划线、连字符，并以字母或数字开头。", runCommand.help);
-  if (seat === "review" && spec && !new RegExp(`^review-${spec}(?:-|$)`).test(requested)) throw usageError("带 --spec 的 review 记录名必须以 review-<spec> 开头。", runCommand.help);
+  if (seat === "review" && spec && ![reviewPrefix, `review-${spec}`].some((prefix) => requested === prefix || requested.startsWith(`${prefix}-`))) throw usageError(`带 --spec 的 review 记录名必须以 ${reviewPrefix} 开头，也可使用原 review-${spec} 前缀。`, runCommand.help);
   const used = new Set([root, cwd].flatMap(checkout => {
     const directory = join(checkout, ".codex-runs");
     return existsSync(directory) ? readdirSync(directory).map(recordName) : [];
@@ -100,12 +101,15 @@ export const runCommand: Command = {
   options: Object.fromEntries(["seat", "spec", "name", "work-type", "agent", "model", "effort", "permission"].map(key => [key, { type: "string" as const }])),
   execute: run,
   help: `${entry} run <任务说明文件|任务文字> --seat <engineering|review|spec-review|research|watch> [--spec <S>] [--name <记录名>] [--dry-run]
-覆盖参数：--work-type <工作类型> --agent <codex|claude|pi> --model <模型> --effort <强度> --permission <read-only|workspace-write|full>。
+覆盖参数：--work-type <工作类型> --agent <codex|claude|pi|agy> --model <模型> --effort <强度> --permission <read-only|workspace-write|full>。
 在当前工作区执行，任务文件在启动前读取；review 列表每项收到同样的提示，逐份运行，失败继续其余项。
 engineering、review、research 告知工程负责人角色并要求阅读 docs/roles/engineering.md；spec-review、watch 不告知角色。
 记录统一写主工作区 .codex-runs；--spec 接受正整数 Issue 号或安全字符串（字母、数字、连字符）。
 数字只读查询 spec 与子工单，字符串跳过全部 GitHub 查询；用现有 scorecard --record 存储自动关联每份精确名。
-review 带 --spec 时默认名 review-<S>；其余默认取可用的任务文件名或 task-<时间>。重名为批次前缀追加 -2、-3。
+review 带数字 --spec 时默认名 review-<S>，字符串时默认名 review-spec-id-<标识>；字符串（含数字开头）只按精确绑定采集。
+--name 可用对应默认前缀或原 review-<标识> 前缀，只接受前缀本身及其连字符后缀，数字规范名仍受归属检查。
+gh-<数字>、review-<数字> 及其连字符后缀保留给对应数字工单/spec，跨数字 spec 归属冲突继续拒绝。
+其余默认取可用的任务文件名或 task-<时间>。重名为批次前缀追加 -2、-3。
 多项记录名为 <前缀>-<序号>-<框架>，同名 <前缀>.batch.json 保存清单；review --record <前缀> 合计该清单。
 只读席位在提示中要求不改文件、不提交、不操作 GitHub；权限实际限制和损失见 doctor。
 --dry-run 仅打印实际设置、记录名、关联计划和提示，不启动模型、不写文件或关联、不写 GitHub。

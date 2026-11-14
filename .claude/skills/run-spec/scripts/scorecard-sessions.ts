@@ -1,6 +1,7 @@
 /**
  * 四框架会话只读采集：按闭区间切片，区分主会话与原生子代理，统一四元组和用量。
  * agy 只读 transcript.jsonl，不猜全局设置；模型/强度可显式补录并标明来源。
+ * 同会话多文件先按事件身份合并，再关联子代理、确定默认起点和裁剪时间窗。
  * Codex 累计快照扣除窗前基线，其余按回复去重相加；未知用量保留 null。
  * 活跃间隔最多十分钟，确认等待超过十分钟且不超过四十五分钟，更长单列停工。
  */
@@ -47,7 +48,7 @@ const analyze = (events: Json[]) => {
   const usages = (sidechain: boolean) => {
     const messages = new Map<string, Json>();
     for (const event of events) if (event.type === "assistant" && Boolean(event.isSidechain) === sidechain && event.message?.id)
-      messages.set(`${event.sessionId ?? event.sourcePath}:${event.message.id}`, event.message);
+      messages.set(`${event.sessionId ?? event.sourcePath}:${event.isSidechain ? event.agentId ?? "sidechain" : "main"}:${event.message.id}`, event.message);
     const parsed = [...messages.values()].map((message) => claudeTokens(message.usage));
     return parsed.length && parsed.every((value) => value !== null) ? sumTokens(parsed as Tokens[]) : null;
   };
@@ -82,7 +83,7 @@ export const sessionPath = (input: string): string => {
   if (/^[A-Za-z0-9-]+$/.test(input)) return transcript(join(agyBrain(), input));
   return path;
 };
-export type SessionOptions = TimeWindow & { mainModel?: string; mainEffort?: string };
+export type SessionOptions = TimeWindow & { mainModel?: string; mainEffort?: string; defaultStartedAt?: string | null };
 export const attribution = (seat: string, agent: string, metadata: Json = {}) => ({
   role: metadata.role ?? seat, seat, agent, framework: agent, model: metadata.model ?? null, actualModel: metadata.actualModel ?? null,
   effort: metadata.effort ?? null, actualEffort: metadata.actualEffort ?? null,
@@ -109,20 +110,27 @@ export const sessionSettings = (rows: Json[], framework: string, window: TimeWin
   return { model, effort };
 };
 
+type SessionFile = { path: string; rows: Json[]; framework: string; session: string };
+
 export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
   const byEvent = new Map<string, Json>();
   const failures: string[] = [];
   const frameworks = new Set<string>();
-  const loaded = new Map<string, { path: string; rows: Json[]; framework: string; session: string; child: boolean }>();
+  const loaded = new Map<string, SessionFile>();
   const childPaths = new Set<string>();
+  const childReferences = new Map<string, (string | null)[]>();
   const childFailures: string[] = [];
+  const beforeCutoff = (at: string | null) => !options.cutoffAt || !at || at <= options.cutoffAt;
   const queue = paths.map(sessionPath);
   let codexIndex: ReturnType<typeof codexSessions> | undefined;
   for (let cursor = 0; cursor < queue.length; cursor++) {
     const path = queue[cursor];
     if (loaded.has(path)) continue;
     if (!existsSync(path)) {
-      if (childPaths.has(path)) { childFailures.push(`子代理会话文件不存在：${path}`); continue; }
+      if (childPaths.has(path)) {
+        if (childReferences.get(path)?.some(beforeCutoff)) childFailures.push(`子代理会话文件不存在：${path}`);
+        continue;
+      }
       throw new Error(`主会话文件不存在：${path}`);
     }
     const rows = jsonLines(read(path));
@@ -131,18 +139,22 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
     const framework = codex ? "codex" : pi ? "pi" : rows.some((event) => event.created_at && ["USER_INPUT", "PLANNER_RESPONSE", "GENERIC"].includes(event.type)) ? "agy" : rows.some((event) => ["user", "assistant"].includes(event.type) && event.message) ? "claude" : null;
     if (!framework) { (childPaths.has(path) ? childFailures : failures).push(`${path} 缺少可解析的 Claude、Codex、pi 或 agy 主会话事件`); continue; }
     const session = `${framework}:${codex?.payload?.id ?? pi?.id ?? rows.find((event) => event.sessionId)?.sessionId ?? (framework === "agy" && basename(path) === "transcript.jsonl" ? basename(dirname(dirname(dirname(path)))) : path)}`;
-    loaded.set(path, { path, rows, framework, session, child: false });
-    const addChild = (file: string) => { childPaths.add(file); if (!queue.includes(file)) queue.push(file); };
+    loaded.set(path, { path, rows, framework, session });
+    const addChild = (file: string, at: string | null) => {
+      childPaths.add(file);
+      childReferences.set(file, [...(childReferences.get(file) ?? []), at]);
+      if (!queue.includes(file)) queue.push(file);
+    };
     if (framework === "agy") {
       const brain = basename(path) === "transcript.jsonl" ? dirname(dirname(dirname(dirname(path)))) : agyBrain();
       let pending = false;
       let linked = false;
       let invokedAt: string | null = null;
-      const finishInvocation = () => { if (pending && !linked) childFailures.push(`agy 子代理调用缺少可关联的 conversationId：${path}（${invokedAt}）`); };
+      const finishInvocation = () => { if (pending && !linked && beforeCutoff(invokedAt)) childFailures.push(`agy 子代理调用缺少可关联的 conversationId：${path}（${invokedAt}）`); };
       for (const row of rows) {
         if (row.source === "MODEL" && row.type === "PLANNER_RESPONSE") {
           finishInvocation();
-          pending = inWindow(row.created_at, options) && (row.tool_calls ?? []).some((call: Json) => call.name === "invoke_subagent");
+          pending = (row.tool_calls ?? []).some((call: Json) => call.name === "invoke_subagent");
           linked = false;
           invokedAt = timestamp(row.created_at);
         }
@@ -151,35 +163,44 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
         for (const match of text.matchAll(/["']?conversationId["']?\s*[:=]\s*["']([A-Za-z0-9-]+)["']/g)) {
           linked = true;
           const child = transcript(join(brain, match[1]));
-          if (child !== path) addChild(child);
-          else childFailures.push(`agy 子代理关联指向自身：${path}`);
+          if (child !== path) addChild(child, invokedAt);
+          else if (beforeCutoff(invokedAt)) childFailures.push(`agy 子代理关联指向自身：${path}`);
         }
       }
       finishInvocation();
     }
     if (framework === "codex" && codex) {
       codexIndex ??= codexSessions();
-      for (const child of codexIndex) if (child.parent === codex.payload.id && inWindow(child.events[0].timestamp, options)) addChild(child.events[0].sourceFile);
+      for (const child of codexIndex) if (child.parent === codex.payload.id) addChild(child.events[0].sourceFile, timestamp(child.events[0].timestamp));
     }
   }
   const details: Json[] = [];
-  const seenSessions = new Set<string>();
   const childSessions = new Set([...loaded.values()].filter((data) => childPaths.has(data.path)).map((data) => data.session));
-  for (const data of loaded.values()) {
-    const { path, rows, framework, session } = data;
-    data.child = childSessions.has(session);
-    if (seenSessions.has(session)) continue;
-    seenSessions.add(session);
-    if (!data.child) frameworks.add(framework);
-    const selected = rows.filter((row) => inWindow(row.created_at ?? row.timestamp, options));
+  const grouped = new Map<string, SessionFile[]>();
+  for (const data of loaded.values()) grouped.set(data.session, [...(grouped.get(data.session) ?? []), data]);
+  const normalized: (SessionFile & { child: boolean; events: Json[] })[] = [];
+  for (const [session, files] of [...grouped].sort(([a], [b]) => a.localeCompare(b))) {
+    files.sort((a, b) => b.rows.length - a.rows.length || a.path.localeCompare(b.path));
+    const { framework } = files[0];
+    const path = files.filter((file) => file.rows.some((row) => !row.isSidechain && ["user", "assistant"].includes(row.type))).map((file) => file.path).sort()[0] ?? files.map((file) => file.path).sort()[0];
+    const child = childSessions.has(session);
+    const merged = new Map<string, Json>();
+    const eventKey = (row: Json) => {
+      const identity = framework === "agy" && row.step_index !== undefined ? `${row.step_index}:${row.source}:${row.type}:${timestamp(row.created_at)}` : row.uuid ?? row.id ?? row.payload?.id ?? JSON.stringify(row);
+      return `${row.isSidechain ? row.agentId ?? "sidechain" : "main"}:${identity}`;
+    };
+    for (const file of files) for (const row of file.rows) {
+      const key = eventKey(row);
+      if (!merged.has(key)) merged.set(key, row);
+    }
+    const rows = [...merged.values()].sort((a, b) => (timestamp(a.created_at ?? a.timestamp) ?? "").localeCompare(timestamp(b.created_at ?? b.timestamp) ?? ""));
     const events: Json[] = [];
     const calls = new Map<string, string>();
-    const actual = sessionSettings(rows, framework, options);
-    for (const [index, row] of selected.entries()) {
+    for (const row of rows) {
       const at = timestamp(row.created_at ?? row.timestamp);
-      const key = framework === "agy" ? `${row.step_index ?? index}:${row.source}:${row.type}:${at}` : row.uuid ?? row.id ?? row.payload?.id ?? `${at}:${index}`;
-      const base = { timestamp: at, uuid: `${session}:${key}`, sessionId: session, sourcePath: path, isSidechain: data.child };
-      if (framework === "claude") { events.push({ ...row, ...base, isSidechain: data.child || row.isSidechain, sessionId: `${framework}:${row.sessionId ?? path}` }); continue; }
+      const key = eventKey(row);
+      const base = { timestamp: at, uuid: `${session}:${key}`, sessionId: session, sourcePath: path, isSidechain: child };
+      if (framework === "claude") { events.push({ ...row, ...base, isSidechain: child || row.isSidechain, sessionId: `${framework}:${row.sessionId ?? path}` }); continue; }
       if (framework === "agy") {
         if (row.source === "USER_EXPLICIT" && row.type === "USER_INPUT") events.push({ ...base, type: "user", origin: { kind: "human" }, message: { content: content(row.content) } });
         if (row.source === "MODEL" && row.type === "PLANNER_RESPONSE") events.push({ ...base, type: "assistant", message: { id: key, usage: tokenUsage(agyTokens(row)), content: [...content(row.content), ...(row.tool_calls ?? []).map((call: Json) => ({ type: "tool_use", name: call.name, id: call.id }))] } });
@@ -213,12 +234,26 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
         events.push({ ...base, type: "user", isSynthetic: !answered, message: { content: [{ type: "tool_result", tool_use_id: item.call_id }] } });
       } else if (item?.type === "reasoning") events.push({ ...base, type: "assistant", message: { content: [] } });
     }
+    normalized.push({ path, rows, framework, session, child, events });
+  }
+  const earliest = normalized.flatMap((data) => data.events)
+    .filter((event) => !event.isSidechain && (!event.isMeta || event.origin?.kind === "human") && ["user", "assistant"].includes(event.type))
+    .map((event) => timestamp(event.timestamp)).filter((at): at is string => at !== null).sort()[0];
+  const startedAt = options.startedAt ?? [options.defaultStartedAt, earliest].filter((at): at is string => typeof at === "string").sort()[0] ?? null;
+  const window = { startedAt, cutoffAt: options.cutoffAt };
+  for (const data of normalized) {
+    const { path, rows, framework, session } = data;
+    const selected = rows.filter((row) => inWindow(row.created_at ?? row.timestamp, window));
+    if (data.child && !selected.length) continue;
+    const events = data.events.filter((event) => inWindow(event.timestamp, window));
+    const actual = sessionSettings(rows, framework, window);
     if (framework === "codex") {
-      const usage = sessionTokens({ id: session, parent: null, cwd: "", events: rows }, options);
+      const usage = sessionTokens({ id: session, parent: null, cwd: "", events: rows }, window);
       const snapshot = selected.filter((row) => row.type === "token_usage_record" || row.type === "event_msg" && row.payload?.type === "token_count").at(-1);
       events.push({ type: "assistant", uuid: `${session}:usage`, sessionId: session, sourcePath: path, isMeta: true, isSidechain: data.child,
         timestamp: snapshot?.timestamp, message: { id: "usage", usage: tokenUsage(usage) } });
     }
+    if (!data.child) frameworks.add(framework);
     const result = analyze(events);
     if (framework === "claude" && !data.child) {
       for (const childId of new Set(events.filter((event) => event.isSidechain && event.type === "assistant").map((event) => event.agentId ?? event.sessionId))) {
@@ -228,12 +263,14 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
         details.push({ session: `${session}:sidechain:${childId}`, path, child: true, ...attribution("subagent", framework, { actualModel: childModel, actualEffort: childEffort }), sources: { actualModel: childModel ? "session" : null, actualEffort: childEffort ? "session" : null }, usage: analyze(childEvents).childUsage });
       }
     }
-    if (!data.child && !result.hasMain) failures.push(`${path} 时间窗内缺少可解析的主会话事件`);
-    const model = actual.model ?? (!data.child ? options.mainModel : null) ?? null;
-    const effort = actual.effort ?? (!data.child ? options.mainEffort : null) ?? null;
-    details.push({ session, path, ...attribution(data.child ? "subagent" : "design", framework, { actualModel: model, actualEffort: effort }),
-      sources: { actualModel: actual.model ? "session" : model ? "manual" : null, actualEffort: actual.effort ? "session" : effort ? "manual" : null },
-      usage: data.child ? result.childUsage : result.mainUsage, child: data.child, startedAt: result.startedAt, cutoffAt: result.cutoffAt });
+    if (framework !== "claude" || data.child || result.hasMain || rows.some((row) => !row.isSidechain && ["user", "assistant"].includes(row.type))) {
+      if (!data.child && !result.hasMain) failures.push(`${path} 时间窗内缺少可解析的主会话事件`);
+      const model = actual.model ?? (!data.child ? options.mainModel : null) ?? null;
+      const effort = actual.effort ?? (!data.child ? options.mainEffort : null) ?? null;
+      details.push({ session, path, ...attribution(data.child ? "subagent" : "design", framework, { actualModel: model, actualEffort: effort }),
+        sources: { actualModel: actual.model ? "session" : model ? "manual" : null, actualEffort: actual.effort ? "session" : effort ? "manual" : null },
+        usage: data.child ? result.childUsage : result.mainUsage, child: data.child, startedAt: result.startedAt, cutoffAt: result.cutoffAt });
+    }
     for (const event of events) byEvent.set(event.uuid, event);
   }
   const result = analyze([...byEvent.values()]);
@@ -241,7 +278,7 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
   const children = details.filter((item) => item.child);
   const missingMainUsage = mainDetails.some((item) => item.usage === null);
   const usageReason = [...frameworks].map((framework) => ({ claude: "Claude assistant.message.usage", codex: "Codex 累计 token_count 或 thread_token_usage（扣除窗前基线）", pi: "pi assistant.message.usage", agy: "agy PLANNER_RESPONSE input_tokens + cache_read_tokens、output_tokens" })[framework]).join("、");
-  return { ...result, sessions: mainDetails, children, childFailures, frameworks: [...frameworks].sort(), hasMain: result.hasMain && !failures.length,
+  return { ...result, startedAt, sessions: mainDetails, children, childFailures, frameworks: [...frameworks].sort(), hasMain: result.hasMain && !failures.length,
     hasChildren: result.hasChildren || childFailures.length > 0, childUsage: childFailures.length || children.some((item) => item.usage === null) ? null : result.childUsage,
     mainUsage: failures.length || missingMainUsage ? null : result.mainUsage,
     usageReason: failures.join("；") || (paths.length ? `主会话缺少完整有效用量：${usageReason || "未知格式"}` : "未提供 --session 主会话"),
@@ -250,9 +287,12 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
 
 export const firstWrite = (rows: Json[], framework: string): { at: string; input: number | null } | null => {
   let input: number | null = null;
+  const responses = new Set<string>();
   for (const row of rows) {
     const message = row.message;
-    const usage = framework === "agy" ? agyTokens(row) : framework === "pi" ? piTokens(message?.usage) : claudeTokens(message?.usage);
+    const identity = framework === "claude" && message?.id ? `${row.sessionId ?? ""}:${row.agentId ?? ""}:${message.id}` : null;
+    const usage = identity && responses.has(identity) ? null : framework === "agy" ? agyTokens(row) : framework === "pi" ? piTokens(message?.usage) : claudeTokens(message?.usage);
+    if (usage && identity) responses.add(identity);
     const names = row.kind === "tool" && row.phase === "start" ? [row.name] : framework === "agy" ? (row.tool_calls ?? []).map((call: Json) => call.name) : row.type === "tool_execution_start" ? [row.toolName] : content(message?.content).filter((part) => part.type === "tool_use").map((part) => part.name);
     const allowed = framework === "agy" ? ["edit_file", "write_file"] : framework === "pi" ? ["edit", "write"] : ["Edit", "Write", "MultiEdit"];
     const at = timestamp(row.created_at ?? row.timestamp ?? row._at ?? row.at);

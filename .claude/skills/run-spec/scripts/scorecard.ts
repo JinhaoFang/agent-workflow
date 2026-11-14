@@ -67,9 +67,9 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     return { value, reason: value === null ? reason : null };
   };
   const sources = sourceSnapshot(root, spec, tickets, bindings);
-  const window = { startedAt: options.startedAt ?? sources.startedAt, cutoffAt: options.cutoffAt ?? sources.cutoffAt };
+  const main = mainSessions(sessions, { ...options, cutoffAt: options.cutoffAt ?? sources.cutoffAt, defaultStartedAt: sources.startedAt });
+  const window = { startedAt: options.startedAt ?? main.startedAt, cutoffAt: options.cutoffAt ?? sources.cutoffAt };
   if (window.startedAt && window.cutoffAt && window.startedAt > window.cutoffAt) throw new Error("时间窗 startedAt 不能晚于 cutoffAt。");
-  const main = mainSessions(sessions, { ...options, ...window });
   const zeroDispatch = main.hasMain && sources.dispatches.length === 0;
   const allRows = sources.allLedger ?? [];
   const identities = new Map<string, Json[]>();
@@ -129,7 +129,7 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     for (const session of linked) selected.set(session.id, session);
     const prompts = linked.flatMap((session) => session.events.filter((event) => event.type === "response_item" && event.payload?.role === "user")
       .flatMap((event) => event.payload.content ?? []).map((part: Json) => part.text ?? "")).join("\n");
-    const category = item.kind === "auxiliary" ? "辅助" : item.kind === "review" ? "审查" : /这是原地续做：|--resume 原地续做/.test(prompts) ? "续做" : /这是返工派发：/.test(prompts) ? "返工" : item.name === `gh-${item.ticket}` ? "首次" : null;
+    const category = item.kind === "review" || typeof spec === "string" && seat === "review" ? "审查" : item.kind === "auxiliary" ? "辅助" : /这是原地续做：|--resume 原地续做/.test(prompts) ? "续做" : /这是返工派发：/.test(prompts) ? "返工" : item.name === `gh-${item.ticket}` ? "首次" : null;
     const usages = linked.map((session) => sessionTokens(session, window));
     const normalized = summary || "usage" in metadata;
     const tokens = normalized ? codexTokens(metadata.usage ? { input_tokens: metadata.usage.input, cached_input_tokens: metadata.usage.cached, output_tokens: metadata.usage.output } : undefined) : linked.length && usages.every((value) => value !== null) ? sumTokens(usages as Tokens[]) : null;
@@ -170,10 +170,10 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
   const children: CodexSession[] = [];
   for (let changed = true; changed;) {
     changed = false;
-    for (const session of index) if (session.parent && selected.has(session.parent) && !selected.has(session.id) && inWindow(session.events[0].timestamp, window)) {
+    for (const session of index) if (session.parent && selected.has(session.parent) && !selected.has(session.id)) {
       const child = loadSession(session);
       selected.set(child.id, child);
-      if (![...main.children, ...main.sessions].some((item) => item.session === `codex:${child.id}`)) children.push(child);
+      if (child.events.some((event) => inWindow(event.timestamp, window)) && ![...main.children, ...main.sessions].some((item) => item.session === `codex:${child.id}`)) children.push(child);
       changed = true;
     }
   }
@@ -330,13 +330,17 @@ fullCount/fullMinutes 只汇总 full，staticCount 只汇总 static；缺台账�
 merges：landCount 计全部 land 调用；fullVerificationFailures 只计 caller=land 的 full 验证非零退出；verify、pr-check 不计入该项。
 stops 按 land 的 step 分 rebaseConflict、installFailure、verificationFailure、pushFailure、other。
 dispatches：每次给工单、席位 seat、工作类型 workType、框架 framework、配置 model/effort、permission、实际 actualModel/actualEffort，以及类别、起止、分钟、退出码、用量；起止优先生命周期，旧记录退到进度头尾或 raw._at。
-类别：显式辅助名为辅助（ticket=null），review 名为审查；会话初始指令明确“这是原地续做”为续做、“这是返工派发”为返工；基础 gh-<号> 为首次；其余 null。
+类别：显式辅助名为辅助（ticket=null），review 名及字符串 spec 的 review 席位为审查；会话初始指令明确“这是原地续做”为续做、“这是返工派发”为返工；基础 gh-<号> 为首次；其余 null。
 time：dispatchSlots=全部派发运行；dispatchLanes 按 framework 分泳道；verification=实际验证；queue=全部原始调用验证开始前 queuedMinutes 那一段，包装调用排队保留。
 --session 自动识别 Claude、Codex、pi、agy JSONL；agy 也接受会话 ID 或会话目录，根目录用 AGY_BRAIN_DIR 覆盖（默认 ~/.gemini/antigravity-cli/brain）。
 agy 只认 USER_EXPLICIT/USER_INPUT 人工输入、MODEL/PLANNER_RESPONSE 模型步骤和 GENERIC 工具结果；invoke_subagent 之后的工具返回 conversationId 关联同 brain 子会话，去重且不计入主会话用量。
 --main-model <模型>、--main-effort <强度> 仅补录日志缺失值，mainSessions.sources 标记 manual；不读取 settings.json。
---started-at <ISO时间>、--cutoff-at <ISO时间> 显式指定闭区间；默认使用本 spec 最早台账/派发启动与源记录截点，无本地边界时取给定主会话范围。
-所有主会话和子代理事件在时间窗内统计；Codex 累计快照减去窗前最后基线，窗外事件不计耗时、介入或 Token。
+--started-at <ISO时间>、--cutoff-at <ISO时间> 显式指定闭区间，严格按指定边界切分同会话中的多个 spec。
+默认 startedAt 取本 spec 最早本地台账/派发启动与给定主会话最早有效事件的较早值，包含同会话写 spec 阶段；缺一项时用另一项。
+默认 cutoffAt 仍优先本地源记录截点，排除收尾后闲聊；无本地截点时取给定主会话末尾。
+所有主会话和子代理事件在时间窗内统计；父子关联先于切片建立，窗前启动但窗内仍工作的子代理计入，完全窗外的不计。
+共享会话 ID 的文件和重叠快照先按事件身份合并去重，再区分主会话和子代理；传入顺序不影响统计。
+Codex 累计快照减去窗前最后基线，窗外事件不计耗时、介入或 Token。
 mainFrameworks 列出框架；mainSessions、subagents 与 dispatches.identity 统一给 role/seat、agent/framework、配置 model/effort 与实际 actualModel/actualEffort。
 designLead=每个给定主会话中相邻 user/assistant（含普通工具事件）间隔 <=10 分钟的整段；
 waitingUser=负责人文字回复或 AskUserQuestion tool_use 提问，到下一条用户输入 >10 且 <=45 分钟的整段（恰好10分钟不计）；
@@ -345,7 +349,7 @@ time.longPause 单列 >45 分钟的停工次数 count、并集 minutes/spans 及
 缺会话、未知格式或缺少可解析事件时后两类和 userInterventions 为 null，写明原因；按框架、会话和消息 ID 去重，不含 Claude isSidechain。
 overhead：派发开始到首次写改工具调用；Codex 取首次成功 apply_patch（含 tools.apply_patch），pi 取 edit/write，agy 取 edit_file/write_file，Claude 取 Edit/Write/MultiEdit；
 permission=read-only 或 review/research/spec-review/watch 席位固定 null，reason 说明不适用，不写 missing。
-输入 token 取首次改文件前累计输入；失败 Codex patch 和只读命令不计，shell 改文件无法可靠识别时写 null。
+输入 token 取首次改文件前累计输入，Claude 同 message.id 的流分片只累计一份响应用量；失败 Codex patch 和只读命令不计，shell 改文件无法可靠识别时写 null。
 Codex 将 response_item 消息、调用和结果映射到同一口径；AGENTS/环境注入、摘要、reasoning 不算用户输入；
 request_user_input 的非空 answers 算人工回答，异步提问只在后续用户消息到达时计介入。缺少 response_item 不从工具日志猜人工输入。
 pi 只取 message 的 user/assistant/toolResult；只有 user 亲自输入计介入，system、custom、compaction、toolResult 不计；

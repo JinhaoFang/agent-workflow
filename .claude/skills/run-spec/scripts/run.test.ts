@@ -167,7 +167,9 @@ test("run associates exact auxiliary names, avoids orphan collisions, and scorec
 test("run help, dry-run, invalid seats and conflicting ownership never launch or write", () => {
   const f = fixture();
   try {
-    assert.equal(f.run(["run", "--help"]).status, 0);
+    const help = f.run(["run", "--help"]);
+    assert.equal(help.status, 0);
+    assert.match(help.stdout, /--agent <codex\|claude\|pi\|agy>/);
     for (const args of [
       ["run", "task", "--seat", "research", "--spec", "22", "--name", "probe", "--dry-run"],
       ["run", "task", "--seat", "review", "--spec", "22", "--dry-run"],
@@ -336,6 +338,40 @@ test("concurrent run calls reserve different batch prefixes without overwriting 
   } finally { f.cleanup(); }
 });
 
+test("数字开头字符串 spec 的 review 默认名可预览、派发与采集，数字规范名继续防误绑", () => {
+  const f = fixture();
+  try {
+    for (const spec of ["2026-audit", "2026-final"]) {
+      const args = ["run", "只读审查", "--seat", "review", "--spec", spec];
+      const preview = f.run([...args, "--dry-run"]);
+      assert.equal(preview.status, 0, preview.stderr);
+      assert.match(preview.stdout, new RegExp(`记录 review-spec-id-${spec}\\n`));
+      assert.ok(!existsSync(join(f.root, `.codex-runs/review-spec-id-${spec}.batch.json`)));
+      const result = f.run(args);
+      assert.equal(result.status, 0, result.stderr);
+      const scored = f.run(["scorecard", spec]);
+      assert.equal(scored.status, 0, scored.stderr);
+      const card = JSON.parse(scored.stdout);
+      assert.deepEqual(card.recordBindings, [`review-spec-id-${spec}`]);
+      assert.deepEqual(card.dispatches.value.map((item: { record: string; seat: string; category: { value: string } }) => [item.record, item.seat, item.category.value]), [[`review-spec-id-${spec}`, "review", "审查"]]);
+      if (process.env.RUN_SPEC_TEST_EVIDENCE) {
+        mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
+        writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, `${spec}-review.txt`), `${preview.stdout}\n${result.stdout}\n${scored.stdout}`);
+      }
+    }
+    assert.deepEqual(f.calls("gh.jsonl"), []);
+    const before = readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8");
+    const launches = f.calls("agents.jsonl").length;
+    for (const spec of ["50", "2026-audit"]) {
+      const conflict = f.run(["run", "只读审查", "--seat", "research", "--spec", spec, "--name", "review-12", "--dry-run"]);
+      assert.equal(conflict.status, 2, conflict.stdout + conflict.stderr);
+      assert.match(conflict.stderr, /规范归属冲突/);
+    }
+    assert.equal(readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8"), before);
+    assert.equal(f.calls("agents.jsonl").length, launches);
+  } finally { f.cleanup(); }
+});
+
 test("字符串 --spec 持久关联辅助派发、隔离数字归属且不查询 GitHub", () => {
   const f = fixture();
   try {
@@ -356,12 +392,16 @@ test("字符串 --spec 持久关联辅助派发、隔离数字归属且不查询
     assert.equal(card.dispatches.value[0].seat, "research");
     const review = f.run(["run", "只读审查", "--seat", "review", "--spec", "feishu-refactor"]);
     assert.equal(review.status, 0, review.stderr);
-    assert.match(review.stdout, /review-feishu-refactor/);
+    assert.match(review.stdout, /review-spec-id-feishu-refactor/);
+    const named = f.run(["run", "只读审查显式名称", "--seat", "review", "--spec", "feishu-refactor", "--name", "review-feishu-refactor-manual"]);
+    assert.equal(named.status, 0, named.stderr);
+    assert.match(named.stdout, /review-feishu-refactor-manual/);
     const other = f.run(["run", "只读审查另一专项", "--seat", "review", "--spec", "feishu-refactor-extra"]);
     assert.equal(other.status, 0, other.stderr);
     const isolated = JSON.parse(f.run(["scorecard", "feishu-refactor"]).stdout);
-    assert.equal(isolated.dispatches.value.length, 2);
-    assert.ok(!isolated.recordBindings.includes("review-feishu-refactor-extra"));
+    assert.equal(isolated.dispatches.value.length, 3);
+    assert.ok(isolated.recordBindings.includes("review-feishu-refactor-manual"));
+    assert.ok(!isolated.recordBindings.includes("review-spec-id-feishu-refactor-extra"));
     assert.deepEqual(f.calls("gh.jsonl"), []);
     const before = readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8");
     for (const spec of ["../bad", "bad_name", "0", "--bad", "1;echo"]) {
