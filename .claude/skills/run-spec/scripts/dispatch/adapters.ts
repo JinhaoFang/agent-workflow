@@ -6,8 +6,9 @@ import type { Adapter } from "./adapter.ts";
 import { codex } from "./codex.ts";
 import { claude } from "./claude.ts";
 import { pi } from "./pi.ts";
+import { agy } from "./agy.ts";
 
-export const adapters: Record<string, Adapter> = { codex, claude, pi };
+export const adapters: Record<string, Adapter> = { codex, claude, pi, agy };
 export const agentNames = (): string[] => Object.keys(adapters);
 export const adapterFor = (agent: string): Adapter => {
   const adapter = adapters[agent];

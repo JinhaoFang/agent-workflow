@@ -85,9 +85,9 @@ test("适配器登记后配置解析立即接受新框架，无需修改 setting
   }
 });
 
-test("限流样本只由 Codex 适配器识别，Claude 和 pi 不把相同文字判为可重排", () => {
+test("限流样本由 Codex 与 agy 识别，Claude 和 pi 不把相同文字判为可重排", () => {
   for (const [agent, adapter] of Object.entries(adapters)) {
-    assert.equal(adapter.isConcurrencyLimit("Concurrency limit exceeded for account"), agent === "codex");
+    assert.equal(adapter.isConcurrencyLimit("Concurrency limit exceeded for account"), ["codex", "agy"].includes(agent));
     assert.equal(adapter.isConcurrencyLimit("普通运行失败"), false);
   }
 });

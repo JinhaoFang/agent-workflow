@@ -435,7 +435,7 @@ export const dispatchCommand: Command = {
   positionals: 1,
   execute: dispatch,
   help: `${entry} dispatch <工单> [--note <文字> | --note-file <文件>] [--allow-push] [--resume] [--dry-run]
-[--work-type <名称>] [--agent <codex|claude|pi>] [--model <模型>] [--effort <强度>]
+[--work-type <名称>] [--agent <codex|claude|pi|agy>] [--model <模型>] [--effort <强度>]
 工单正文「工作类型：<名称>」按仓库 workTypes 词表选 seats.engineering 的档；未写用 default。
 词表外名称退出 2，词表内未配档回落到 default 并打印原因、写入记录。
 席位逐字段优先级：命令参数 > 环境变量 > 仓库 > 用户 > 内置默认。
@@ -462,7 +462,7 @@ exclusiveVerification 默认 false；开启时指令要求完整验证运行主�
 需要完整验证时始终走主工作区 tickets.ts verify <工单>，按 exclusiveVerification 决定是否排队。
 以内置派发层全局记录及进程存活判断并发，按所选框架的 agents.<框架>.concurrency 排队；
 旧 DispatchDock 运行计入 Codex 名额，兼容 codexConcurrency 和 RUN_SPEC_CODEX_CONCURRENCY；达到上限时加锁排队，每 5 分钟最多打印一行。
-派发失败且适配器认定为并发超限时回到排队自动重试（目前只有 Codex 认定）；slots 按框架显示运行与空余名额。
+派发失败且适配器认定为并发超限时回到排队自动重试（Codex、agy 支持）；slots 按框架显示运行与空余名额。
 评论失败以 2 退出，不派发，已准备的 worktree 保留供重试。
 安装失败重试时沿用已有安装产物快照，只补充本次安装新建的路径。
 --dry-run 只读 GitHub 和 git 并打印计划及评论内容，不评论、不安装、

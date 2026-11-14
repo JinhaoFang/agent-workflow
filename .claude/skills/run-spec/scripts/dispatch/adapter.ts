@@ -19,7 +19,7 @@ export type SeatSettings = {
   fallbackReason?: string | null;
 };
 export type Usage = { input: number; cached: number; output: number };
-export type Outcome = { success: boolean; usage: Usage | null; actualModel: string | null; actualEffort: string | null };
+export type Outcome = { success: boolean; usage: Usage | null; actualModel: string | null; actualEffort: string | null; sessionId?: string | null; sessionPath?: string | null };
 export type Detection = { installed: boolean; version: string | null; launcher?: { executable: string; args: string[] }; error?: string };
 export type Adapter = {
   id: string;
