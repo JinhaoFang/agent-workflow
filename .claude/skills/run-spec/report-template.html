@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <!--
-spec 汇报模板（workflow-v6 交互式驾驶舱）：单文件零外部依赖，离线直接打开。
+spec 汇报模板：单文件零外部依赖，离线直接打开。
 用法见同目录 report.md：只替换 data-slot="data" 的 JSON（{"report": ..., "scorecard": tickets.ts scorecard --out 原样输出}）。
-自动响应系统浅色/深色主题并支持手动切换；含可收起粘性左栏（快捷键 [）、成果验收台三页签、代价图表台三透镜、一键全展开长卷、前端截图毛玻璃灯箱与历史评分表降级兼容。
+自动响应系统浅色/深色主题并支持手动切换；含可收起目录（快捷键 [）、交付与代价与时间页签、全部展开、截图放大查看与历史评分表降级兼容。
 -->
 <html lang="zh-CN">
 <head>
@@ -328,6 +328,22 @@ pre.proof {
 }
 .chart-title { font-size: 13.5px; font-weight: 700; margin-bottom: 2px; color: var(--ink); }
 .chart-sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; overflow-wrap: anywhere; }
+.time-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.time-stat {
+  padding: 9px 11px; border-radius: 9px; background: var(--surface); border: 1px solid var(--border);
+  min-width: 0; overflow-wrap: anywhere;
+}
+.time-stat-val { font-size: 18px; font-weight: 750; line-height: 1.15; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.time-stat-lbl { font-size: 12px; font-weight: 600; color: var(--ink2); margin-top: 3px; }
+.time-stat-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.time-rows { display: grid; gap: 6px; margin: auto 0; }
+.time-row {
+  display: grid; gap: 4px; padding: 6px 9px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--grid); min-width: 0;
+}
+.time-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; font-size: 12.5px; }
+.time-bar-track { height: 5px; border-radius: 999px; background: var(--wash); overflow: hidden; }
+.time-bar-fill { height: 100%; border-radius: 999px; }
 .story-compare > *, .two-col > *, .module-grid > *, .goal-card > *, .browser-grid > *, .chart-split > * { min-width: 0; }
 .donut-wrap { display: grid; grid-template-columns: 148px minmax(0, 1fr); gap: 12px; align-items: center; margin: auto 0; }
 .donut-slice { cursor: pointer; transition: stroke-width .16s; }
@@ -403,7 +419,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
   .shell { padding: 10px 10px 28px; }
   .hero-card, .deck, .fold-box { padding: 13px 12px; border-radius: 12px; }
   .ask-banner { padding: 11px 11px; }
-  .ask-grid, .kpi-grid { grid-template-columns: 1fr; }
+  .ask-grid, .kpi-grid, .time-summary { grid-template-columns: 1fr; }
   .seg-tabs { display: grid; grid-template-columns: 1fr; width: 100%; }
   .seg-tab { width: 100%; justify-content: space-between; white-space: normal; text-align: left; }
   .icon-btn { white-space: normal; text-align: left; }
@@ -418,7 +434,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 </div>
 <script type="application/json" data-slot="data">
 
-{"report":{"spec":51,"title":"示例汇报（替换 data-slot=\"data\" 生成正式汇报）","date":"2026-11-15","timezone":"Asia/Shanghai","repo":"JinhaoFang/agent-workflow","pr":{"number":64,"state":"示例模板"},"result":"这是 V6 交互式驾驶舱模板内置的离线示例数据（覆盖 cockpit.activeMinutes、wallSpanMinutes、tickets 与席位 tickets 新字段）。生成正式汇报时，用设计负责人填写的 report 与 tickets.ts scorecard --out 输出整体替换 data-slot=\"data\" 的 JSON。","story":{"before":"旧版模板在缺少 cockpit 时会自行拼接区间、从文件名猜返工并对指标环形图夹逼托底；若只传旧版 JSON 也容易与评分表口径打架。","afterSteps":["scorecard cockpit 统一预计算净干活并集 activeMinutes、日历跨度 wallSpanMinutes 以及全局和分席位工单一次通过/返工统计。","模板删掉全部跨记录汇总、名字猜返工、数值夹逼与写死结论，缺数直接展示「未记录」与 scorecard reason，比例环显式写明「是什么比什么」。","takeaways 改为可选结构化传入，为空时不渲染 .takeaway-strip。"]},"archNodes":[{"title":"1. scorecard 单一口径","sub":"净干活 · 跨度 · 一次通过","tip":"scorecard 统一产出 activeMinutes、wallSpanMinutes 与全局/席位 tickets。"},{"title":"2. V6 驾驶舱纯渲染","sub":"零跨记录汇总 · 显式口诀","tip":"模板只做格式转换、排序与 SVG 布局，不猜数不夹逼。"},{"title":"3. report-check 门禁","sub":"页签遍历 · 360px 全展开","tip":"无头 Chromium 遍历点击页签并展开隐藏面板检测窄屏溢出。"}],"takeaways":[{"title":"⏱ 耗时与并发结构（示例）","body":"净干活 1h 10m（设计 22.5m · 派发 44m · 验证 3.5m），日历跨度 1h 22m，占日历跨度 86%。"},{"title":"🎫 工单一次通过口径（示例）","body":"共 2 张工程工单：1 张一次通过，1 张存在返工派发（示例演示 gh-55-2 返工计数，来自 scorecard.cockpit.tickets）。"},{"title":"🧮 缓存重读占比（示例）","body":"真实干活 Token 73.8 万（新读 62 万 + 写出 11.8 万），缓存重读 740 万 / 总输入 802 万（92%）。"}],"delivered":[{"what":"scorecard cockpit 唯一数据源扩展","tickets":[65],"meaning":"一次通过数、返工数、净干活并集与日历跨度由 scorecard.ts 唯一给出。"},{"what":"report-template.html 去重算与透明比例环","tickets":[65],"meaning":"删除跨记录汇总与兜底假环，每张卡和环图写清分子分母与缺失原因。"}],"goals":[{"name":"必读七份说明文档总字节数（示例）","unit":"字节","before":51096,"after":51035,"target":51096,"status":"good","statusText":"净减 61 字节","method":"wc -c 统计七份必读文件总和。","evidence":{"output":"51,035 <= 51,096 字节"}}],"shots":[{"title":"V6 双栏驾驶舱布局示意","url":"report-template.html#deck-cost","focus":"左栏四元组筛选与右侧 SVG 环形图、分组柱状图双栏联动（点击可放大灯箱）。","ref":"示例缩略图","image":"data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20640%20340%22%3E%0A%20%20%20%20%3Crect%20width%3D%22640%22%20height%3D%22340%22%20rx%3D%2212%22%20fill%3D%22%23f6f7f9%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2218%22%20y%3D%2218%22%20width%3D%22142%22%20height%3D%22304%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2234%22%20width%3D%2290%22%20height%3D%2214%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2264%22%20width%3D%22118%22%20height%3D%2226%22%20rx%3D%226%22%20fill%3D%22%23eff6ff%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2298%22%20width%3D%22118%22%20height%3D%2226%22%20rx%3D%226%22%20fill%3D%22%23f3f4f6%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%22150%22%20width%3D%22118%22%20height%3D%2252%22%20rx%3D%228%22%20fill%3D%22%23fafbfc%22%20stroke%3D%22%23e5e7eb%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%22210%22%20width%3D%22118%22%20height%3D%2252%22%20rx%3D%228%22%20fill%3D%22%23fafbfc%22%20stroke%3D%22%23e5e7eb%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22176%22%20y%3D%2218%22%20width%3D%22446%22%20height%3D%2296%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22290%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%2315803d%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22400%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%232563eb%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22510%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%230d9488%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22176%22%20y%3D%22128%22%20width%3D%22446%22%20height%3D%22194%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22268%22%20cy%3D%22226%22%20r%3D%2254%22%20fill%3D%22none%22%20stroke%3D%22%232563eb%22%20stroke-width%3D%2218%22%20stroke-dasharray%3D%22210%20340%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22268%22%20cy%3D%22226%22%20r%3D%2254%22%20fill%3D%22none%22%20stroke%3D%22%230d9488%22%20stroke-width%3D%2218%22%20stroke-dasharray%3D%2290%20340%22%20stroke-dashoffset%3D%22-214%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22168%22%20width%3D%22224%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22192%22%20width%3D%22180%22%20height%3D%2212%22%20rx%3D%224%22%20fill%3D%22%2360a5fa%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22226%22%20width%3D%22142%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%230d9488%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22250%22%20width%3D%22112%22%20height%3D%2212%22%20rx%3D%224%22%20fill%3D%22%235eead4%22%2F%3E%0A%20%20%3C%2Fsvg%3E","imageAlt":"V6 驾驶舱结构示意"}],"asks":[],"evidence":[{"claim":"report-check 四项门禁全过","value":"exit=0, scrollWidth=360","output":"控制台 0 报错 · 全局名新增 0 · 时间线不滚动 · 手机 360px 全展开不溢出"}],"risks":[{"level":"good","what":"缺少 cockpit 预计算矩阵时显式提示「未记录」","impact":"模板不再回退做跨记录均值或并集推算；旧版评分表会明确标出「未记录」与缺少字段原因。","next":"如需完整驾驶舱视图，用新版 tickets.ts scorecard 重新采集。"}],"findings":["示例发现：正式汇报中填写本 spec 执行过程发现的真实问题与处理去向。"],"notes":[{"item":"示例说明","note":"正式交付前必须整体替换示例 JSON 并运行 tickets.ts report-check。"}],"dispatchNotes":{"gh-59":"✓ 示例首次通过 · 按新工单口径验证","gh-55":"✕ 示例首派非零退出 · 后续触发 gh-55-2 返工","gh-55-2":"✓ 示例返工通过 · 纳入工单返工统计"}},"scorecard":{"version":2,"spec":51,"startedAt":"2026-11-15T01:00:00.000Z","cutoffAt":"2026-11-15T02:30:00.000Z","collectedAt":"2026-11-15T02:31:00.000Z","mainFrameworks":["agy"],"mainSessions":[{"framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","minutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}]}],"merges":{"value":{"landCount":2,"fullVerificationFailures":0,"stops":{"rebaseConflict":0,"installFailure":0,"verificationFailure":0,"pushFailure":0,"other":0}},"reason":null},"dispatches":{"value":[{"record":"gh-59","ticket":59,"seat":"engineering","workType":"default","framework":"pi","actualModel":"openai/gpt-6.1-sol","actualEffort":"xhigh","start":{"value":"2026-11-15T01:12:00.000Z","reason":null},"end":{"value":"2026-11-15T01:18:00.000Z","reason":null},"minutes":{"value":6,"reason":null},"exitCode":{"value":0,"reason":null},"category":{"value":"首次","reason":null},"usage":{"value":{"inputTokens":680000,"cachedInputTokens":620000,"outputTokens":14000},"reason":null}},{"record":"gh-55","ticket":55,"seat":"engineering","workType":"default","framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","start":{"value":"2026-11-15T01:25:00.000Z","reason":null},"end":{"value":"2026-11-15T01:50:00.000Z","reason":null},"minutes":{"value":25,"reason":null},"exitCode":{"value":1,"reason":null},"category":{"value":"首次","reason":null},"usage":{"value":{"inputTokens":2600000,"cachedInputTokens":2400000,"outputTokens":42000},"reason":null}},{"record":"gh-55-2","ticket":55,"seat":"engineering","workType":"default","framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","start":{"value":"2026-11-15T01:52:00.000Z","reason":null},"end":{"value":"2026-11-15T02:05:00.000Z","reason":null},"minutes":{"value":13,"reason":null},"exitCode":{"value":0,"reason":null},"category":{"value":"返工","reason":null},"usage":{"value":{"inputTokens":1600000,"cachedInputTokens":1480000,"outputTokens":26000},"reason":null}}],"reason":null},"overhead":{"value":[{"record":"gh-59","minutes":{"value":1.6,"reason":null}},{"record":"gh-55","minutes":{"value":8.4,"reason":null}},{"record":"gh-55-2","minutes":{"value":3.2,"reason":null}}],"reason":null},"batches":{"value":[],"reason":null},"time":{"designLead":{"value":{"minutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}]},"reason":null},"dispatchSlots":{"value":{"minutes":44},"reason":null},"verification":{"value":{"minutes":3.5,"spans":[{"start":"2026-11-15T02:06:00.000Z","end":"2026-11-15T02:09:30.000Z"}]},"reason":null},"queue":{"value":{"minutes":0,"spans":[]},"reason":null},"waitingUser":{"value":{"minutes":0,"spans":[]},"reason":null},"longPause":{"value":{"minutes":0,"spans":[]},"reason":null}},"verification":{"value":{"fullCount":2,"staticCount":1,"totalMinutes":3.5,"runs":[{"layer":"full","target":{"kind":"ticket","number":55},"caller":"land","start":"2026-11-15T02:06:00.000Z","queuedMinutes":0,"minutes":1.8,"exitCode":0}]},"reason":null},"usage":{},"cockpit":{"totals":{"value":{"freshInput":620000,"output":118000,"cachedReplay":7400000,"input":8020000,"turns":92},"reason":null,"complete":true,"anomalies":[]},"activeMinutes":{"value":70,"reason":null,"complete":true,"anomalies":[]},"wallSpanMinutes":{"value":81.5,"reason":null,"complete":true,"anomalies":[]},"tickets":{"value":{"total":2,"firstPass":1,"rework":1,"redispatch":0,"interrupted":0,"dispatches":3,"reworkDispatches":1},"reason":null,"complete":true,"anomalies":[]},"seats":[{"role":"design","seat":"design","agent":"agy","framework":"agy","model":"gemini-4-carbon-high","actualModel":"gemini-4-carbon-high","effort":"high","actualEffort":"high","runs":1,"activeMinutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}],"medianFirstEditMinutes":null,"tickets":{"value":null,"reason":"非工程工单派发席位不统计工单一次通过率"},"usage":{"value":{"freshInput":240000,"output":36000,"cachedReplay":2900000,"input":3140000,"turns":28},"reason":null},"complete":true,"anomalies":[]},{"role":"工程负责人","seat":"engineering","agent":"agy","framework":"agy","model":"gemini-4-carbon-high","actualModel":"gemini-4-carbon-high","effort":"high","actualEffort":"high","runs":2,"activeMinutes":38,"spans":[{"start":"2026-11-15T01:25:00.000Z","end":"2026-11-15T01:50:00.000Z"},{"start":"2026-11-15T01:52:00.000Z","end":"2026-11-15T02:05:00.000Z"}],"medianFirstEditMinutes":5.8,"tickets":{"value":{"total":1,"firstPass":0,"rework":1,"redispatch":0,"interrupted":0,"dispatches":2,"reworkDispatches":1},"reason":null},"usage":{"value":{"freshInput":320000,"output":68000,"cachedReplay":3880000,"input":4200000,"turns":48},"reason":null},"complete":true,"anomalies":[]},{"role":"工程负责人","seat":"engineering","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh","runs":1,"activeMinutes":6,"spans":[{"start":"2026-11-15T01:12:00.000Z","end":"2026-11-15T01:18:00.000Z"}],"medianFirstEditMinutes":1.6,"tickets":{"value":{"total":1,"firstPass":1,"rework":0,"redispatch":0,"interrupted":0,"dispatches":1,"reworkDispatches":0},"reason":null},"usage":{"value":{"freshInput":60000,"output":14000,"cachedReplay":620000,"input":680000,"turns":16},"reason":null},"complete":true,"anomalies":[]}]},"missing":[]}}
+{"report":{"spec":51,"title":"示例汇报（替换 data-slot=\"data\" 生成正式汇报）","date":"2026-11-15","timezone":"Asia/Shanghai","repo":"JinhaoFang/agent-workflow","pr":{"number":64,"state":"示例模板"},"result":"这是汇报模板内置的离线示例数据（覆盖 cockpit.activeMinutes、wallSpanMinutes、tickets 与各角色 tickets 新字段）。生成正式汇报时，用设计负责人填写的 report 与 tickets.ts scorecard --out 输出整体替换 data-slot=\"data\" 的 JSON。","story":{"before":"旧版模板在缺少 cockpit 时会自行拼接区间、从文件名猜返工并对指标环形图夹逼托底；若只传旧版 JSON 也容易与评分表口径打架。","afterSteps":["scorecard cockpit 统一预计算工作时间（重叠只算一次）activeMinutes、日历跨度 wallSpanMinutes 以及全局和各角色工单一次通过/返工统计。","模板删掉全部跨记录汇总、名字猜返工、数值夹逼与写死结论，缺数直接展示「未记录」与 scorecard reason，比例环显式写明「是什么比什么」。","takeaways 改为可选结构化传入，为空时不渲染 .takeaway-strip。"]},"archNodes":[{"title":"1. scorecard 单一口径","sub":"工作时间 · 跨度 · 一次通过","tip":"scorecard 统一产出 activeMinutes、wallSpanMinutes 与全局/角色 tickets。"},{"title":"2. 模板纯渲染","sub":"零跨记录汇总 · 显式口诀","tip":"模板只做格式转换、排序与 SVG 布局，不猜数不夹逼。"},{"title":"3. report-check 检查","sub":"页签遍历 · 360px 全展开","tip":"无头 Chromium 遍历点击页签并展开隐藏面板检测窄屏溢出。"}],"takeaways":[{"title":"耗时与并发结构（示例）","body":"工作时间（重叠只算一次）1h 10m（设计负责人（主会话）22.5m · 派发（工程、审查等）44m · 验证 3.5m），日历跨度 1h 22m，工作时间占日历跨度 86%。"},{"title":"工单一次通过口径（示例）","body":"共 2 张工程工单：1 张一次通过，1 张存在返工派发（示例演示 gh-55-2 返工计数，来自 scorecard.cockpit.tickets）。"},{"title":"缓存重读占比（示例）","body":"首次读入 + 输出 73.8 万（首次读入 62 万 + 输出 11.8 万），缓存重读 740 万 / 总输入 802 万（92%）。"}],"delivered":[{"what":"scorecard cockpit 唯一数据源扩展","tickets":[65],"meaning":"一次通过数、返工数、工作时间（重叠只算一次）与日历跨度由 scorecard.ts 唯一给出。"},{"what":"report-template.html 去重算与透明比例环","tickets":[65],"meaning":"删除跨记录汇总与兜底假环，每张卡和环图写清分子分母与缺失原因。"}],"goals":[{"name":"必读七份说明文档总字节数（示例）","unit":"字节","before":51096,"after":51035,"target":51096,"status":"good","statusText":"净减 61 字节","method":"wc -c 统计七份必读文件总和。","evidence":{"output":"51,035 <= 51,096 字节"}}],"shots":[{"title":"汇报页面双栏布局示意","url":"report-template.html#deck-cost","focus":"左侧按角色筛选与右侧统计图双栏联动（点击放大）。","ref":"示例缩略图","image":"data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20640%20340%22%3E%0A%20%20%20%20%3Crect%20width%3D%22640%22%20height%3D%22340%22%20rx%3D%2212%22%20fill%3D%22%23f6f7f9%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2218%22%20y%3D%2218%22%20width%3D%22142%22%20height%3D%22304%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2234%22%20width%3D%2290%22%20height%3D%2214%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2264%22%20width%3D%22118%22%20height%3D%2226%22%20rx%3D%226%22%20fill%3D%22%23eff6ff%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2298%22%20width%3D%22118%22%20height%3D%2226%22%20rx%3D%226%22%20fill%3D%22%23f3f4f6%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%22150%22%20width%3D%22118%22%20height%3D%2252%22%20rx%3D%228%22%20fill%3D%22%23fafbfc%22%20stroke%3D%22%23e5e7eb%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%22210%22%20width%3D%22118%22%20height%3D%2252%22%20rx%3D%228%22%20fill%3D%22%23fafbfc%22%20stroke%3D%22%23e5e7eb%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22176%22%20y%3D%2218%22%20width%3D%22446%22%20height%3D%2296%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22290%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%2315803d%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22400%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%232563eb%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22510%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%230d9488%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22176%22%20y%3D%22128%22%20width%3D%22446%22%20height%3D%22194%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22268%22%20cy%3D%22226%22%20r%3D%2254%22%20fill%3D%22none%22%20stroke%3D%22%232563eb%22%20stroke-width%3D%2218%22%20stroke-dasharray%3D%22210%20340%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22268%22%20cy%3D%22226%22%20r%3D%2254%22%20fill%3D%22none%22%20stroke%3D%22%230d9488%22%20stroke-width%3D%2218%22%20stroke-dasharray%3D%2290%20340%22%20stroke-dashoffset%3D%22-214%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22168%22%20width%3D%22224%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22192%22%20width%3D%22180%22%20height%3D%2212%22%20rx%3D%224%22%20fill%3D%22%2360a5fa%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22226%22%20width%3D%22142%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%230d9488%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22250%22%20width%3D%22112%22%20height%3D%2212%22%20rx%3D%224%22%20fill%3D%22%235eead4%22%2F%3E%0A%20%20%3C%2Fsvg%3E","imageAlt":"汇报页面结构示意"}],"asks":[],"evidence":[{"claim":"report-check 四项检查全过","value":"exit=0, scrollWidth=360","output":"控制台 0 报错 · 全局名新增 0 · 时间线不滚动 · 手机 360px 全展开不溢出"}],"risks":[{"level":"good","what":"缺少 cockpit 预计算矩阵时显式提示「未记录」","impact":"模板不再回退做跨记录均值或并集推算；旧版评分表会明确标出「未记录」与缺少字段原因。","next":"如需完整汇报数据，用新版 tickets.ts scorecard 重新采集。"}],"findings":["示例发现：正式汇报中填写本 spec 执行过程发现的真实问题与处理去向。"],"notes":[{"item":"示例说明","note":"正式交付前必须整体替换示例 JSON 并运行 tickets.ts report-check。"}],"dispatchNotes":{"gh-59":"✓ 示例首次通过 · 按新工单口径验证","gh-55":"✕ 示例首派非零退出 · 后续触发 gh-55-2 返工","gh-55-2":"✓ 示例返工通过 · 纳入工单返工统计"}},"scorecard":{"version":2,"spec":51,"startedAt":"2026-11-15T01:00:00.000Z","cutoffAt":"2026-11-15T02:30:00.000Z","collectedAt":"2026-11-15T02:31:00.000Z","mainFrameworks":["agy"],"mainSessions":[{"framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","minutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}]}],"merges":{"value":{"landCount":2,"fullVerificationFailures":0,"stops":{"rebaseConflict":0,"installFailure":0,"verificationFailure":0,"pushFailure":0,"other":0}},"reason":null},"dispatches":{"value":[{"record":"gh-59","ticket":59,"seat":"engineering","workType":"default","framework":"pi","actualModel":"openai/gpt-6.1-sol","actualEffort":"xhigh","start":{"value":"2026-11-15T01:12:00.000Z","reason":null},"end":{"value":"2026-11-15T01:18:00.000Z","reason":null},"minutes":{"value":6,"reason":null},"exitCode":{"value":0,"reason":null},"category":{"value":"首次","reason":null},"usage":{"value":{"inputTokens":680000,"cachedInputTokens":620000,"outputTokens":14000},"reason":null}},{"record":"gh-55","ticket":55,"seat":"engineering","workType":"default","framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","start":{"value":"2026-11-15T01:25:00.000Z","reason":null},"end":{"value":"2026-11-15T01:50:00.000Z","reason":null},"minutes":{"value":25,"reason":null},"exitCode":{"value":1,"reason":null},"category":{"value":"首次","reason":null},"usage":{"value":{"inputTokens":2600000,"cachedInputTokens":2400000,"outputTokens":42000},"reason":null}},{"record":"gh-55-2","ticket":55,"seat":"engineering","workType":"default","framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","start":{"value":"2026-11-15T01:52:00.000Z","end":"2026-11-15T02:05:00.000Z"},"minutes":{"value":13,"reason":null},"exitCode":{"value":0,"reason":null},"category":{"value":"返工","reason":null},"usage":{"value":{"inputTokens":1600000,"cachedInputTokens":1480000,"outputTokens":26000},"reason":null}}],"reason":null},"overhead":{"value":[{"record":"gh-59","minutes":{"value":1.6,"reason":null}},{"record":"gh-55","minutes":{"value":8.4,"reason":null}},{"record":"gh-55-2","minutes":{"value":3.2,"reason":null}}],"reason":null},"batches":{"value":[],"reason":null},"time":{"designLead":{"value":{"minutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}]},"reason":null},"dispatchSlots":{"value":{"minutes":44},"reason":null},"verification":{"value":{"minutes":3.5,"spans":[{"start":"2026-11-15T02:06:00.000Z","end":"2026-11-15T02:09:30.000Z"}]},"reason":null},"queue":{"value":{"minutes":0,"spans":[]},"reason":null},"waitingUser":{"value":{"minutes":0,"spans":[]},"reason":null},"longPause":{"value":{"minutes":0,"spans":[]},"reason":null}},"verification":{"value":{"fullCount":2,"staticCount":1,"totalMinutes":3.5,"runs":[{"layer":"full","target":{"kind":"ticket","number":55},"caller":"land","start":"2026-11-15T02:06:00.000Z","queuedMinutes":0,"minutes":1.8,"exitCode":0}]},"reason":null},"usage":{},"cockpit":{"totals":{"value":{"freshInput":620000,"output":118000,"cachedReplay":7400000,"input":8020000,"turns":92},"reason":null,"complete":true,"anomalies":[]},"activeMinutes":{"value":70,"reason":null,"complete":true,"anomalies":[]},"wallSpanMinutes":{"value":81.5,"reason":null,"complete":true,"anomalies":[]},"tickets":{"value":{"total":2,"firstPass":1,"rework":1,"redispatch":0,"interrupted":0,"dispatches":3,"reworkDispatches":1},"reason":null,"complete":true,"anomalies":[]},"seats":[{"role":"design","seat":"design","agent":"agy","framework":"agy","model":"gemini-4-carbon-high","actualModel":"gemini-4-carbon-high","effort":"high","actualEffort":"high","runs":1,"activeMinutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}],"medianFirstEditMinutes":null,"tickets":{"value":null,"reason":"非工程工单派发席位不统计工单一次通过率"},"usage":{"value":{"freshInput":240000,"output":36000,"cachedReplay":2900000,"input":3140000,"turns":28},"reason":null},"complete":true,"anomalies":[]},{"role":"工程负责人","seat":"engineering","agent":"agy","framework":"agy","model":"gemini-4-carbon-high","actualModel":"gemini-4-carbon-high","effort":"high","actualEffort":"high","runs":2,"activeMinutes":38,"spans":[{"start":"2026-11-15T01:25:00.000Z","end":"2026-11-15T01:50:00.000Z"},{"start":"2026-11-15T01:52:00.000Z","end":"2026-11-15T02:05:00.000Z"}],"medianFirstEditMinutes":5.8,"tickets":{"value":{"total":1,"firstPass":0,"rework":1,"redispatch":0,"interrupted":0,"dispatches":2,"reworkDispatches":1},"reason":null},"usage":{"value":{"freshInput":320000,"output":68000,"cachedReplay":3880000,"input":4200000,"turns":48},"reason":null},"complete":true,"anomalies":[]},{"role":"工程负责人","seat":"engineering","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh","runs":1,"activeMinutes":6,"spans":[{"start":"2026-11-15T01:12:00.000Z","end":"2026-11-15T01:18:00.000Z"}],"medianFirstEditMinutes":1.6,"tickets":{"value":{"total":1,"firstPass":1,"rework":0,"redispatch":0,"interrupted":0,"dispatches":1,"reworkDispatches":0},"reason":null},"usage":{"value":{"freshInput":60000,"output":14000,"cachedReplay":620000,"input":680000,"turns":16},"reason":null},"complete":true,"anomalies":[]}]},"missing":[]}}
 
 </script>
 <script>
@@ -518,7 +534,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     return hit && hit.reason ? String(hit.reason).replace(/^未记录[：:]\s*/, "") : fallback;
   };
   const cockpitMissingReason = S ? "当前评分表缺少 cockpit 预计算矩阵" : "未提供 scorecard 数据";
-  const cockpitSeatsReason = S && S.cockpit ? "尚无已记录席位运行时数据" : cockpitMissingReason;
+  const cockpitSeatsReason = S && S.cockpit ? "尚无已记录角色运行时数据" : cockpitMissingReason;
 
   const parseSpanArray = (rawSpans, defaultDesc) => {
     if (!Array.isArray(rawSpans)) return null;
@@ -556,12 +572,14 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
       const effort = c.actualEffort || c.effort || "默认";
       const isDesign = seatKey === "director" || seatKey === "design" || seatKey === "main";
       const rawSeatSpans = c && c.spans !== undefined ? val(c.spans) : undefined;
-      const actorSpans = parseSpanArray(rawSeatSpans, isDesign ? "主会话统筹、定稿与验收" : `${roleLabel} 活跃时段`);
+      const actorSpans = parseSpanArray(rawSeatSpans, isDesign ? "设计负责人（主会话）工作与验收" : `${roleLabel} 活跃时段`);
       const ticketSummary = formatSeatTicketSummary(c.tickets);
       const anomCount = c.anomalies && c.anomalies.length ? c.anomalies.length : 1;
       const statusText = c.complete === false || (c.anomalies && c.anomalies.length) ? `部分记录（异常 ${anomCount}）` : "记录完整";
       const statusParts = [ticketSummary, statusText].filter(Boolean);
-      const editText = typeof medEdit === "number" ? `首次改码中位 ${fmtMin(medEdit)}` : (isDesign ? "主会话统筹" : "只读或未计");
+      const editText = typeof medEdit === "number"
+        ? (typeof c.runs === "number" && c.runs > 1 ? `开始改文件前 ${fmtMin(medEdit)}（中位数）` : `开始改文件前 ${fmtMin(medEdit)}`)
+        : (isDesign ? "设计负责人（主会话）" : "只读或未统计");
       const usageReasonNote = !u && c.usage && c.usage.reason ? `用量缺失：${why(c.usage)}` : null;
       const anomNote = c.anomalies && c.anomalies.length ? c.anomalies.map((a) => `${a.source || a.record || ""}${a.source || a.record ? ": " : ""}${a.reason || a}`).join("；") : null;
       return {
@@ -624,7 +642,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
   const waitUserMin = waitUserObj && typeof waitUserObj.minutes === "number" ? waitUserObj.minutes : null;
   const longPauseMin = longPauseObj && typeof longPauseObj.minutes === "number" ? longPauseObj.minutes : null;
 
-  const shortSeat = { director: "设计", design: "设计", main: "设计", subagent: "子代理", engineering: "工程", review: "审查", research: "调研", "spec-review": "独审", watch: "巡检" };
+  const shortSeat = { director: "设计", design: "设计", main: "设计", subagent: "子代理", engineering: "工程", review: "审查", research: "调研", "spec-review": "独立审查", watch: "巡检" };
   const compactModel = (m) => {
     const tail = String(m || "默认").split("/").pop().replace(/^gemini-4-/, "").replace(/^claude-/, "");
     return tail.length > 16 ? `${tail.slice(0, 15)}…` : tail;
@@ -687,13 +705,13 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         a: st,
         b: Math.max(en, st + 15000),
         kind: exit === 0 || exit === null ? "ok" : "aborted",
-        desc: `${d.record || "派发"}${d.ticket ? ` (#${d.ticket})` : ""} · ${val(d.category) || "执行"} · ${fmtMin(val(d.minutes))}${u ? ` · 新读 ${fmtTok(u.fresh)} / 写 ${fmtTok(u.output)}` : ""}`
+        desc: `${d.record || "派发"}${d.ticket ? ` (#${d.ticket})` : ""} · ${val(d.category) || "执行"} · ${fmtMin(val(d.minutes))}${u ? ` · 首次读入 ${fmtTok(u.fresh)} / 输出 ${fmtTok(u.output)}` : ""}`
       });
     }
     lanes.push(...byLane.values());
-    const vSpans = ((verTimeObj || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "ok", desc: "验证与门禁检查" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
-    if (vSpans.length) lanes.push({ actorId: "", label: "验证门禁", color: "var(--verify)", spans: vSpans });
-    const wSpans = ((waitUserObj || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "wait", desc: "等用户确认 (10~45m)" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
+    const vSpans = ((verTimeObj || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "ok", desc: "验证" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
+    if (vSpans.length) lanes.push({ actorId: "", label: "验证", color: "var(--verify)", spans: vSpans });
+    const wSpans = ((waitUserObj || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "wait", desc: "等你确认 (10~45m)" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
     if (wSpans.length) lanes.push({ actorId: "", label: "等你确认", color: "var(--wait)", spans: wSpans });
     return lanes;
   };
@@ -725,10 +743,10 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
   const KPIS = [
     {
       v: judgedGoals.length ? `${metGoals} / ${judgedGoals.length}` : `${(R.delivered || []).length} 项`,
-      k: judgedGoals.length ? "量化与核对目标达成" : "核心模块交付",
+      k: judgedGoals.length ? "目标达成" : "改了什么",
       n: judgedGoals.length
         ? `环：已达成 / 判定目标（${metGoals}/${judgedGoals.length}）${goals.length > judgedGoals.length ? ` · 另 ${goals.length - judgedGoals.length} 项仅对比` : ""}`
-        : `交付 ${(R.delivered || []).length} 组模块 · 未设判定目标分母，无比例环`,
+        : `改了 ${(R.delivered || []).length} 项 · 未设目标分母，无比例环`,
       pct: judgedGoals.length ? Math.round((metGoals / judgedGoals.length) * 100) : null,
       color: "var(--good)"
     },
@@ -750,7 +768,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         }
         : {
           v: `${firstPassCount} / ${ticketTotal}`,
-          k: `工程工单一次通过 ${passPct}%${ticketsWrap && ticketsWrap.complete === false ? "（待核）" : ""}`,
+          k: `工程工单一次通过 ${passPct}%${ticketsWrap && ticketsWrap.complete === false ? "（数据不完整）" : ""}`,
           n: `环：一次通过(首派退出0且无返工/重派) / 总工单（${firstPassCount}/${ticketTotal}）· 返工 ${reworkCount} · 重派 ${redispatchCount}${interruptedCount ? ` · 中断 ${interruptedCount}` : ""} · 合并 ${mergesText}`,
           pct: passPct,
           color: "var(--agy)"
@@ -758,16 +776,16 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     unionActiveMin === null
       ? {
         v: "未记录",
-        k: "Agent 净干活时长",
+        k: "工作时间（重叠只算一次）",
         n: `未记录：${activeReason} · 日历跨度 ${wallMin !== null ? fmtMin(wallMin) : `未记录（${wallReason}）`}`,
         pct: null,
         color: "var(--pi)"
       }
       : {
         v: fmtMin(unionActiveMin),
-        k: `Agent 净干活时长${activeWrap && activeWrap.complete === false ? "（已知部分）" : ""}`,
+        k: `工作时间（重叠只算一次）${activeWrap && activeWrap.complete === false ? "（已知部分）" : ""}`,
         n: wallMin !== null && wallMin > 0
-          ? `日历跨度 ${fmtMin(wallMin)}${longPauseMin && longPauseMin > 0 ? `（停工 ${fmtMin(longPauseMin)}）` : ""} · 环：净干活 / 日历跨度（${fmtMin(unionActiveMin)}/${fmtMin(wallMin)}）`
+          ? `日历跨度 ${fmtMin(wallMin)}${longPauseMin && longPauseMin > 0 ? `（含超过 45 分钟的停顿 ${fmtMin(longPauseMin)}）` : ""} · 环：工作时间 / 日历跨度（${fmtMin(unionActiveMin)}/${fmtMin(wallMin)}）`
           : wallMin === 0
             ? "日历跨度 0m · 分母为 0，无比例环"
             : `日历跨度未记录（${wallReason}）· 分母缺失，无比例环`,
@@ -777,17 +795,17 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     totalRealTok === null
       ? {
         v: "未记录",
-        k: "真实干活 Token (新读+写出)",
+        k: "首次读入 + 输出（Token）",
         n: `未记录：${cockpitTotalsReason}`,
         pct: null,
         color: "var(--design)"
       }
       : {
         v: fmtTok(totalRealTok),
-        k: `真实干活 Token (新读+写出)${cockpitTotalsWrap && cockpitTotalsWrap.complete === false ? "（已知部分）" : ""}`,
+        k: `首次读入 + 输出（Token）${cockpitTotalsWrap && cockpitTotalsWrap.complete === false ? "（已知部分）" : ""}`,
         n: totalInput !== null && totalInput > 0
-          ? `首次新读 ${fmtTok(totalFresh)} · 写出 ${fmtTok(totalOut)} · 缓存 ${fmtTok(totalCached)} · 环：缓存重读 / 总输入（${fmtTok(totalCached)}/${fmtTok(totalInput)}）`
-          : `首次新读 ${fmtTok(totalFresh)} · 写出 ${fmtTok(totalOut)} · 总输入为 0，无比例环`,
+          ? `首次读入 ${fmtTok(totalFresh)} · 输出 ${fmtTok(totalOut)} · 缓存重读 ${fmtTok(totalCached)} · 环：缓存重读 / 总输入（${fmtTok(totalCached)}/${fmtTok(totalInput)}）`
+          : `首次读入 ${fmtTok(totalFresh)} · 输出 ${fmtTok(totalOut)} · 总输入为 0，无比例环`,
         pct: totalCached !== null && totalInput !== null && totalInput > 0 ? Math.round((totalCached / totalInput) * 100) : null,
         color: "var(--design)"
       }
@@ -837,8 +855,8 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     const boxW = Math.floor((W - pad * 2 - arrowW * (n - 1)) / n);
     return `<div class="arch-card">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:12px" class="muted">
-        <span><b style="color:var(--ink)">交互式运作机制图</b>（悬停节点查看底层实现与门禁细节）</span>
-        <span>端到端闭环</span>
+        <span><b style="color:var(--ink)">运作流程</b>（悬停看说明）</span>
+        <span>改之后怎么运转</span>
       </div>
       <svg class="viz" viewBox="0 0 ${W} 82" role="img" aria-label="关键机制流转图">
         ${nodes.slice(0, n).map((nd, i) => {
@@ -864,11 +882,11 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     const storyHtml = story && (story.before || (story.afterSteps && story.afterSteps.length)) ? `
       <div class="story-compare">
         <div class="story-pane before">
-          <div class="pane-kicker" style="color:var(--serious)"><span>⚠ 改动前的痛点与根因</span></div>
+          <div class="pane-kicker" style="color:var(--serious)"><span>改之前卡在哪</span></div>
           <div style="font-size:13px;color:var(--ink2);line-height:1.65">${esc(story.before || "见下方模块说明")}</div>
         </div>
         <div class="story-pane after">
-          <div class="pane-kicker" style="color:var(--good)"><span>✦ 现在的端到端运作闭环</span></div>
+          <div class="pane-kicker" style="color:var(--good)"><span>改之后怎么运转</span></div>
           <ol class="step-pills">
             ${(story.afterSteps || []).map((s, i) => `<li><span class="step-num">${i + 1}</span><span>${esc(s)}</span></li>`).join("")}
           </ol>
@@ -926,12 +944,12 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
           </div>
         </div>`;
       }).join("")}
-    </div>` : `<div class="muted" style="margin-bottom:12px">问题陈述未列单独量化项，判断依据见「机制与交付」。</div>`;
+    </div>` : `<div class="muted" style="margin-bottom:12px">问题陈述未列单独量化项，判断依据见「改了什么」。</div>`;
 
     const shotsHtml = SHOTS.length ? `
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 8px;flex-wrap:wrap;gap:8px">
-        <b style="font-size:13.5px">🖥 前端与视觉实测画廊（点击任意画面打开高清灯箱）</b>
-        <span class="muted">共 ${SHOTS.length} 张实测画面</span>
+        <b style="font-size:13.5px">截图（点击放大）</b>
+        <span class="muted">共 ${SHOTS.length} 张截图</span>
       </div>
       <div class="browser-grid">
         ${SHOTS.map((s, idx) => `<div class="browser-frame">
@@ -946,16 +964,16 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
           <div class="browser-foot">
             <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
               <b>${esc(s.title)}</b>
-              <span style="color:var(--agy);font-weight:600;font-size:11.5px">🔍 点击灯箱放大</span>
+              <span style="color:var(--agy);font-weight:600;font-size:11.5px">点击放大</span>
             </div>
             ${s.focus ? `<div class="muted" style="margin-top:3px;color:var(--ink2)">${esc(s.focus)}</div>` : ""}
           </div>
         </div>`).join("")}
-      </div>` : `<div class="muted" style="padding:9px 12px;border-radius:8px;background:var(--wash);margin-bottom:12px">本专项无新增前端页面截图（或为纯命令行/后端改造），关键证据见下方实测抽查卡。</div>`;
+      </div>` : `<div class="muted" style="padding:9px 12px;border-radius:8px;background:var(--wash);margin-bottom:12px">本专项无新增页面截图（或为纯命令行/后端改造），关键证据见下方卡片。</div>`;
 
     const extraEv = (R.evidence || []).filter((e) => !e.image || (R.shots && R.shots.length));
     const evHtml = extraEv.length ? `
-      <div style="font-weight:700;font-size:13.5px;margin:10px 0 8px">🔎 关键实测证据抽查</div>
+      <div style="font-weight:700;font-size:13.5px;margin:10px 0 8px">关键实测证据</div>
       <div class="goal-cards" style="margin-bottom:0">
         ${extraEv.map((e) => `<div class="goal-card">
           <div>
@@ -972,7 +990,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
   const renderRisksPanel = () => {
     const risks = R.risks || [];
     if (!risks.length) return `<div class="muted">本轮无未决风险或遗留项。</div>`;
-    const lvlMap = { good: ["good", "✓ 已闭环"], warning: ["warn", "! 留意边界"], warn: ["warn", "! 留意边界"], serious: ["warn", "! 中风险"], critical: ["crit", "✕ 高风险"] };
+    const lvlMap = { good: ["good", "✓ 已解决"], warning: ["warn", "! 留意边界"], warn: ["warn", "! 留意边界"], serious: ["warn", "! 中风险"], critical: ["crit", "✕ 高风险"] };
     return `<div class="risk-grid">
       ${risks.map((r) => {
         const [cls, txt] = lvlMap[r.level] || ["warn", "! 留意"];
@@ -1031,21 +1049,35 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     const topPad = gapCount ? 22 : 8;
     const H = topPad + TL_LANES.length * rowH + 22;
     const foldedMin = AXIS.segs.slice(1).reduce((s, [a], i) => s + (a - AXIS.segs[i][1]) / 60000, 0);
+    const longPauseSpans = parseSpanArray(longPauseObj && longPauseObj.spans, "") || [];
+    const gapItems = AXIS.segs.slice(1).map(([a], i) => {
+      const gapStart = AXIS.segs[i][1];
+      const gapM = (a - gapStart) / 60000;
+      const recordedPause = longPauseMin !== null && longPauseMin > 0 && longPauseSpans.some((lp) => lp.a < a && lp.b > gapStart);
+      return { bx: offsets[i + 1] - gapPx, gapStart, gapEnd: a, gapM, recordedPause };
+    });
+    const recordedPauseInGaps = gapItems.some((g) => g.recordedPause);
+    const gapHeaderNote = foldedMin >= 45
+      ? (recordedPauseInGaps && longPauseMin !== null && longPauseMin > 0
+        ? ` · 已省略 ${fmtMin(foldedMin)}（含超过 45 分钟的停顿 ${fmtMin(longPauseMin)}）`
+        : ` · 已省略 ${fmtMin(foldedMin)}（没有记录到活动）`)
+      : "";
 
     return `<div class="timeline-box">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:12px" class="muted">
-        <span><b style="color:var(--ink)">全局并发泳道时间线</b>（悬停色块查看时段、工单与真实 Token）</span>
-        <span>日历跨度 ${wallMin !== null ? fmtMin(wallMin) : `未记录（${esc(wallReason)}）`}${foldedMin >= 45 ? ` · 已自动折叠 ${fmtMin(foldedMin)} 停工空档` : ""}</span>
+        <span><b style="color:var(--ink)">时间线（按角色）</b>（悬停色块查看时段、工单与 Token）</span>
+        <span>日历跨度 ${wallMin !== null ? fmtMin(wallMin) : `未记录（${esc(wallReason)}）`}${gapHeaderNote}</span>
       </div>
       <div data-slot="timeline">
-        <svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="分角色与框架并发泳道时间线">
-          ${AXIS.segs.slice(1).map(([a], i) => {
-            const bx = offsets[i + 1] - gapPx;
-            const gapM = (a - AXIS.segs[i][1]) / 60000;
-            return `<g data-tip="${esc(`长停工空档 ${fmtMin(gapM)}（${fmtClock(AXIS.segs[i][1])}–${fmtClock(a)}），不计入有效干活时长`)}">
-              <text x="${(bx + gapPx / 2).toFixed(1)}" y="12" text-anchor="middle" font-size="9.5">折叠 ${fmtMin(gapM)}</text>
-              <rect x="${bx.toFixed(1)}" y="15" width="${gapPx}" height="${H - 35}" rx="3" fill="var(--wash2)"/>
-              <line x1="${(bx + gapPx / 2).toFixed(1)}" y1="16" x2="${(bx + gapPx / 2).toFixed(1)}" y2="${H - 21}" stroke="var(--axis)" stroke-dasharray="3 3"/>
+        <svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="时间线（按角色）">
+          ${gapItems.map((g) => {
+            const tipText = g.recordedPause
+              ? `超过 45 分钟的停顿 ${fmtMin(g.gapM)}（${fmtClock(g.gapStart)}–${fmtClock(g.gapEnd)}），不计入工作时间`
+              : `没有记录到活动 ${fmtMin(g.gapM)}（${fmtClock(g.gapStart)}–${fmtClock(g.gapEnd)}），未计入工作时间`;
+            return `<g data-tip="${esc(tipText)}">
+              <text x="${(g.bx + gapPx / 2).toFixed(1)}" y="12" text-anchor="middle" font-size="9.5">省略 ${fmtMin(g.gapM)}</text>
+              <rect x="${g.bx.toFixed(1)}" y="15" width="${gapPx}" height="${H - 35}" rx="3" fill="var(--wash2)"/>
+              <line x1="${(g.bx + gapPx / 2).toFixed(1)}" y1="16" x2="${(g.bx + gapPx / 2).toFixed(1)}" y2="${H - 21}" stroke="var(--axis)" stroke-dasharray="3 3"/>
             </g>`;
           }).join("")}
           ${TL_LANES.map((lane, idx) => {
@@ -1110,8 +1142,8 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     if (!ACTORS.length) return `<div class="muted">未记录：${esc(cockpitSeatsReason)}</div>`;
     const maxMin = Math.max(...ACTORS.map((a) => a.minutes || 0), 1);
     const maxTok = Math.max(...ACTORS.map((a) => (a.fresh || 0) + (a.output || 0)), 1);
-    const W = 560, L = 142, Rpad = 148, PW = W - L - Rpad, rowH = 52, H = 12 + ACTORS.length * rowH;
-    return `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="各席位耗时与真实干活Token分组柱状图">
+    const W = 600, L = 142, Rpad = 196, PW = W - L - Rpad, rowH = 52, H = 12 + ACTORS.length * rowH;
+    return `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="各角色工作时间与首次读入 + 输出分组柱状图">
       ${ACTORS.map((a, idx) => {
         const fw = fwInfo(a.fw);
         const y = 6 + idx * rowH;
@@ -1119,7 +1151,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         const wFresh = a.fresh ? Math.max(4, (a.fresh / maxTok) * PW) : 0;
         const wOut = a.output ? Math.max(3, (a.output / maxTok) * PW) : 0;
         const dim = state.filterActor && state.filterActor !== a.id ? "dimmed" : "";
-        const tip = `${a.role} · ${fw.label} · ${a.model} (思考:${a.effort})\n时长：${fmtMin(a.minutes)}（${a.runsText}）\n首次新读：${fmtTok(a.fresh)} · 思考写出：${fmtTok(a.output)}`;
+        const tip = `${a.role} · ${fw.label} · ${a.model} (思考:${a.effort})\n时长：${fmtMin(a.minutes)}（${a.runsText}）\n首次读入：${fmtTok(a.fresh)} · 输出：${fmtTok(a.output)}`;
         return `<g class="bar-chart-row ${dim}" data-tip="${esc(tip)}" data-actor="${esc(a.id)}">
           <rect class="bar-bg" x="2" y="${y - 3}" width="${W - 4}" height="${rowH - 4}" rx="7" fill="transparent"/>
           <text x="${L - 8}" y="${y + 13}" text-anchor="end" font-weight="600" fill="var(--ink)">${esc(a.role)}</text>
@@ -1130,40 +1162,68 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
           <rect x="${L}" y="${y + 20}" width="${PW}" height="12" rx="6" fill="var(--wash)"/>
           ${wFresh ? `<rect x="${L}" y="${y + 20}" width="${wFresh.toFixed(1)}" height="12" rx="6" fill="#3b82f6" opacity="0.84"/>` : ""}
           ${wOut ? `<rect x="${(L + Math.min(PW - wOut, wFresh)).toFixed(1)}" y="${y + 20}" width="${wOut.toFixed(1)}" height="12" rx="4" fill="#16a34a"/>` : ""}
-          <text x="${W - 6}" y="${y + 30}" text-anchor="end" font-size="10.5" fill="var(--muted)">${esc(a.fresh !== null ? `新读${fmtTok(a.fresh)}·写${fmtTok(a.output)}` : "用量未记录")}</text>
+          <text x="${W - 6}" y="${y + 30}" text-anchor="end" font-size="10.5" fill="var(--muted)">${esc(a.fresh !== null ? `首次读入 ${fmtTok(a.fresh)} · 输出 ${fmtTok(a.output)}` : "用量未记录")}</text>
         </g>`;
       }).join("")}
     </svg>`;
   };
 
   const renderChartsLens = () => {
-    const timeSegs = [
-      { label: "设计统筹 / 主会话", val: dLeadMin, missingKey: "time.designLead", color: "#d97706", desc: "Spec 定稿、拆单、设计工单与验收把关" },
-      { label: "派发写码 / 审查", val: dispSlotMin, missingKey: "time.dispatchSlots", color: "#0d9488", desc: "各工程与审查席位并发去重后的活跃时长" },
-      { label: "验证执行", val: verMin, missingKey: "time.verification", color: "#7c3aed", desc: "静态检查、land 完整验证与本机 CI" },
+    const timeItems = [
+      { label: "设计负责人（主会话）", val: dLeadMin, missingKey: "time.designLead", color: "#d97706", desc: "主会话记录到的设计、协调与验收活跃时段" },
+      { label: "派发（工程、审查等）", val: dispSlotMin, missingKey: "time.dispatchSlots", color: "#0d9488", desc: "各被派发角色按运行记录汇总的活跃时长" },
+      { label: "验证", val: verMin, missingKey: "time.verification", color: "#7c3aed", desc: "静态检查、完整验证与本机检查执行时长" },
       { label: "验证排队等待", val: queueMin, missingKey: "time.queue", color: "#a855f7", desc: "台账记录的排队等待实际验证开始前时段" },
-      { label: "等你确认 (10~45m)", val: waitUserMin, missingKey: "time.waitingUser", color: "#db2777", desc: "等待人工反馈与拍板确认的真实间隔" },
-      { label: "长停工空档 (>45m)", val: longPauseMin, missingKey: "time.longPause", color: "#94a3b8", desc: "超过 45 分钟的跨夜或配额等待，已从干活时长剥离" }
+      { label: "等你确认 (10~45m)", val: waitUserMin, missingKey: "time.waitingUser", color: "#db2777", desc: "等待人工反馈与确认的间隔" },
+      { label: "超过 45 分钟的停顿", val: longPauseMin, missingKey: "time.longPause", color: "#94a3b8", desc: "明确记录到的超过 45 分钟间隔，不计入工作时间" }
     ];
-    const missingTimeNotes = timeSegs
-      .filter((seg) => seg.val === null)
-      .map((seg) => `${seg.label}（${findMissingReason(seg.missingKey, "未记录")}）`);
-    const positiveTimeSegs = timeSegs.filter((s) => typeof s.val === "number" && s.val > 0);
+    const maxItemMin = Math.max(1, ...timeItems.map((it) => (typeof it.val === "number" && it.val > 0 ? it.val : 0)));
+    const activeNote = activeWrap && activeWrap.complete === false && activeWrap.anomalies && activeWrap.anomalies.length
+      ? `已知部分（${activeWrap.anomalies.length} 项缺数或进行中）`
+      : (unionActiveMin !== null ? "各角色与验证合并去重" : activeReason);
+    const wallNote = wallWrap && wallWrap.complete === false && wallWrap.anomalies && wallWrap.anomalies.length
+      ? `已知部分（${wallWrap.anomalies.length} 项缺数或进行中）`
+      : (wallMin !== null ? "首个记录起至最后结束" : wallReason);
+
     return `<div class="chart-split">
       <div class="chart-card">
         <div>
-          <div class="chart-title">🍩 时间去向构成环形图（悬停扇区查看明细）</div>
-          <div class="chart-sub">比例 = 各分项时长 / 已记录分项时长之和（分项间可重叠，非净干活并集）；中心为 cockpit 净干活并集</div>
+          <div class="chart-title">时间</div>
+          <div class="chart-sub">上方为去重后工作时间与日历跨度；下方各分项仅显示分钟数，分项间可重叠，不作相加和百分比</div>
         </div>
-        ${positiveTimeSegs.length
-          ? renderDonutSvg(timeSegs, fmtMin(unionActiveMin), unionActiveMin !== null ? "净干活(席位∪验证)" : "净干活未记录", fmtMin)
-          : `<div class="muted">未记录：${esc(missingTimeNotes.join("；") || cockpitMissingReason)}</div>`}
-        ${positiveTimeSegs.length && missingTimeNotes.length ? `<div class="muted" style="font-size:11.5px;margin-top:6px">缺失分项：${esc(missingTimeNotes.join("；"))}</div>` : ""}
+        <div class="time-summary">
+          <div class="time-stat" data-tip="${esc(activeWrap && activeWrap.anomalies && activeWrap.anomalies.length ? activeWrap.anomalies.map((a) => `${a.source || ""}: ${a.reason || a}`).join("\n") : "scorecard.cockpit.activeMinutes：各角色活跃时段与验证时段并集")}">
+            <div class="time-stat-val">${esc(unionActiveMin !== null ? fmtMin(unionActiveMin) : "未记录")}</div>
+            <div class="time-stat-lbl">工作时间（重叠只算一次）${activeWrap && activeWrap.complete === false ? "（已知部分）" : ""}</div>
+            <div class="time-stat-sub">${esc(activeNote)}</div>
+          </div>
+          <div class="time-stat" data-tip="${esc(wallWrap && wallWrap.anomalies && wallWrap.anomalies.length ? wallWrap.anomalies.map((a) => `${a.source || ""}: ${a.reason || a}`).join("\n") : "scorecard.cockpit.wallSpanMinutes：有记录时段的最早开始到最晚结束")}">
+            <div class="time-stat-val">${esc(wallMin !== null ? fmtMin(wallMin) : "未记录")}</div>
+            <div class="time-stat-lbl">日历跨度${wallWrap && wallWrap.complete === false ? "（已知部分）" : ""}</div>
+            <div class="time-stat-sub">${esc(wallNote)}</div>
+          </div>
+        </div>
+        <div class="time-rows">
+          ${timeItems.map((it) => {
+            const hasVal = typeof it.val === "number";
+            const reason = hasVal ? null : findMissingReason(it.missingKey, "未记录");
+            const barW = hasVal && it.val > 0 ? Math.max(3, (it.val / maxItemMin) * 100) : 0;
+            return `<div class="time-row" data-tip="${esc(`${it.label}：${hasVal ? fmtMin(it.val) : `未记录（${reason}）`}\n${it.desc}`)}">
+              <div class="time-row-head">
+                <span style="display:inline-flex;align-items:center;gap:6px;min-width:0"><i class="swatch" style="background:${it.color}"></i><span>${esc(it.label)}</span></span>
+                ${hasVal ? `<b class="num" style="white-space:nowrap">${esc(fmtMin(it.val))}</b>` : `<span class="muted" style="white-space:nowrap">未记录</span>`}
+              </div>
+              ${hasVal
+                ? (barW > 0 ? `<div class="time-bar-track"><div class="time-bar-fill" style="width:${barW.toFixed(1)}%;background:${it.color}"></div></div>` : "")
+                : `<div class="muted" style="font-size:11px">${esc(reason)}</div>`}
+            </div>`;
+          }).join("")}
+        </div>
       </div>
       <div class="chart-card">
         <div>
-          <div class="chart-title">📊 各席位耗时 vs 真实干活 Token 分组柱状图</div>
-          <div class="chart-sub">上柱 = 席位活跃时长 / 最大席位时长，下柱 = (首次新读 + 写出) / 最大席位干活 Token；点击行筛选</div>
+          <div class="chart-title">各角色工作时间与首次读入 + 输出</div>
+          <div class="chart-sub">上条 = 角色工作时间，下条 = 首次读入 + 输出（按各自最大值缩放）；点击行按角色筛选</div>
         </div>
         <div style="margin:auto 0">${renderGroupedBarSvg()}</div>
       </div>
@@ -1172,16 +1232,16 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 
   const renderTokensLens = () => {
     const tokSegs = totalRealTok !== null && totalCached !== null ? [
-      { label: "首次新读材料", val: totalFresh, color: "#2563eb", desc: "首次读入上下文的代码、文档与测试输出" },
-      { label: "思考与写出", val: totalOut, color: "#16a34a", desc: "模型推理链与产出的代码、审查和汇报" },
-      { label: typeof totalTurns === "number" ? `多轮历史缓存重读(${totalTurns}轮)` : "多轮历史缓存重读(轮数未记录)", val: totalCached, color: "#94a3b8", desc: "每轮工具调用自动重发的前文历史，命中缓存大幅打折" }
+      { label: "首次读入", val: totalFresh, color: "#2563eb", desc: "首次读入上下文的代码、文档与测试输出" },
+      { label: "输出", val: totalOut, color: "#16a34a", desc: "模型思考链与产出的代码、审查和汇报" },
+      { label: typeof totalTurns === "number" ? `缓存重读 (${totalTurns}轮)` : "缓存重读 (轮数未记录)", val: totalCached, color: "#94a3b8", desc: "每轮工具调用重发的前文历史，命中缓存大幅打折" }
     ] : [];
     const palette = ["#2563eb", "#0d9488", "#ea580c", "#7c3aed", "#db2777", "#4f46e5"];
     const seatSegs = ACTORS.filter((a) => typeof a.fresh === "number" && typeof a.output === "number").map((a, i) => ({
       label: `${a.role} (${fwInfo(a.fw).label})`,
       val: a.fresh + a.output,
       color: palette[i % palette.length],
-      desc: `${a.model} · 思考:${a.effort}｜首次新读 ${fmtTok(a.fresh)} + 思考写出 ${fmtTok(a.output)}`
+      desc: `${a.model} · 思考:${a.effort}｜首次读入 ${fmtTok(a.fresh)} + 输出 ${fmtTok(a.output)}`
     }));
     const missingTokSeats = ACTORS.filter((a) => a.fresh === null || a.output === null).map((a) => a.role);
     const maxReal = Math.max(...ACTORS.map((a) => (a.fresh || 0) + (a.output || 0)), 1);
@@ -1189,36 +1249,36 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     return `<div class="two-col">
       <div class="chart-card">
         <div>
-          <div class="chart-title">🧮 账面总 Token 三段式结构图</div>
-          <div class="chart-sub">比例 = 各分项 / (首次新读 + 写出 + 缓存重读) 账面总计；中心显示首次新读 + 写出</div>
+          <div class="chart-title">Token 由哪三项组成</div>
+          <div class="chart-sub">比例 = 各分项 / (首次读入 + 输出 + 缓存重读)；中心显示首次读入 + 输出</div>
         </div>
         ${tokSegs.some((s) => s.val > 0)
-          ? renderDonutSvg(tokSegs, fmtTok(totalRealTok), "首次新读 + 写出", fmtTok)
+          ? renderDonutSvg(tokSegs, fmtTok(totalRealTok), "首次读入 + 输出", fmtTok)
           : `<div class="muted">未记录：${esc(cockpitTotalsReason)}</div>`}
       </div>
       <div class="chart-card">
         <div>
-          <div class="chart-title">🥧 真实干活 Token 按四元组席位占比</div>
-          <div class="chart-sub">比例 = 单席位(首次新读 + 写出) / 完整记录席位真实干活 Token 之和</div>
+          <div class="chart-title">首次读入 + 输出按角色占比</div>
+          <div class="chart-sub">比例 = 单角色(首次读入 + 输出) / 完整记录角色的首次读入 + 输出之和</div>
         </div>
         ${seatSegs.some((s) => s.val > 0)
-          ? renderDonutSvg(seatSegs, fmtTok(totalRealTok), `${seatSegs.length}/${ACTORS.length} 席位有分项`, fmtTok)
-          : `<div class="muted">未记录：${esc(ACTORS.length ? "席位用量分项缺失" : cockpitSeatsReason)}</div>`}
-        ${missingTokSeats.length ? `<div class="muted" style="font-size:11.5px;margin-top:6px">以下席位用量缺失未计入环图：${esc(missingTokSeats.join("、"))}</div>` : ""}
+          ? renderDonutSvg(seatSegs, fmtTok(totalRealTok), `${seatSegs.length}/${ACTORS.length} 角色有分项`, fmtTok)
+          : `<div class="muted">未记录：${esc(ACTORS.length ? "角色用量分项缺失" : cockpitSeatsReason)}</div>`}
+        ${missingTokSeats.length ? `<div class="muted" style="font-size:11.5px;margin-top:6px">以下角色用量缺失未计入环图：${esc(missingTokSeats.join("、"))}</div>` : ""}
       </div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">🏅 四元组（角色/席位 · 框架 · 模型 · 思考强度）投入产出对比表</div>
-      <div class="chart-sub">全部数值直接读取 scorecard.cockpit.seats：首次新读、思考与写出、缓存重读、工单一次通过数及动手前读档中位耗时</div>
+      <div class="chart-title">各角色用量</div>
+      <div class="chart-sub">数值直接读取 scorecard.cockpit.seats：首次读入、输出、缓存重读、工单一次通过数及开始改文件前耗时（多次时为中位数）</div>
       <div class="tw">
         ${ACTORS.length ? `<table class="clean">
           <thead>
             <tr>
-              <th>角色/席位 · 框架 · 模型 · 思考强度</th>
+              <th>角色（框架 · 模型 · 思考强度）</th>
               <th>活跃时长</th>
-              <th>首次新读材料 + 思考与写出</th>
-              <th>多轮历史缓存重读</th>
-              <th>工单与完成情况 / 动手前读档</th>
+              <th>首次读入 + 输出</th>
+              <th>缓存重读</th>
+              <th>工单与完成情况 / 开始改文件前</th>
             </tr>
           </thead>
           <tbody>
@@ -1238,8 +1298,8 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
                     <div style="width:${fPct.toFixed(1)}%;background:${fw.solid}"></div>
                     <div style="width:${oPct.toFixed(1)}%;background:var(--out)"></div>
                   </div>
-                  <div class="num" style="margin-top:3px">首次新读 <b>${esc(fmtTok(a.fresh))}</b> · 思考写出 <b style="color:var(--good)">${esc(fmtTok(a.output))}</b></div>
-                  ${a.note ? `<div style="color:var(--warning);font-size:11px">⚠ ${esc(a.note)}</div>` : ""}
+                  <div class="num" style="margin-top:3px">首次读入 <b>${esc(fmtTok(a.fresh))}</b> · 输出 <b style="color:var(--good)">${esc(fmtTok(a.output))}</b></div>
+                  ${a.note ? `<div style="color:var(--warning);font-size:11px">注意：${esc(a.note)}</div>` : ""}
                 </td>
                 <td class="num"><b>${esc(fmtTok(a.cached))}</b><div class="muted">${esc(a.turns !== null ? `${a.turns} 轮工具调用` : "轮数未记录")}</div></td>
                 <td><b>${esc(a.pass)}</b><div class="muted">${esc(a.readDoc)}</div></td>
@@ -1284,12 +1344,12 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
       });
       return `<details class="batch-fold" ${openAll ? "open" : ""}>
         <summary>
-          <span>📦 <b>${esc(b.prefix || "批量池")}</b>（同前缀 &gt;10 批自动折叠：<b>${esc(okCount !== null ? okCount : "未记录")}/${esc(totalCount)}</b> 成功${failCount ? ` · <span style="color:var(--critical)">${esc(failCount)} 异常</span>` : ""}${b.complete === false ? " · 部分缺数" : ""}）</span>
-          <span class="num">${esc(fw.label)} ｜ 累计 ${esc(fmtMin(val(b.minutes) ?? b.wallMin))} · ${esc(bu ? `新读 ${fmtTok(bu.fresh)} / 写 ${fmtTok(bu.output)}` : "用量部分未记录")}</span>
+          <span><b>${esc(b.prefix || "批量派发")}</b>（同前缀 &gt;10 批自动折叠：<b>${esc(okCount !== null ? okCount : "未记录")}/${esc(totalCount)}</b> 成功${failCount ? ` · <span style="color:var(--critical)">${esc(failCount)} 异常</span>` : ""}${b.complete === false ? " · 部分缺数" : ""}）</span>
+          <span class="num">${esc(fw.label)} ｜ 累计 ${esc(fmtMin(val(b.minutes) ?? b.wallMin))} · ${esc(bu ? `首次读入 ${fmtTok(bu.fresh)} / 输出 ${fmtTok(bu.output)}` : "用量部分未记录")}</span>
         </summary>
         <div class="tw" style="margin-top:8px">
           <table class="clean">
-            <thead><tr><th>批次记录</th><th>框架 · 模型 · 强度</th><th>时长</th><th>真实干活 Token</th><th>退出码与状态</th></tr></thead>
+            <thead><tr><th>批次记录</th><th>框架 · 模型 · 强度</th><th>时长</th><th>首次读入 + 输出</th><th>退出码与状态</th></tr></thead>
             <tbody>
               ${detailEntries.map(({ record, d, isRep, anom }) => {
                 const ru = d ? normUsage(d.usage) : null;
@@ -1297,7 +1357,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
                 const mins = d ? val(d.minutes) : null;
                 const mText = d ? `${fwInfo(d.framework || d.agent || b.framework || "codex").label} · ${d.actualModel || d.model || "默认"} (${d.actualEffort || d.effort || "默认"})` : "—";
                 const statusTxt = anom ? `异常：${anom}` : (exit === 0 ? "✓ 成功 (0)" : (exit !== null && exit !== undefined ? `✕ 退出码 ${exit}` : "未记录"));
-                return `<tr><td><code>${esc(record)}</code>${isRep ? ' <span class="tab-badge">代表</span>' : ""}</td><td>${esc(mText)}</td><td class="num">${esc(typeof mins === "number" ? fmtMin(mins) : (d ? why(d.minutes) : "—"))}</td><td class="num">${esc(ru ? `新读 ${fmtTok(ru.fresh)} · 写 ${fmtTok(ru.output)}` : (d ? why(d.usage) : "—"))}</td><td>${esc(statusTxt)}</td></tr>`;
+                return `<tr><td><code>${esc(record)}</code>${isRep ? ' <span class="tab-badge">代表</span>' : ""}</td><td>${esc(mText)}</td><td class="num">${esc(typeof mins === "number" ? fmtMin(mins) : (d ? why(d.minutes) : "—"))}</td><td class="num">${esc(ru ? `首次读入 ${fmtTok(ru.fresh)} · 输出 ${fmtTok(ru.output)}` : (d ? why(d.usage) : "—"))}</td><td>${esc(statusTxt)}</td></tr>`;
               }).join("")}
             </tbody>
           </table>
@@ -1318,7 +1378,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
       const wPct = typeof m === "number" ? Math.max(4, Math.min(100 - leftPct, (m / maxMin) * 78)) : 12;
       const ov = overheadMap.get(d.record);
       const editM = ov ? val(ov.minutes) : null;
-      const autoStory = notesMap[d.record] || `${ok ? "✓" : "✕"} ${val(d.category) || "派发"}${d.ticket ? ` · 工单 #${d.ticket}` : ""}${typeof editM === "number" ? ` · 读档 ${fmtMin(editM)} 后改码` : ""}${exit !== null && exit !== 0 ? `（退出码 ${exit}）` : ""}`;
+      const autoStory = notesMap[d.record] || `${ok ? "✓" : "✕"} ${val(d.category) || "派发"}${d.ticket ? ` · 工单 #${d.ticket}` : ""}${typeof editM === "number" ? ` · 开始改文件前 ${fmtMin(editM)}` : ""}${exit !== null && exit !== 0 ? `（退出码 ${exit}）` : ""}`;
       return `<div class="wf-row ${dim}">
         <div>
           <div style="font-weight:700">${esc(d.record || "未命名记录")}</div>
@@ -1331,7 +1391,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         <div style="color:var(--ink2)">${esc(autoStory)}</div>
         <div class="num" style="text-align:right">
           <b>${esc(typeof m === "number" ? fmtMin(m) : why(d.minutes))}</b>
-          <div class="muted">${esc(u ? `新读 ${fmtTok(u.fresh)} · 写 ${fmtTok(u.output)}` : why(d.usage))}</div>
+          <div class="muted">${esc(u ? `首次读入 ${fmtTok(u.fresh)} · 输出 ${fmtTok(u.output)}` : why(d.usage))}</div>
         </div>
       </div>`;
     }).join("");
@@ -1348,7 +1408,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     ];
     const verRuns = (ver && ver.runs) || [];
     return `<details class="fold-box" ${openAll ? "open" : ""}>
-      <summary>流程发现、验证明细与数据口径（点击展开查找表）</summary>
+      <summary>流程发现与口径（验证明细、口径与缺项说明）</summary>
       <div style="margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr);gap:12px">
         ${findings.length ? `<div style="min-width:0;overflow-wrap:anywhere"><b>流程发现</b><ul style="margin:6px 0 0;padding-left:20px">${findings.map((f) => `<li>${esc(f)}</li>`).join("")}</ul></div>` : ""}
         ${verRuns.length ? `<div style="min-width:0"><b>验证执行台账（完整 ${ver.fullCount} 次 · 静态 ${ver.staticCount} 次）</b>
@@ -1375,7 +1435,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     app.innerHTML = `<div class="shell">
       ${collapsed ? `<div class="expand-bar">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <button type="button" class="icon-btn" id="toggle-side">» 展开左栏驾驶舱 ([)</button>
+          <button type="button" class="icon-btn" id="toggle-side">展开目录 ([)</button>
           <span class="pr-pill"><i class="pr-dot"></i>${esc(prText)}</span>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -1390,26 +1450,26 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         <aside class="cockpit-side" ${collapsed ? "hidden" : ""}>
           <div class="side-top">
             <span class="pr-pill"><i class="pr-dot"></i>${esc(R.pr ? `PR #${R.pr.number}` : `Spec ${R.spec}`)}</span>
-            <button type="button" class="icon-btn" id="toggle-side" title="快捷键 [ 收起或展开侧栏">« 收起侧栏</button>
+            <button type="button" class="icon-btn" id="toggle-side" title="快捷键 [ 收起或展开目录">收起目录</button>
           </div>
           <div>
             <div style="font-weight:750;font-size:14px;line-height:1.38">${esc(R.title || "")}</div>
             <div class="muted" style="margin-top:4px">${esc(R.date || "")} · Spec ${esc(R.spec)}</div>
           </div>
           <div>
-            <div class="side-nav-label">快速切换视图（免滚动）</div>
+            <div class="side-nav-label">目录</div>
             <div class="side-nav">
-              <button type="button" class="nav-btn ${!all && state.topTab === "overview" ? "active" : ""}" data-jump-top="overview"><span>✦ 机制与模块交付</span><span class="nav-count">${(R.delivered || []).length}</span></button>
-              <button type="button" class="nav-btn ${!all && state.topTab === "goals" ? "active" : ""}" data-jump-top="goals"><span>🎯 目标与实测画廊</span><span class="nav-count">${goals.length + SHOTS.length}</span></button>
-              <button type="button" class="nav-btn ${!all && state.topTab === "risks" ? "active" : ""}" data-jump-top="risks"><span>🛡 风险与上线边界</span><span class="nav-count">${(R.risks || []).length}</span></button>
-              <button type="button" class="nav-btn ${!all && state.costLens === "charts" ? "active" : ""}" data-jump-lens="charts"><span>📊 耗时饼图 & 柱状图</span><span class="nav-count">图</span></button>
-              <button type="button" class="nav-btn ${!all && state.costLens === "tokens" ? "active" : ""}" data-jump-lens="tokens"><span>🧮 Token 环图 & 四元组</span><span class="nav-count">${ACTORS.length}</span></button>
-              <button type="button" class="nav-btn ${!all && state.costLens === "waterfall" ? "active" : ""}" data-jump-lens="waterfall"><span>⏱ 逐单协作与返工流</span><span class="nav-count">${dispatches.length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.topTab === "overview" ? "active" : ""}" data-jump-top="overview"><span>改了什么</span><span class="nav-count">${(R.delivered || []).length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.topTab === "goals" ? "active" : ""}" data-jump-top="goals"><span>目标与证明</span><span class="nav-count">${goals.length + SHOTS.length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.topTab === "risks" ? "active" : ""}" data-jump-top="risks"><span>风险与遗留</span><span class="nav-count">${(R.risks || []).length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.costLens === "charts" ? "active" : ""}" data-jump-lens="charts"><span>时间</span><span class="nav-count">图</span></button>
+              <button type="button" class="nav-btn ${!all && state.costLens === "tokens" ? "active" : ""}" data-jump-lens="tokens"><span>Token</span><span class="nav-count">${ACTORS.length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.costLens === "waterfall" ? "active" : ""}" data-jump-lens="waterfall"><span>逐次派发</span><span class="nav-count">${dispatches.length}</span></button>
             </div>
           </div>
           <div>
-            <div class="side-nav-label" style="display:flex;justify-content:space-between;align-items:center">
-              <span>参演四元组（点击筛选）</span>
+            <div class="side-nav-label" style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+              <span title="点击按角色筛选">角色（框架 · 模型 · 思考强度）</span>
               ${state.filterActor ? `<button type="button" class="icon-btn" id="clear-actor" style="padding:1px 6px;font-size:11px">重置</button>` : ""}
             </div>
             <div class="roster-list">
@@ -1428,7 +1488,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         </aside>
 
         <div>
-          <header class="hero-card">
+          <header class="hero-card" aria-label="页首">
             <div class="hero-top">
               <div class="top-meta">
                 <span>${esc(R.date || "")}</span><span>·</span>
@@ -1437,7 +1497,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
                 <span class="pr-pill"><i class="pr-dot"></i>${esc(prText)}</span>
               </div>
               <div class="hero-actions">
-                <button type="button" class="icon-btn ${all ? "on" : ""}" id="expand-all-btn" data-action="expand-all" aria-pressed="${all ? "true" : "false"}">${all ? "返回页签切换视图" : "切换全展开长卷"}</button>
+                <button type="button" class="icon-btn ${all ? "on" : ""}" id="expand-all-btn" data-action="expand-all" aria-pressed="${all ? "true" : "false"}">${all ? "按页签查看" : "全部展开"}</button>
                 <button type="button" class="icon-btn" id="theme-btn">深浅色切换</button>
               </div>
             </div>
@@ -1445,7 +1505,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
             <p class="lead">${esc(R.result || "")}</p>
 
             <div class="ask-banner" ${asks.length ? "" : "hidden"}>
-              <div class="ask-head">⚡ 需要你拍板的事项（共 ${asks.length} 项）</div>
+              <div class="ask-head">要你决定的事（共 ${asks.length} 项）</div>
               <div class="ask-grid">
                 ${asks.map((a, idx) => `<div class="ask-box">
                   <div><b>${idx + 1}. 【${esc(a.kind || "确认")}】${esc(a.what)}</b></div>
@@ -1470,16 +1530,16 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 
           <section class="deck" id="deck-top">
             <div class="deck-head">
-              <div class="deck-title"><span>1. 成果验收台</span><span class="muted">零滚动切换「机制 / 目标与画廊 / 风险」</span></div>
-              <div class="seg-tabs" role="tablist" aria-label="成果验收台视图切换">
+              <div class="deck-title"><span>交付</span></div>
+              <div class="seg-tabs" role="tablist" aria-label="交付视图切换">
                 <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="${all || state.topTab === "overview" ? "true" : "false"}" class="seg-tab ${!all && state.topTab === "overview" ? "active" : ""}" data-top="overview">
-                  <span>✦ 改动机制与交付</span><span class="tab-badge">${(R.delivered || []).length}</span>
+                  <span>改了什么</span><span class="tab-badge">${(R.delivered || []).length}</span>
                 </button>
                 <button type="button" role="tab" id="tab-goals" aria-controls="panel-goals" aria-selected="${all || state.topTab === "goals" ? "true" : "false"}" class="seg-tab ${!all && state.topTab === "goals" ? "active" : ""}" data-top="goals">
-                  <span>🎯 目标与前端截图</span><span class="tab-badge">${SHOTS.length ? `${SHOTS.length}图` : goals.length}</span>
+                  <span>目标与证明</span><span class="tab-badge">${SHOTS.length ? `${SHOTS.length}图` : goals.length}</span>
                 </button>
                 <button type="button" role="tab" id="tab-risks" aria-controls="panel-risks" aria-selected="${all || state.topTab === "risks" ? "true" : "false"}" class="seg-tab ${!all && state.topTab === "risks" ? "active" : ""}" data-top="risks">
-                  <span>🛡 风险与边界</span><span class="tab-badge">${(R.risks || []).length}</span>
+                  <span>风险与遗留</span><span class="tab-badge">${(R.risks || []).length}</span>
                 </button>
               </div>
             </div>
@@ -1490,16 +1550,16 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 
           <section class="deck" id="deck-cost">
             <div class="deck-head">
-              <div class="deck-title"><span>2. 耗时 · Token · 模型对比图表台</span><span class="muted">过程数据全部由评分表自动生成</span></div>
-              <div class="seg-tabs" role="tablist" aria-label="代价与模型对比透镜切换">
+              <div class="deck-title"><span>代价与时间</span><span class="muted">过程数据全部来自评分表</span></div>
+              <div class="seg-tabs" role="tablist" aria-label="代价与时间视图切换">
                 <button type="button" role="tab" id="tab-charts" aria-controls="panel-charts" aria-selected="${all || state.costLens === "charts" ? "true" : "false"}" class="seg-tab ${!all && state.costLens === "charts" ? "active" : ""}" data-lens="charts">
-                  <span>① 耗时饼图 & 模型柱状图</span>
+                  <span>时间</span>
                 </button>
                 <button type="button" role="tab" id="tab-tokens" aria-controls="panel-tokens" aria-selected="${all || state.costLens === "tokens" ? "true" : "false"}" class="seg-tab ${!all && state.costLens === "tokens" ? "active" : ""}" data-lens="tokens">
-                  <span>② Token 环图 & 四元组表</span><span class="tab-badge">${ACTORS.length}</span>
+                  <span>Token</span><span class="tab-badge">${ACTORS.length}</span>
                 </button>
                 <button type="button" role="tab" id="tab-waterfall" aria-controls="panel-waterfall" aria-selected="${all || state.costLens === "waterfall" ? "true" : "false"}" class="seg-tab ${!all && state.costLens === "waterfall" ? "active" : ""}" data-lens="waterfall">
-                  <span>③ 逐单协作与返工流</span><span class="tab-badge">${dispatches.length}</span>
+                  <span>逐次派发</span><span class="tab-badge">${dispatches.length}</span>
                 </button>
               </div>
             </div>
@@ -1517,7 +1577,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 
           ${renderFootDetails(all)}
 
-          <footer>过程数据来自评分表（<code>tickets.ts scorecard ${esc(R.spec)}</code>），截点 ${esc(fmtTime(S && S.cutoffAt))}，采集 ${esc(fmtTime(S && S.collectedAt))}。目标、证据、待拍板事项与风险由设计负责人核定填写。</footer>
+          <footer>过程数据来自评分表（<code>tickets.ts scorecard ${esc(R.spec)}</code>），截点 ${esc(fmtTime(S && S.cutoffAt))}，采集 ${esc(fmtTime(S && S.collectedAt))}。目标、证据、要你决定的事与风险由设计负责人核定填写。</footer>
         </div>
       </div>
     </div>`;
@@ -1616,7 +1676,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
       document.getElementById("lightbox-body").innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap">
           <div><b>${esc(shot.title)}</b> <span class="muted">· ${esc(shot.url || "")}</span></div>
-          <button type="button" class="icon-btn" id="close-lightbox">✕ 关闭 (Esc)</button>
+          <button type="button" class="icon-btn" id="close-lightbox">关闭 (Esc)</button>
         </div>
         ${shot.focus ? `<div class="muted" style="margin-bottom:10px;color:var(--ink2)">${esc(shot.focus)}</div>` : ""}
         ${shot.image ? `<img src="${esc(shot.image)}" alt="${esc(shot.imageAlt || shot.title)}">` : (shot.svg || "")}

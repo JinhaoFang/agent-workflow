@@ -1,7 +1,7 @@
 /**
  * 评分表 CLI 测试：真实临时 git 仓库和 bare origin、持久化假的 gh，固定台账、
  * 派发/进度与四框架会话记录；完整比较预期 JSON，检查缺数、时段并集、归属、
- * cockpit 三段式 Token 与四元组席位矩阵（含多主会话四元组独立活跃时段 spans）、工具轮数与旧记录降级、窗后空子代理跳过、
+ * cockpit 三项 Token 与角色矩阵（含多主会话角色独立活跃时段 spans）、工具轮数与旧记录降级、窗后空子代理跳过、
  * Claude 摘要与来源过滤、AskUserQuestion 问答、更新同一评论和 cleanup 删除前拦截。
  * SCORECARD_EVIDENCE 可指定输出
  * 固定输入、预期/实际 JSON、手算过程和测试命令记录的验收目录。
@@ -1169,7 +1169,7 @@ test("agy 会话 ID、目录、路径解析与子代理去重，缺模型只接�
   } finally { f.cleanup(); }
 });
 
-test("四框架闭区间切片与 10、11、45、46 分钟边界，跨夜停工单列", () => {
+test("四框架闭区间切片与 10、11、45、46 分钟边界，跨夜超过 45 分钟的停顿单列", () => {
   const f = fixture();
   try {
     clearSources(f);
@@ -1223,7 +1223,7 @@ test("Codex 窗内累计用量扣窗前基线，原生后代按同一时间窗�
   } finally { f.cleanup(); }
 });
 
-test("四框架派发四元组与首次写改工具耗时，只读席位固定 null", () => {
+test("四框架派发角色与首次写改工具耗时，只读席位固定 null", () => {
   const f = fixture();
   try {
     clearSources(f);
@@ -1303,7 +1303,7 @@ test("字符串 spec 跳过 GitHub，同前缀超过十条聚合并保留异常�
   } finally { f.cleanup(); }
 });
 
-test("cockpit 按完整四元组聚合席位矩阵，校验三段式 Token 恒等式、工具轮数去重与旧记录缺数降级", () => {
+test("cockpit 按角色（框架 · 模型 · 思考强度）聚合矩阵，校验三项 Token 恒等式、工具轮数去重与旧记录缺数降级", () => {
   const f = fixture();
   try {
     clearSources(f);
@@ -1561,7 +1561,7 @@ test("统一事件按非空工具调用 ID 唯一计轮，agy 回退日志按复
   } finally { f.cleanup(); }
 });
 
-test("多 --session 不同四元组主会话各自保留 mainSessions 与 cockpit.seats 的活跃时段与分钟，互不混同", () => {
+test("多 --session 不同角色主会话各自保留 mainSessions 与 cockpit.seats 的活跃时段与分钟，互不混同", () => {
   const f = fixture();
   try {
     clearSources(f);
@@ -1650,7 +1650,7 @@ test("多 --session 不同四元组主会话各自保留 mainSessions 与 cockpi
   } finally { f.cleanup(); }
 });
 
-test("cockpit 净干活、日历跨度与工单一次通过/返工口径：重派、返工、跨席位交接与未知分类", () => {
+test("cockpit 工作时间（重叠只算一次）、日历跨度与工单一次通过/返工口径：重派、返工、跨席位交接与未知分类", () => {
   const f = fixture();
   try {
     clearSources(f);

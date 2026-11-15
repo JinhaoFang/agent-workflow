@@ -281,7 +281,7 @@ for (const absent of [false, true]) {
   });
 }
 
-test("report-check 多页签驾驶舱正常样本巡检恢复初始态，360px 展开全部面板分段通过", { skip }, () => {
+test("report-check 多页签汇报页面正常样本巡检恢复初始态，360px 展开全部面板分段通过", { skip }, () => {
   const repo = repository();
   try {
     copyFileSync(fixture("tabs-ok"), repo.input);
@@ -349,7 +349,7 @@ test("report-check 点击非默认页签抛错或时间线溢出时仅对应检�
       ["mobile-360", 360, [800]],
     ]);
     const timelineHtml = readFileSync(fixture("tabs-ok"), "utf8").replace(
-      '<section id="panel-2" role="tabpanel" class="panel-mid" hidden><h2>耗时与模型</h2><p>第二视角内容。</p></section>',
+      '<section id="panel-2" role="tabpanel" class="panel-mid" hidden><h2>时间</h2><p>第二视角内容。</p></section>',
       '<section id="panel-2" role="tabpanel" class="panel-mid" hidden><div data-slot="timeline" style="overflow-x:auto"><div style="width:2000px;height:20px"></div></div></section>',
     );
     writeFileSync(repo.input, timelineHtml);

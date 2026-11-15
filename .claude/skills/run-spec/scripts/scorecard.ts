@@ -3,9 +3,9 @@
  * JSONL，--out 写文件，--post 用稳定标记创建或更新折叠评论。cleanup 共用归属
  * 和截点检查；只有显式 --no-scorecard 才绕过。所有缺数以 value:null 和中文
  * reason 表示，missing 汇总字段路径。保留 version:2 既有字段不变，主会话明细
- * 补充活跃时段 spans，并在顶层 cockpit 预计算全局与完整四元组席位（cockpit.seats
- * 含合并有序区间 spans）的三段式 Token、工具轮数、耗时、净干活并集 activeMinutes、
- * 日历跨度 wallSpanMinutes 与全局/席位工单一次通过及返工统计 tickets。
+ * 补充活跃时段 spans，并在顶层 cockpit 预计算全局与各角色（框架 · 模型 · 思考强度，cockpit.seats
+ * 含合并有序区间 spans）的三项 Token、工具轮数、耗时、工作时间（重叠只算一次）activeMinutes、
+ * 日历跨度 wallSpanMinutes 与全局/角色工单一次通过及返工统计 tickets。
  * 数据口径和兼容约定完整写在 --help。Claude 用户输入排除压缩摘要，优先认 origin.kind，并关联 AskUserQuestion 问答。
  */
 import { attribution, codexSessionMetrics, firstWrite, mainSessions, sessionPath, sessionSettings, type SessionOptions } from "./scorecard-sessions.ts";
@@ -658,7 +658,7 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       activeMinutes,
       medianFirstEditMinutes: median(firstEdits),
       tickets: seatTicketMetric,
-      usage: summed ? { value: toCockpitUsage(summed, turns), reason: null } : { value: null, reason: first.usageReason ?? "此四元组席位没有完整用量的有效记录" },
+      usage: summed ? { value: toCockpitUsage(summed, turns), reason: null } : { value: null, reason: first.usageReason ?? "此角色没有完整用量的有效记录" },
       complete: valid.length === group.length && anomalies.length === 0,
       anomalies,
     };
@@ -847,7 +847,7 @@ Codex 累计快照减去窗前最后基线，窗外事件不计耗时、介入�
 mainFrameworks 列出框架；mainSessions、subagents 与 dispatches.identity 统一给 role/seat、agent/framework、配置 model/effort 与实际 actualModel/actualEffort；mainSessions 另给单会话设计负责人活跃区间 spans（无有效主会话事件为 null）。
 designLead=每个给定主会话中相邻 user/assistant（含普通工具事件）间隔 <=10 分钟的整段；
 waitingUser=负责人文字回复或 AskUserQuestion tool_use 提问，到下一条用户输入 >10 且 <=45 分钟的整段（恰好10分钟不计）；
-time.longPause 单列 >45 分钟的停工次数 count、并集 minutes/spans 及原始 intervals，不混入 waitingUser。
+time.longPause 单列超过 45 分钟的停顿次数 count、并集 minutes/spans 及原始 intervals，不混入 waitingUser。
 每类 {spans:[{start,end}],minutes}；同类重叠/相接取并集，合计等于时段之和；类别之间可重叠，不跨会话连线。
 缺会话、未知格式或缺少可解析事件时后两类和 userInterventions 为 null，写明原因；按框架、会话和消息 ID 去重，不含 Claude isSidechain。
 overhead：派发开始到首次写改工具调用；Codex 取首次成功 apply_patch（含 tools.apply_patch），pi 取 edit/write，agy 取 edit_file/write_file，Claude 取 Edit/Write/MultiEdit；
@@ -866,15 +866,15 @@ usage.dispatches 按 seat/framework 分组，逐组给 {seat,framework,usage:{va
 同席位某次缺汇总或中断不清空其余有效统计，usage.dispatches 和 dispatchLanes 另列 anomalies；complete=false 表示已知部分，逐条 missing 保留。
 零派发但有有效主会话时，派发、泳道和用量组为 []，派发耗时与失败数为 0，不报派发缺数。
 辅助派发去末尾数字序号后同前缀超过 10 条时，batches 给条数、起止、成功率、总分钟、总 Token、异常、首尾代表项；dispatches 保留全部明细。
-主会话：Claude 按 message.id 去重累加 usage；Codex 取窗内最后累计 token_count 或 thread_token_usage 并扣窗前基线；pi 按 message.id 去重累加 assistant usage；agy 累加每步 input_tokens + cache_read_tokens（总输入）、cache_read_tokens（缓存）及 output_tokens（输出）。
+主会话：Claude 按 message.id 去重累加 usage；Codex 取窗内最后累计 token_count 或 thread_token_usage 并扣窗前基线；pi 按 message.id 去重累加 assistant usage；agy 累加每步 input_tokens + cache_read_tokens（总输入）、cache_read_tokens（缓存重读）及 output_tokens（输出）。
 独立审查取 review-spec-<号>-<序号>.json；子代理取关联 Codex 后代、给定 Claude sidechain 及 agy invoke_subagent 原生子会话的窗内完整 usage。
 subagentNotifications 读取给定会话任务通知的 subagent_tokens 总数，按 task-id/uuid 去重；
 这是只有总 token 的另一种来源，可能与子代理会话重叠，不与 subagents 相加，不能拆分的输入/输出不估算。
-inputTokens 包含缓存输入；Claude 包含 cache_read 和 cache_creation，pi 包含 cacheRead 和 cacheWrite；cachedInputTokens 只计缓存读取，outputTokens 为输出。
+inputTokens 包含缓存输入；Claude 包含 cache_read 和 cache_creation，pi 包含 cacheRead 和 cacheWrite；cachedInputTokens 只计缓存重读，outputTokens 为输出。
 主会话或子代理任一关联用量不完整时对应汇总为 null；派发组累计有效记录并列异常，不完整的审查/子代理不推成 0。
-cockpit：保持 version:2 既有字段不变，顶层新增 {totals,activeMinutes,wallSpanMinutes,tickets,seats} 供 V6 驾驶舱消费；三段式 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
-cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三段式 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.activeMinutes 为全部席位已记录 spans 与验证执行 spans 并集（lane）的总分钟数（排除 waitingUser、longPause 与排队；无任何有效时段或主会话/零派发依据时为 null，缺部分时段或台账时保留已知部分并置 complete=false）；cockpit.wallSpanMinutes 为席位、验证、排队、等待用户及长停工完整时段的最大结束减最小开始分钟数（仅单事件无间隔主会话为 0，缺完整起止为 null）；cockpit.tickets 汇总去重工程工单数 total、一次通过数 firstPass（严格要求该工单首条派发退出 0 且之后没有返工或重派）、返工工单数 rework（含 category="返工" 派发的工单数）、仅重派工单数 redispatch（派发超过 1 次且不含返工）、含中断/歧义派发工单数 interrupted、工单派发总次数 dispatches 与返工派发次数 reworkDispatches（未知分类跟进派发不猜返工，置 complete=false 并记入 anomalies）；零派发但有有效主会话时各项计 0，缺全部派发来源时为 null。
-cockpit.seats 按完整四元组（role/seat·agent/framework·actualModel??model·actualEffort??effort）聚合，逐项给四元组字段、runs、spans（合并后的有序无重叠区间数组 [{start,end}]，无区间记录为 []）、activeMinutes（并集或累计有效活跃分钟）、medianFirstEditMinutes（可写席位首次编辑分钟中位数，只读席位或无数据为 null）、tickets（{value,reason}：该席位关联工单的上述分项，其中 firstPass 只计全局一次通过且唯一派发落在此席位的工单；无工单派发的席位为 null 并写明原因）、usage、complete 与 anomalies。
+cockpit：保持 version:2 既有字段不变，顶层新增 {totals,activeMinutes,wallSpanMinutes,tickets,seats} 供汇报页面消费；三项 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
+cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三项 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.activeMinutes 为全部角色已记录 spans 与验证时段 spans 并集（lane）的工作时间（重叠只算一次）总分钟数（排除 waitingUser、longPause 与排队；无任何有效时段或主会话/零派发依据时为 null，缺部分时段或台账时保留已知部分并置 complete=false）；cockpit.wallSpanMinutes 为角色、验证、排队、等你确认及超过 45 分钟的停顿完整时段的最大结束减最小开始分钟数（仅单事件无间隔主会话为 0，缺完整起止为 null）；cockpit.tickets 汇总去重工程工单数 total、一次通过数 firstPass（严格要求该工单首条派发退出 0 且之后没有返工或重派）、返工工单数 rework（含 category="返工" 派发的工单数）、仅重派工单数 redispatch（派发超过 1 次且不含返工）、含中断/歧义派发工单数 interrupted、工单派发总次数 dispatches 与返工派发次数 reworkDispatches（未知分类跟进派发不猜返工，置 complete=false 并记入 anomalies）；零派发但有有效主会话时各项计 0，缺全部派发来源时为 null。
+cockpit.seats 按角色（role/seat · agent/framework · actualModel??model · actualEffort??effort）聚合，逐项给角色字段、runs、spans（合并后的有序无重叠区间数组 [{start,end}]，无区间记录为 []）、activeMinutes（工作时间并集或累计有效活跃分钟）、medianFirstEditMinutes（可写角色开始改文件前耗时中位数，只读角色或无数据为 null）、tickets（{value,reason}：该角色关联工单的上述分项，其中 firstPass 只计全局一次通过且唯一派发落在此角色的工单；无工单派发的角色为 null 并写明原因）、usage、complete 与 anomalies。
 cleanup 要求已发布评分表覆盖当前全部显式关联集合，不能只比较时间戳；不扩大原有删除范围。
 cleanup 新记录检查复用台账及派发归属，比较结构化时间及派发文件修改时间（也捕获补写汇报）；不因其他 spec 的记录变更而拦截。
 数字 spec 查询直接子工单；字符串 spec 只含字母、数字、连字符，跳过 GitHub，读取本地台账、绑定与当前分支最近 30 条提交，不能 --post。

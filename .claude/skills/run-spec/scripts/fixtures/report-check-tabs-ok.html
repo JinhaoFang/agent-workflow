@@ -1,10 +1,10 @@
 <!doctype html>
-<!-- 多页签驾驶舱正常样本：双栏响应式网格、页签切换、全展开与隐藏面板；report-check 应四项通过且恢复初始页签。 -->
+<!-- 多页签汇报页面正常样本：双栏响应式网格、页签切换、全部展开与隐藏面板；report-check 应四项通过且恢复初始页签。 -->
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>多页签驾驶舱正常样本</title>
+<title>多页签汇报页面正常样本</title>
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -28,22 +28,22 @@ button { font: inherit; padding: 4px 10px; cursor: pointer; }
 <body>
 <div class="layout">
   <aside>
-    <h1>驾驶舱导览</h1>
-    <button type="button" data-action="expand-all" aria-pressed="false">切换全展开长卷</button>
-    <details><summary>角色说明</summary><p>四元组归因明细。</p></details>
+    <h1>目录</h1>
+    <button type="button" data-action="expand-all" aria-pressed="false">全部展开</button>
+    <details><summary>角色说明</summary><p>角色归因明细。</p></details>
   </aside>
   <main>
     <div data-slot="timeline" aria-label="时间线"></div>
     <div class="toolbar">
       <div role="tablist" aria-label="视角切换">
-        <button type="button" role="tab" aria-selected="true" data-target="panel-1">改动与交付</button>
-        <button type="button" role="tab" aria-selected="false" data-target="panel-2">耗时与模型</button>
-        <button type="button" role="tab" aria-selected="false" data-target="panel-3">逐单协作流</button>
+        <button type="button" role="tab" aria-selected="true" data-target="panel-1">改了什么</button>
+        <button type="button" role="tab" aria-selected="false" data-target="panel-2">时间</button>
+        <button type="button" role="tab" aria-selected="false" data-target="panel-3">逐次派发</button>
       </div>
     </div>
-    <section id="panel-1" role="tabpanel" class="panel-short"><h2>改动与交付</h2><p>默认首屏单段高度。</p></section>
-    <section id="panel-2" role="tabpanel" class="panel-mid" hidden><h2>耗时与模型</h2><p>第二视角内容。</p></section>
-    <section id="panel-3" role="tabpanel" class="panel-tall" hidden><h2>逐单协作流</h2><p>第三视角高面板，未恢复初始态会使深色桌面变多段。</p></section>
+    <section id="panel-1" role="tabpanel" class="panel-short"><h2>改了什么</h2><p>默认首屏单段高度。</p></section>
+    <section id="panel-2" role="tabpanel" class="panel-mid" hidden><h2>时间</h2><p>第二视角内容。</p></section>
+    <section id="panel-3" role="tabpanel" class="panel-tall" hidden><h2>逐次派发</h2><p>第三视角高面板，未恢复初始态会使深色桌面变多段。</p></section>
   </main>
 </div>
 <script>
