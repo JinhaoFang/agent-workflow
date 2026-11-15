@@ -447,6 +447,15 @@ v2 装进 PathJX 后，第一个 spec 移植护栏（2026-10-21 13:01～13:50，
 
 141. **GitHub Actions 一直红，约定却说它启动不了**：合并 v6 前查 PR #58 的检查：Actions 的 verify 跑了 6 分钟，失败在 `report-check` 的样本测试，删浏览器用户目录时报 `ENOTEMPTY`（浏览器子进程还在写）。从 v5 的 spec #23 加入这些测试起，Actions 每次都在同一组失败（`release/workflow-v5` 的运行也是），本机一直通过。`docs/agents/run-spec.md` 写的是"Actions 被计费挡住，启动不了，用本机 CI 代替"，而 11-05 起 Actions 已经能跑。两件事：`report-check` 在 Linux CI 上收尾不稳，属于脚本；约定里的事实过时，属于文档。都不挡这次合并（本机 CI 是约定的关卡），下个版本处理。用过后看：修好后 Actions 是否转绿，约定是否改成以 Actions 为准。
 
+142. **`run` 的任务文件不认绝对路径**：v6 发布后给四个消费仓库派升级，任务说明放在本仓库 `.codex-runs/briefs/`，在消费仓库的 worktree 里运行 `tickets.ts run /root/…/task.md`，报"文件或程序不存在"，路径被拼成 `<worktree>/root/…/task.md`。原因是 `run.ts` 用 `join(cwd, 文件)` 而不是 `resolve`。改用相对路径绕过。任务说明和工作位置不在同一个仓库时一定会碰到（跨仓库派发、消费仓库升级），属于脚本，下个版本改成 `resolve` 并加一条测试。
+
+143. **消费仓库升级到 v6：安装器改锁文件格式，两处要设计补改**：11-15 给 PathJX-01、design-system、organize_management、video-studio 各开一张升级工单（#291、#100、#7、#144），在各自 `origin/main` 拉出的 worktree 里并行派 pi（gpt-6.1-sol xhigh）。四个都以 0 退出，`doctor` 和静态检查都通过，锁文件里两项的哈希四个仓库一致。三件事：
+    - **安装器改锁文件**：现在的 `npx skills` 把 `skills-lock.json` 升到 `version: 2`，清空当前目录没装的技能的哈希，有的还重排条目。四个 pi 都发现并还原了，因为工单写了"其余条目一字不变"。README 的"提交变了的两项"说的是同一件事，但没点出安装器会动别的条目。
+    - **把命令抄进本仓库**：PathJX-01 的 pi 把安装命令抄进 `docs/agents/run-spec.md`，还把 doctor 路径从 `.agents/` 改成 `.claude/`，和同文件其他地方不一致。设计负责人改回"只换版本号"。这正是 Matt 的"每个意思只写一处"，工单没写，执行者按"写全"的习惯做了。
+    - **把当前状态当历史**：design-system 路线图的「执行」一行按时间列版本，v5 时续写过；pi 把它当历史没动，路线图停在 v5。设计负责人补上。
+
+    先不加规则：锁文件靠工单里一句目标就守住了；后两件各一次，验收看 diff 能发现。下次升级看：安装器的锁文件格式要不要跟上 `version: 2`；升级工单要不要写"只换版本号，不新增说明"。
+
 ### 对照两个来源
 
 v6 逐项判定，来源见路线图目标 3。「返工后」是 #65—#71 做完时的判定（2026-11-15）。
