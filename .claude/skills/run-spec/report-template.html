@@ -745,7 +745,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
       v: judgedGoals.length ? `${metGoals} / ${judgedGoals.length}` : `${(R.delivered || []).length} 项`,
       k: judgedGoals.length ? "目标达成" : "改了什么",
       n: judgedGoals.length
-        ? `环：已达成 / 判定目标（${metGoals}/${judgedGoals.length}）${goals.length > judgedGoals.length ? ` · 另 ${goals.length - judgedGoals.length} 项仅对比` : ""}`
+        ? `环：已达成 / 判定目标（${metGoals}/${judgedGoals.length}）${goals.length > judgedGoals.length ? ` · 另 ${goals.length - judgedGoals.length} 项不判达成` : ""}`
         : `改了 ${(R.delivered || []).length} 项 · 未设目标分母，无比例环`,
       pct: judgedGoals.length ? Math.round((metGoals / judgedGoals.length) * 100) : null,
       color: "var(--good)"
@@ -918,11 +918,11 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     const goalHtml = goals.length ? `<div class="goal-cards">
       ${goals.map((g) => {
         const ev = g.evidence || {};
-        const proof = g.proof || ev.output || ev.value || "见核验方法";
+        const proof = g.proof || ev.output || "";
         const unit = g.unit ? ` ${g.unit}` : "";
-        const plain = g.plainWhy || ev.value || g.statusText || "";
+        const plain = ev.value || "";
         const links = (g.links || []).map((l) => `<a href="${esc(l.href)}">${esc(l.text)}</a>`).join(" · ");
-        return `<div class="goal-card">
+        return `<div class="goal-card"${proof ? "" : " style=\"grid-template-columns:1fr\""}>
           <div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:13.5px">
               <span>${esc(g.name)}</span>
@@ -934,14 +934,14 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
               <span class="muted">改后</span> <b style="color:var(--good)">${esc(g.after !== undefined ? `${g.after}${unit}` : "未知")}</b>
               ${g.target !== undefined ? `<span class="muted">（目标 ${esc(`${g.target}${unit}`)}）</span>` : ""}
             </div>
-            ${plain ? `<div style="font-size:12.5px;color:var(--ink2);margin-bottom:3px"><b>实测结论：</b>${esc(plain)}</div>` : ""}
+            ${plain ? `<div style="font-size:12.5px;color:var(--ink2);margin-bottom:3px"><b>实测：</b>${esc(plain)}</div>` : ""}
             ${g.method ? `<div class="muted">怎么测：${esc(g.method)}</div>` : ""}
             ${links ? `<div style="margin-top:4px;font-size:12px">${links}</div>` : ""}
           </div>
-          <div>
-            <div class="muted" style="margin-bottom:3px">实测回执与摘要：</div>
+          ${proof ? `<div>
+            <div class="muted" style="margin-bottom:3px">输出摘要：</div>
             <pre class="proof">${esc(proof)}</pre>
-          </div>
+          </div>` : ""}
         </div>`;
       }).join("")}
     </div>` : `<div class="muted" style="margin-bottom:12px">问题陈述未列单独量化项，判断依据见「改了什么」。</div>`;
@@ -969,11 +969,11 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
             ${s.focus ? `<div class="muted" style="margin-top:3px;color:var(--ink2)">${esc(s.focus)}</div>` : ""}
           </div>
         </div>`).join("")}
-      </div>` : `<div class="muted" style="padding:9px 12px;border-radius:8px;background:var(--wash);margin-bottom:12px">本专项无新增页面截图（或为纯命令行/后端改造），关键证据见下方卡片。</div>`;
+      </div>` : "";
 
     const extraEv = (R.evidence || []).filter((e) => !e.image || (R.shots && R.shots.length));
     const evHtml = extraEv.length ? `
-      <div style="font-weight:700;font-size:13.5px;margin:10px 0 8px">关键实测证据</div>
+      <div style="font-weight:700;font-size:13.5px;margin:10px 0 8px">证据</div>
       <div class="goal-cards" style="margin-bottom:0">
         ${extraEv.map((e) => `<div class="goal-card">
           <div>
