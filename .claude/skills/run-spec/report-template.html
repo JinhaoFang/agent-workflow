@@ -555,7 +555,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     const parts = [`一次通过 ${t.firstPass}/${t.total}`];
     if (t.rework > 0) parts.push(`返工 ${t.rework}`);
     if (t.redispatch > 0) parts.push(`重派 ${t.redispatch}`);
-    if (t.interrupted > 0) parts.push(`中断 ${t.interrupted}`);
+    if (t.interrupted > 0) parts.push(`中断或分类不明 ${t.interrupted}`);
     return parts.join(" · ");
   };
 
@@ -769,7 +769,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         : {
           v: `${firstPassCount} / ${ticketTotal}`,
           k: `工程工单一次通过 ${passPct}%${ticketsWrap && ticketsWrap.complete === false ? "（数据不完整）" : ""}`,
-          n: `环：一次通过(首派退出0且无返工/重派) / 总工单（${firstPassCount}/${ticketTotal}）· 返工 ${reworkCount} · 重派 ${redispatchCount}${interruptedCount ? ` · 中断 ${interruptedCount}` : ""} · 合并 ${mergesText}`,
+          n: `环：一次通过（第一次派发退出 0，之后没有返工或重派） / 总工单（${firstPassCount}/${ticketTotal}）· 返工 ${reworkCount} · 重派 ${redispatchCount}${interruptedCount ? ` · 中断或分类不明 ${interruptedCount}` : ""} · 合并 ${mergesText}`,
           pct: passPct,
           color: "var(--agy)"
         },
