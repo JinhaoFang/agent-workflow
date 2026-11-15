@@ -1,6 +1,6 @@
 /**
  * agy 派发 CLI 回放：真实临时 git 仓库、假 agy 和 gh，重放本机 1.5.9 事件。
- * 样本变体覆盖模型错误、限流、中断、未知用量/模型、权限和技能清单失败。
+ * 样本变体覆盖普通工具错误、工具级权限拒绝、中途瞬时错误自动恢复、未恢复错误、限流、中断、未知用量/模型、权限和技能清单失败。
  * 工单派发入口实测框架并发配置、环境覆盖与限流重排；不调用真实模型或 GitHub。
  */
 import assert from "node:assert/strict";
@@ -57,6 +57,49 @@ if (scenario==='multi-step') rows.splice(2,2,
 if (scenario==='missing-usage') delete rows.at(-1).result.usage;
 if (scenario==='invalid-usage') rows.at(-1).result.usage.cache_read_tokens=-1;
 if (scenario==='cached') rows.at(-1).result.usage.cache_read_tokens=1500;
+const retryError = 'API error (attempt 1): UNAVAILABLE (code 503): The service is currently unavailable.';
+const deniedToolMessage = 'permission check failed for read_file (.claude/skills/run-spec/SKILL.md): Permission denied for read_file(.claude/skills/run-spec/SKILL.md). Matches user-configured deny rule.';
+if (scenario==='tool-error') {
+  rows[2].step_update.step_index=11;
+  rows[3].step_update.step_index=11;
+  rows.splice(2,0,
+    {event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:10,state:'ACTIVE',step_type:'tool',tool_name:'read_file',tool_info:{name:'read_file',parameters:{Path:'.claude/skills/run-spec/dispatch/README.md'}}}},
+    {event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:10,state:'ERROR',step_type:'tool',tool_name:'read_file',tool_info:{name:'read_file',error:{type:'TOOL_ERROR',message:'file does not exist'}}}});
+}
+if (scenario==='tool-denied') {
+  rows[2].step_update.step_index=11;
+  rows[3].step_update.step_index=11;
+  rows.splice(2,0,
+    {event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:10,state:'ACTIVE',step_type:'tool',tool_name:'read_file',tool_info:{name:'read_file',parameters:{Path:'.claude/skills/run-spec/SKILL.md'}}}},
+    {event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:10,state:'ERROR',step_type:'tool',tool_name:'read_file',tool_info:{name:'read_file',error:{type:'TOOL_ERROR',message:deniedToolMessage}}}});
+}
+if (scenario.startsWith('recovered-')) {
+  rows[2].step_update.step_index=2;
+  rows[3].step_update.step_index=2;
+  rows.splice(2,0,{event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:1,state:'DONE',step_type:'error_message',error:retryError}});
+  rows.at(-1).result.status='ERROR';
+  rows.at(-1).result.error=retryError;
+}
+if (scenario==='recovered-tool-error') {
+  rows[3].step_update.step_index=3;
+  rows[4].step_update.step_index=3;
+  rows.splice(3,0,{event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:2,state:'ERROR',step_type:'tool',tool_name:'read_file',tool_info:{name:'read_file',error:{type:'TOOL_ERROR',message:'file does not exist'}}}});
+}
+if (scenario==='recovered-tool-denied') {
+  rows[3].step_update.step_index=3;
+  rows[4].step_update.step_index=3;
+  rows.splice(3,0,{event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:2,state:'ERROR',step_type:'tool',tool_name:'read_file',tool_info:{name:'read_file',error:{type:'TOOL_ERROR',message:deniedToolMessage}}}});
+}
+if (scenario==='recovered-empty') rows.at(-1).result.response='   ';
+if (scenario==='recovered-denied') rows.at(-1).result.denied_actions=[{action:'read_file'}];
+if (scenario==='recovered-quota') rows.at(-1).result.error='daily quota exhausted';
+if (scenario==='recovered-active') rows.splice(4,1);
+if (scenario==='recovered-second-error') rows.splice(-1,0,{event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:3,state:'DONE',step_type:'error_message',error:retryError}});
+if (scenario==='unrecovered-503') {
+  rows.splice(-1,0,{event:'step_update',step_update:{conversation_id:'agy-fixture',step_index:2,state:'DONE',step_type:'error_message',error:retryError}});
+  rows.at(-1).result.status='ERROR';
+  rows.at(-1).result.error=retryError;
+}
 if (scenario==='model-error') rows.splice(-1,0,{event:'step_update',step_update:{step_type:'error',state:'DONE',error:'model failed'}});
 if (scenario==='quota') { rows.at(-1).result.status='ERROR'; rows.at(-1).result.error='daily quota exhausted'; }
 if (scenario==='denied') rows.at(-1).result.denied_actions=[{action:'read_file'}];
@@ -83,6 +126,16 @@ if(scenario==='nonzero') process.exitCode=7;
   return { root, home, temporary, config, env, run, read, calls: () => readFileSync(calls, "utf8").trim().split("\n").map(line => JSON.parse(line)), summary: () => JSON.parse(read(".json")), cleanup: () => rmSync(temporary, { recursive: true, force: true }) };
 };
 
+test("dispatch-task.ts --help 同步包含 agy 普通工具错误、工具权限拒绝与瞬时 API 错误恢复说明", () => {
+  const help = spawnSync(process.execPath, [entry, "--help"], { encoding: "utf8" });
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /普通工具执行错误.*step_type:tool.*按工具结束记录.*不计为模型失败/);
+  assert.match(help.stdout, /permission check failed.*Matches user-configured deny rule.*agy 权限拒绝/);
+  assert.match(help.stdout, /API error \(attempt N\):/);
+  assert.match(help.stdout, /自动重试恢复.*DONE.*汇报非空.*无 denied_actions.*进程退出 0/s);
+  assert.match(help.stdout, /其余非 SUCCESS.*未恢复瞬时错误.*模型\/配额错误或缺结束事件仍判失败/);
+});
+
 test("agy CLI 传数组与 NDJSON，隔离两项技能并关联会话", () => {
   const f = fixture();
   try {
@@ -103,11 +156,15 @@ test("agy CLI 传数组与 NDJSON，隔离两项技能并关联会话", () => {
     assert.equal(command.args[command.args.indexOf("--effort") + 1], "high");
     const settings = JSON.parse(command.args[command.args.indexOf("--settings") + 1]);
     assert.equal(settings.allowNonWorkspaceAccess, false);
-    for (const name of ["run-spec", "setup-run-spec"]) assert.ok(settings.permissions.deny.includes(`read_file(.agents/skills/${name})`));
+    for (const name of ["run-spec", "setup-run-spec"]) for (const directory of [".agents", ".claude"]) assert.ok(settings.permissions.deny.includes(`read_file(${directory}/skills/${name}/SKILL.md)`));
     assert.ok(settings.permissions.deny.includes("write_file(*)"));
     const message = JSON.parse(command.stdin);
     assert.equal(message.event, "user");
-    assert.match(message.message.content, /只读权限/);
+    assert.match(message.message.content, /只读权限：/);
+    assert.match(message.message.content, /&&/);
+    assert.match(message.message.content, /被拒一次/);
+    assert.match(message.message.content, /denied_actions/);
+    assert.ok(message.message.content.includes("禁止读取两项流程技能的 SKILL.md 或调用 run-spec、setup-run-spec 技能。"));
     assert.ok(message.message.content.includes(task));
     assert.ok(!command.args.some((arg: string) => arg.includes(task)));
     assert.equal(f.read(".md"), "OK\n");
@@ -123,7 +180,30 @@ test("agy CLI 传数组与 NDJSON，隔离两项技能并关联会话", () => {
   } finally { f.cleanup(); }
 });
 
-for (const [scenario, status] of [["success", 0], ["model-error", 1], ["quota", 1], ["denied", 1], ["no-result", 1], ["unfinished", 1], ["missing-usage", 0], ["invalid-usage", 0], ["cached", 0], ["nonzero", 7], ["bad-skills", 2]] as const) test(`agy CLI 回放 ${scenario}`, () => {
+for (const [scenario, status] of [
+  ["success", 0],
+  ["tool-error", 0],
+  ["tool-denied", 1],
+  ["recovered-retry", 0],
+  ["recovered-tool-error", 0],
+  ["recovered-tool-denied", 1],
+  ["unrecovered-503", 1],
+  ["recovered-second-error", 1],
+  ["recovered-empty", 1],
+  ["recovered-denied", 1],
+  ["recovered-quota", 1],
+  ["recovered-active", 1],
+  ["model-error", 1],
+  ["quota", 1],
+  ["denied", 1],
+  ["no-result", 1],
+  ["unfinished", 1],
+  ["missing-usage", 0],
+  ["invalid-usage", 0],
+  ["cached", 0],
+  ["nonzero", 7],
+  ["bad-skills", 2],
+] as const) test(`agy CLI 回放 ${scenario}`, () => {
   const f = fixture();
   try {
     const result = f.run(scenario);
@@ -135,6 +215,54 @@ for (const [scenario, status] of [["success", 0], ["model-error", 1], ["quota", 
     if (["missing-usage", "invalid-usage", "no-result", "bad-skills"].includes(scenario)) assert.equal(summary.usage, null);
     if (scenario === "cached") assert.deepEqual(summary.usage, { input: 12514, cached: 1500, output: 429 });
     if (scenario === "bad-skills") assert.equal(f.calls().length, 1);
+    if (scenario === "tool-error") {
+      assert.equal(f.read(".md"), "OK\n");
+      assert.deepEqual(summary.usage, { input: 11014, cached: 0, output: 429 });
+      const progress = f.read(".progress.log");
+      assert.doesNotMatch(progress, /出错：/);
+      assert.match(progress, /=== Antigravity CLI 结束：exit=0/);
+      const events = f.read(".events.jsonl").trim().split("\n").map(line => JSON.parse(line));
+      assert.ok(!events.some(event => event.kind === "error"));
+      const toolEnd = events.find(event => event.kind === "tool" && event.id === "10" && event.phase === "end");
+      assert.ok(toolEnd);
+      assert.equal(toolEnd.name, "read_file");
+      assert.equal(toolEnd.output, "file does not exist");
+    }
+    if (scenario === "tool-denied") {
+      assert.match(result.stdout, /出错：agy 权限拒绝：permission check failed for read_file/);
+      const progress = f.read(".progress.log");
+      assert.match(progress, /出错：agy 权限拒绝：permission check failed for read_file.*Permission denied for read_file\(/);
+      assert.match(progress, /=== Antigravity CLI 结束：exit=1/);
+      const events = f.read(".events.jsonl").trim().split("\n").map(line => JSON.parse(line));
+      assert.ok(events.some(event => event.kind === "error" && event.text === "agy 权限拒绝：permission check failed for read_file (.claude/skills/run-spec/SKILL.md): Permission denied for read_file(.claude/skills/run-spec/SKILL.md). Matches user-configured deny rule."));
+    }
+    if (scenario === "recovered-retry" || scenario === "recovered-tool-error") {
+      assert.equal(f.read(".md"), "OK\n");
+      assert.deepEqual(summary.usage, { input: 11014, cached: 0, output: 429 });
+      const progress = f.read(".progress.log");
+      assert.match(progress, /agy 中途瞬时错误已自动恢复：API error \(attempt 1\): UNAVAILABLE \(code 503\): The service is currently unavailable\./);
+      assert.doesNotMatch(progress, /出错：/);
+      assert.match(progress, /=== Antigravity CLI 结束：exit=0/);
+      const events = f.read(".events.jsonl").trim().split("\n").map(line => JSON.parse(line));
+      assert.ok(!events.some(event => event.kind === "error"));
+      assert.ok(events.some(event => event.kind === "text" && event.text === "agy 中途瞬时错误已自动恢复：API error (attempt 1): UNAVAILABLE (code 503): The service is currently unavailable."));
+      if (scenario === "recovered-tool-error") {
+        const toolEnd = events.find(event => event.kind === "tool" && event.id === "2" && event.phase === "end");
+        assert.ok(toolEnd);
+        assert.equal(toolEnd.output, "file does not exist");
+      }
+    }
+    if (["unrecovered-503", "recovered-tool-denied", "recovered-second-error", "recovered-empty", "recovered-denied", "recovered-quota", "recovered-active"].includes(scenario)) {
+      const progress = f.read(".progress.log");
+      assert.doesNotMatch(progress, /agy 中途瞬时错误已自动恢复/);
+      assert.match(progress, /出错：/);
+    }
+    const evidence = process.env.RUN_SPEC_TEST_EVIDENCE;
+    if (evidence && ["tool-error", "tool-denied", "recovered-tool-error", "recovered-tool-denied", "recovered-retry", "unrecovered-503", "model-error", "quota", "denied"].includes(scenario)) {
+      mkdirSync(evidence, { recursive: true });
+      const events = existsSync(join(f.root, ".codex-runs/sample.events.jsonl")) ? f.read(".events.jsonl").trim().split("\n").filter(Boolean).map(line => { const { at, ...rest } = JSON.parse(line); return rest; }) : [];
+      writeFileSync(join(evidence, `replay-${scenario}.json`), JSON.stringify({ scenario, exit: result.status, success: summary.success, report: existsSync(join(f.root, ".codex-runs/sample.md")) ? f.read(".md") : null, progress: f.read(".progress.log").trim().split("\n").slice(1), events }, null, 2) + "\n");
+    }
   } finally { f.cleanup(); }
 });
 
@@ -168,11 +296,19 @@ for (const permission of ["read-only", "workspace-write", "full"]) test(`agy CLI
     assert.deepEqual(JSON.parse(probe.args[probe.args.indexOf("--settings") + 1]), settings);
     const root = f.root.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "");
     const skillDeny = ["run-spec", "setup-run-spec"].flatMap(name => [".agents", ".claude"].flatMap(directory => [
-      `read_file(${directory}/skills/${name})`, `read_file(${root}/${directory}/skills/${name})`,
+      `read_file(${directory}/skills/${name}/SKILL.md)`, `read_file(${root}/${directory}/skills/${name}/SKILL.md)`,
     ]));
     assert.deepEqual([...settings.permissions.deny].sort(), [...skillDeny, ...(permission === "full" ? [] : ["mcp(*)", "execute_url(*)"]), ...(permission === "read-only" ? ["write_file(*)"] : [])].sort());
     assert.ok(settings.permissions.allow.includes(`read_file(${root})`));
-    assert.equal(JSON.parse(command.stdin).message.content.includes("只读权限："), permission === "read-only");
+    const message = JSON.parse(command.stdin).message.content;
+    assert.ok(message.includes("禁止读取两项流程技能的 SKILL.md 或调用 run-spec、setup-run-spec 技能。"));
+    assert.equal(message.includes("只读权限："), permission === "read-only");
+    assert.equal(message.includes("denied_actions"), permission === "read-only");
+    const evidence = process.env.RUN_SPEC_TEST_EVIDENCE;
+    if (evidence) {
+      mkdirSync(evidence, { recursive: true });
+      writeFileSync(join(evidence, `agy-${permission}-settings.json`), JSON.stringify({ permission, root: f.root, settings, message, probe, command }, null, 2) + "\n");
+    }
     if (permission !== "full") {
       assert.equal(settings.allowNonWorkspaceAccess, false);
       assert.equal(settings.toolPermission, "request-review");
@@ -187,7 +323,21 @@ for (const permission of ["read-only", "workspace-write", "full"]) test(`agy CLI
         assert.ok(allows(`git ${subcommand}`), subcommand);
         assert.ok(allows(`git ${subcommand} HEAD`), subcommand);
         assert.ok(allows(`git.exe ${subcommand} HEAD`), subcommand);
+        assert.ok(allows(`git -C /root/project/agent-workflow ${subcommand}`), subcommand);
+        assert.ok(allows(`git -C "/tmp/dir with space/repo" ${subcommand} HEAD`), subcommand);
+        assert.ok(allows(`git -C '/tmp/dir with space/repo' ${subcommand} HEAD`), subcommand);
+        assert.ok(allows(`git --no-pager -C /repo ${subcommand}`), subcommand);
       }
+      for (const commandLine of [
+        "git -C/root/repo status",
+        "git -C /tmp/my\\ dir/repo diff HEAD",
+        "git.exe -C C:/repo status",
+        "git.exe -C \"C:\\My Repo\" diff HEAD",
+        "git -P -C /repo show HEAD:README.md",
+        "git -C /repo --no-optional-locks status",
+        "git --git-dir=/repo/.git --work-tree=/repo diff --stat",
+        "git --git-dir /repo/.git --work-tree /repo log -n 5 --oneline",
+      ]) assert.ok(allows(commandLine), commandLine);
       for (const resource of ["issue", "pr"]) for (const action of ["view", "list", "diff", "status"]) assert.ok(allows(`gh ${resource} ${action} 53`));
       assert.ok(allows("gh api --method GET repos/fixture/repo"));
       for (const utility of ["rg", "grep", "find", "ls", "pwd", "cat", "head", "tail", "wc", "stat", "jq"]) {
@@ -195,7 +345,34 @@ for (const permission of ["read-only", "workspace-write", "full"]) test(`agy CLI
         assert.ok(allows(`${utility} README.md`), utility);
         assert.ok(allows(`${utility}.exe README.md`), utility);
       }
-      for (const line of ["git add README.md", "git status-evil", "gh issue create", "gh api --method POST repos/fixture/repo", "grepper", "cat README.md; touch file", "git diff | tee file", "ls && rm file", "pwd > file"]) assert.ok(!allows(line), line);
+      for (const line of [
+        "git add README.md",
+        "git status-evil",
+        "git -C /repo",
+        "git -C /repo add README.md",
+        "git -C /repo commit -m test",
+        "git -C /repo status-evil",
+        "git -c core.pager=evil diff",
+        "git -C /repo -c alias.s=!rm status",
+        "git --exec-path=/evil status",
+        "git -C \"/repo;rm\" status",
+        "git -C /repo status && ls",
+        "git -C /repo status\nrm -rf /",
+        "git status\nrm -rf /",
+        "git\nstatus",
+        "git show `id`",
+        "gh issue create",
+        "gh api --method POST repos/fixture/repo",
+        "gh issue view 70 --jq \".a | .b\"",
+        "rg \"a|b\" README.md",
+        "cat $HOME",
+        "grepper",
+        "pwd\nid",
+        "cat README.md; touch file",
+        "git diff | tee file",
+        "ls && rm file",
+        "pwd > file",
+      ]) assert.ok(!allows(line), line);
     }
   } finally { f.cleanup(); }
 });

@@ -1,1593 +1,1702 @@
-<!doctype html>
+<!DOCTYPE html>
 <!--
-spec 汇报模板（workflow-v5 候选）：单文件，浏览器直接打开，可断网使用。用法和每节的数据见同目录 report.md。
-只替换文件末尾 data-slot="data" 的 JSON：{"report": 设计负责人填写的部分, "scorecard": tickets.ts scorecard --out 的原样输出}。
-节次按六点：做了什么和效果、目标与证明、要你做的、证据、代价与时间、风险与遗留；流程发现和数据口径折叠在最后。
-时间线、时间去向、验证卡片和用量都只读 scorecard；缺数显示"未记录"和 reason，不按零画。超过 45 分钟的空档压成竖纹。
-图按容器宽度绘制，窗口变宽变窄时重画；配色是 dataviz 默认色板的浅色、深色两套，状态色只用于状态。
-脚本在一个块作用域里，不新增全局名字。示例数据是 video-studio spec #94（评分表由 agent-workflow #9 重建）。
+spec 汇报模板：单文件零外部依赖，离线直接打开。
+用法见同目录 report.md：只替换 data-slot="data" 的 JSON（{"report": ..., "scorecard": tickets.ts scorecard --out 原样输出}）。
+自动响应系统浅色/深色主题并支持手动切换；含可收起目录（快捷键 [）、交付与代价与时间页签、全部展开、截图放大查看与历史评分表降级兼容。
 -->
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>spec 汇报</title>
+<title>spec #50 汇报 · 接入 agy，评分表按 spec 起止时间计时</title>
 <style>
 :root {
-  color-scheme: light;
-  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
-  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10); --wash: rgba(11,11,11,.04);
-  --claude: #8054bd; --pi: #0b7f9c;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
-  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --goodtext: #006300;
+  color-scheme: light dark;
+  --bg: #f3f3ee;
+  --bg-accent: radial-gradient(1100px 420px at 18% -6%, rgba(37, 99, 235, 0.08), transparent 65%),
+               radial-gradient(900px 360px at 88% -4%, rgba(13, 148, 136, 0.07), transparent 60%);
+  --surface: #ffffff;
+  --surface2: #f9f9f6;
+  --surface-glass: rgba(255, 255, 255, 0.90);
+  --ink: #141518;
+  --ink2: #3b3e47;
+  --muted: #666b77;
+  --border: #e2e2dc;
+  --border-strong: #cfcfc6;
+  --grid: #ecece6;
+  --wash: #efefe9;
+  --wash2: #e4e4dc;
+  --axis: #9ca3af;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.035);
+  --shadow-md: 0 10px 30px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --good: #15803d;
+  --good-bg: #ecfdf3;
+  --good-bd: rgba(21, 128, 61, 0.25);
+  --warning: #b45309;
+  --warning-bg: #fffbeb;
+  --serious: #c2410c;
+  --serious-bg: #fff4ed;
+  --critical: #b91c1c;
+  --critical-bg: #fef2f2;
+  --agy: #2563eb;
+  --agy-soft: rgba(37, 99, 235, 0.14);
+  --pi: #0d9488;
+  --pi-soft: rgba(13, 148, 136, 0.14);
+  --claude: #ea580c;
+  --claude-soft: rgba(234, 88, 12, 0.14);
+  --codex: #4f46e5;
+  --codex-soft: rgba(79, 70, 229, 0.14);
+  --design: #d97706;
+  --verify: #7c3aed;
+  --wait: #db2777;
+  --pause: #94a3b8;
+  --out: #16a34a;
+  --info-bg: #eff6ff;
+  --info-bd: #bfdbfe;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
-    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10); --wash: rgba(255,255,255,.05);
-    --claude: #b18cde; --pi: #4cbfdc;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --goodtext: #0ca30c;
+  :root:not([data-theme="light"]) {
+    --bg: #0d0f13;
+    --bg-accent: radial-gradient(1100px 420px at 18% -6%, rgba(59, 130, 246, 0.14), transparent 65%),
+                 radial-gradient(900px 360px at 88% -4%, rgba(45, 212, 191, 0.10), transparent 60%);
+    --surface: #161920;
+    --surface2: #1c2029;
+    --surface-glass: rgba(22, 25, 32, 0.92);
+    --ink: #f3f4f6;
+    --ink2: #d1d5db;
+    --muted: #9ca3af;
+    --border: #282d39;
+    --border-strong: #373e4f;
+    --grid: #222631;
+    --wash: #202530;
+    --wash2: #2b3140;
+    --axis: #6b7280;
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+    --shadow-md: 0 14px 36px rgba(0, 0, 0, 0.48);
+    --good: #4ade80;
+    --good-bg: rgba(20, 83, 45, 0.35);
+    --good-bd: rgba(74, 222, 128, 0.28);
+    --warning: #fbbf24;
+    --warning-bg: rgba(120, 53, 15, 0.30);
+    --serious: #fb923c;
+    --serious-bg: rgba(124, 45, 18, 0.32);
+    --critical: #f87171;
+    --critical-bg: rgba(127, 29, 29, 0.32);
+    --agy: #60a5fa;
+    --agy-soft: rgba(96, 165, 250, 0.18);
+    --pi: #2dd4bf;
+    --pi-soft: rgba(45, 212, 191, 0.18);
+    --claude: #fb923c;
+    --claude-soft: rgba(251, 146, 60, 0.18);
+    --codex: #818cf8;
+    --codex-soft: rgba(129, 140, 248, 0.18);
+    --design: #f59e0b;
+    --verify: #a78bfa;
+    --wait: #f472b6;
+    --pause: #64748b;
+    --out: #4ade80;
+    --info-bg: rgba(30, 58, 138, 0.28);
+    --info-bd: rgba(96, 165, 250, 0.32);
   }
 }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif; }
-main { max-width: 1080px; margin: 0 auto; padding: 24px 20px 64px; }
-header { margin-bottom: 8px; }
-h1 { font-size: 24px; line-height: 1.3; margin: 4px 0 8px; }
-h2 { font-size: 18px; margin: 0 0 12px; }
-h3 { font-size: 15px; margin: 0 0 6px; }
-p { margin: 0 0 8px; }
-a { color: var(--s1); }
-.meta, .muted { color: var(--muted); font-size: 13px; }
-.lead { font-size: 16px; color: var(--ink2); }
-section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
-.banner { display: block; margin: 12px 0 4px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--serious); color: var(--ink); text-decoration: none; background: var(--wash); }
-.banner b { color: var(--ink); }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
-.tile { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
-.tile .v { font-size: 24px; font-weight: 600; line-height: 1.2; }
-.tile .k { color: var(--ink2); font-size: 13px; }
-.tile .n { color: var(--muted); font-size: 12px; }
-ul.plain, ol.plain { margin: 0; padding-left: 20px; }
-ul.plain li, ol.plain li { margin: 4px 0; }
-.card { border-top: 1px solid var(--grid); padding: 12px 0; }
-.card:first-child { border-top: 0; padding-top: 0; }
-.row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-.status { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; white-space: nowrap; }
-.status i { font-style: normal; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: #fff; font-size: 11px; }
-.st-good i { background: var(--good); } .st-warning i { background: var(--warning); color: #0b0b0b; }
-.st-serious i { background: var(--serious); } .st-critical i { background: var(--critical); } .st-info i { background: var(--muted); }
-pre { margin: 6px 0 0; padding: 8px 10px; background: var(--wash); border-radius: 6px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow: auto; }
-img.thumb { max-width: 100%; max-height: 220px; border: 1px solid var(--border); border-radius: 6px; display: block; margin-top: 6px; }
-.ev { margin-top: 6px; font-size: 13px; color: var(--ink2); }
-.ev .num { font-size: 18px; color: var(--ink); font-weight: 600; }
-svg { display: block; width: 100%; height: auto; overflow: visible; }
-svg text { fill: var(--ink2); font-size: 12px; font-family: inherit; }
-svg .axis { stroke: var(--axis); stroke-width: 1; }
-svg .gridl { stroke: var(--grid); stroke-width: 1; }
-svg .lane { fill: var(--wash); }
-.chart { margin: 10px 0 18px; }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink2); margin: 6px 0; }
-.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); vertical-align: -1px; }
-details { margin-top: 10px; }
-summary { cursor: pointer; color: var(--ink2); font-size: 14px; }
-.tw { overflow-x: auto; margin-top: 8px; }
-table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
-th { color: var(--muted); font-weight: 500; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15); max-width: 280px; white-space: pre-line; }
-.empty { color: var(--muted); font-size: 14px; }
-.dispatch-chart { margin: 10px 0 18px; }
-.dispatch-item { padding: 10px 0; border-top: 1px solid var(--grid); min-width: 0; }
-.dispatch-item:first-child { border-top: 0; }
-.dispatch-heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin-bottom: 5px; }
-.dispatch-heading b { overflow-wrap: anywhere; }
-.dispatch-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 310px); gap: 12px; align-items: center; }
-.dispatch-track { height: 10px; background: var(--wash); border-radius: 3px; overflow: hidden; }
-.dispatch-fill { height: 100%; background: var(--dispatch-color); border-radius: 3px; }
-.dispatch-unknown { background: transparent; border: 1px dashed var(--axis); }
-.dispatch-meta { font-size: 12px; color: var(--ink2); overflow-wrap: anywhere; }
-.dispatch-reason { font-size: 12px; color: var(--ink2); margin-top: 4px; overflow-wrap: anywhere; }
-.dispatch-exit { color: var(--critical); font-weight: 600; }
-footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
-@media (max-width: 640px) {
-  main { padding: 16px 12px 48px; }
-  section { padding: 14px 12px; }
-  .row { grid-template-columns: 1fr; }
-  .dispatch-line { grid-template-columns: minmax(0, 1fr); gap: 5px; }
-  h1 { font-size: 20px; }
+html[data-theme="dark"] {
+  --bg: #0d0f13;
+  --bg-accent: radial-gradient(1100px 420px at 18% -6%, rgba(59, 130, 246, 0.14), transparent 65%),
+               radial-gradient(900px 360px at 88% -4%, rgba(45, 212, 191, 0.10), transparent 60%);
+  --surface: #161920;
+  --surface2: #1c2029;
+  --surface-glass: rgba(22, 25, 32, 0.92);
+  --ink: #f3f4f6;
+  --ink2: #d1d5db;
+  --muted: #9ca3af;
+  --border: #282d39;
+  --border-strong: #373e4f;
+  --grid: #222631;
+  --wash: #202530;
+  --wash2: #2b3140;
+  --axis: #6b7280;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 14px 36px rgba(0, 0, 0, 0.48);
+  --good: #4ade80;
+  --good-bg: rgba(20, 83, 45, 0.35);
+  --good-bd: rgba(74, 222, 128, 0.28);
+  --warning: #fbbf24;
+  --warning-bg: rgba(120, 53, 15, 0.30);
+  --serious: #fb923c;
+  --serious-bg: rgba(124, 45, 18, 0.32);
+  --critical: #f87171;
+  --critical-bg: rgba(127, 29, 29, 0.32);
+  --agy: #60a5fa;
+  --agy-soft: rgba(96, 165, 250, 0.18);
+  --pi: #2dd4bf;
+  --pi-soft: rgba(45, 212, 191, 0.18);
+  --claude: #fb923c;
+  --claude-soft: rgba(251, 146, 60, 0.18);
+  --codex: #818cf8;
+  --codex-soft: rgba(129, 140, 248, 0.18);
+  --design: #f59e0b;
+  --verify: #a78bfa;
+  --wait: #f472b6;
+  --pause: #64748b;
+  --out: #4ade80;
+  --info-bg: rgba(30, 58, 138, 0.28);
+  --info-bd: rgba(96, 165, 250, 0.32);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background-color: var(--bg); color: var(--ink); max-width: 100%; overflow-x: hidden; }
+body {
+  background-image: var(--bg-accent);
+  background-attachment: fixed;
+  font: 14px/1.6 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+  padding-bottom: 48px;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+a { color: var(--agy); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.num { font-variant-numeric: tabular-nums; }
+.shell { max-width: 1380px; margin: 0 auto; padding: 18px 20px 28px; }
+.cockpit-grid { display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: 18px; align-items: start; }
+.cockpit-grid.collapsed { grid-template-columns: minmax(0, 1fr); }
+.cockpit-grid > * { min-width: 0; }
+.cockpit-side {
+  position: sticky; top: 14px; background: var(--surface-glass); backdrop-filter: blur(14px);
+  border: 1px solid var(--border); border-radius: 14px; padding: 14px;
+  box-shadow: var(--shadow-sm); display: grid; gap: 13px;
+}
+.cockpit-side[hidden] { display: none !important; }
+.side-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pr-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  font-weight: 600; font-size: 12px; background: var(--good-bg); color: var(--good); border: 1px solid var(--good-bd);
+}
+.pr-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.icon-btn {
+  border: 1px solid var(--border); background: var(--surface2); color: var(--ink2);
+  border-radius: 8px; padding: 4px 9px; font-size: 12px; font-weight: 500;
+  cursor: pointer; font-family: inherit; white-space: nowrap; transition: border-color .15s, color .15s, background .15s;
+}
+.icon-btn:hover { border-color: var(--agy); color: var(--ink); }
+.icon-btn.on { background: var(--agy-soft); border-color: var(--agy); color: var(--agy); font-weight: 600; }
+.expand-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 8px 12px; border-radius: 12px;
+  background: var(--surface-glass); border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+}
+.side-nav-label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 5px; }
+.side-nav { display: grid; gap: 4px; }
+.nav-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; text-align: left; padding: 7px 10px; border-radius: 9px;
+  border: 1px solid transparent; background: transparent; color: var(--ink2);
+  font: 500 13px/1.35 inherit; cursor: pointer; transition: background .15s, color .15s;
+}
+.nav-btn:hover { background: var(--wash); color: var(--ink); }
+.nav-btn.active { background: var(--agy-soft); color: var(--agy); border-color: rgba(37, 99, 235, 0.25); font-weight: 600; }
+.nav-count { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--wash); color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+.nav-btn.active .nav-count { background: var(--agy); color: #fff; }
+.roster-list { display: grid; gap: 6px; }
+.roster-card {
+  display: grid; gap: 3px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--ink);
+  cursor: pointer; font-family: inherit; transition: border-color .15s, background .15s;
+}
+.roster-card:hover { border-color: var(--border-strong); }
+.roster-card.active { border-color: var(--agy); background: var(--agy-soft); box-shadow: 0 0 0 1px var(--agy); }
+.roster-row1 { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.actor-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+.effort-pill {
+  padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 700;
+  background: var(--wash2); color: var(--ink2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap;
+}
+.model-line { font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.hero-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 15px;
+  padding: 18px 22px; box-shadow: var(--shadow-sm); margin-bottom: 14px;
+}
+.hero-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.top-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.hero-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+h1 { font-size: clamp(19px, 2.1vw, 24px); line-height: 1.3; margin: 7px 0 6px; font-weight: 750; letter-spacing: -0.015em; overflow-wrap: anywhere; }
+.lead { font-size: 14.5px; color: var(--ink2); margin: 0 0 14px; max-width: 94ch; overflow-wrap: anywhere; }
+.ask-banner {
+  margin: 0 0 14px; padding: 13px 16px; border-radius: 12px;
+  background: var(--serious-bg); border: 1px solid rgba(194, 65, 12, 0.38); display: grid; gap: 8px;
+}
+.ask-banner[hidden] { display: none !important; }
+.ask-head { font-weight: 700; font-size: 13.5px; color: var(--serious); display: flex; align-items: center; gap: 6px; }
+.ask-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.ask-box { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+.kpi-card {
+  position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  background: var(--surface2); display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0;
+}
+.kpi-val { font-size: 20px; font-weight: 760; line-height: 1.2; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.kpi-lbl { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-top: 3px; }
+.kpi-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; line-height: 1.35; overflow-wrap: anywhere; }
+.kpi-ring { width: 46px; height: 46px; flex: none; }
+.deck {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 15px;
+  padding: 16px 20px 20px; box-shadow: var(--shadow-sm); margin-bottom: 14px; min-width: 0;
+}
+.deck-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding-bottom: 12px; margin-bottom: 14px; border-bottom: 1px solid var(--grid);
+}
+.deck-title { font-size: 15.5px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.seg-tabs {
+  display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 11px;
+  background: var(--wash); border: 1px solid var(--border); max-width: 100%;
+}
+.seg-tab {
+  padding: 6px 12px; border-radius: 8px; border: 0; background: transparent; color: var(--ink2);
+  font: 600 12.5px/1.3 inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  transition: background .15s, color .15s;
+}
+.seg-tab:hover { color: var(--ink); }
+.seg-tab.active { background: var(--surface); color: var(--agy); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); }
+.tab-badge { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--wash2); color: var(--ink2); }
+.seg-tab.active .tab-badge { background: var(--agy-soft); color: var(--agy); }
+.tabpanel[hidden] { display: none !important; }
+.tabpanel + .tabpanel:not([hidden]) { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--border); }
+.story-compare { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.35fr); gap: 12px; margin-bottom: 14px; }
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+.story-pane { border-radius: 11px; padding: 13px 15px; border: 1px solid var(--border); background: var(--surface2); min-width: 0; overflow-wrap: anywhere; }
+.story-pane.before { border-left: 3.5px solid var(--serious); }
+.story-pane.after { border-left: 3.5px solid var(--good); }
+.pane-kicker { font-size: 12px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.step-pills { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.step-pills li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 13px; color: var(--ink2); }
+.step-num {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--good-bg); color: var(--good);
+  font-weight: 700; font-size: 11.5px; display: grid; place-items: center; margin-top: 1px; border: 1px solid var(--good-bd);
+}
+.arch-card { border: 1px solid var(--border); border-radius: 11px; padding: 12px 14px; background: var(--surface2); margin-bottom: 14px; overflow: hidden; }
+.arch-node { cursor: pointer; }
+.arch-node:hover rect { stroke-width: 2.3px; }
+.module-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.module-card { border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; background: var(--surface2); min-width: 0; overflow-wrap: anywhere; }
+.module-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.ticket-tag {
+  font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 5px;
+  background: var(--wash); color: var(--ink2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; display: inline-block;
+}
+.goal-cards { display: grid; gap: 10px; margin-bottom: 14px; }
+.goal-card {
+  display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(0, 0.82fr); gap: 14px;
+  padding: 13px 15px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface2); min-width: 0;
+}
+.delta-pill {
+  display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; max-width: 100%;
+  padding: 4px 10px; border-radius: 7px; background: var(--surface); border: 1px solid var(--border);
+  font-size: 12.5px; margin: 6px 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+pre.proof {
+  margin: 4px 0 0; padding: 9px 11px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
+}
+.browser-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+.browser-frame { border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow-sm); min-width: 0; }
+.browser-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--wash); border-bottom: 1px solid var(--border); min-width: 0; }
+.traffic { display: inline-flex; gap: 5px; flex: none; }
+.traffic i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.url-pill {
+  flex: 1; min-width: 0; padding: 2px 9px; border-radius: 6px; background: var(--surface);
+  font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid var(--border);
+}
+.browser-canvas { padding: 10px; background: var(--surface2); cursor: zoom-in; }
+.browser-canvas img { display: block; width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); }
+.browser-foot { padding: 10px 13px; border-top: 1px solid var(--border); font-size: 12.5px; overflow-wrap: anywhere; }
+.takeaway-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.takeaway-card {
+  padding: 10px 12px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border);
+  border-top: 3px solid var(--agy); font-size: 12.5px; color: var(--ink2); line-height: 1.5; min-width: 0; overflow-wrap: anywhere;
+}
+.takeaway-card:nth-child(2) { border-top-color: var(--pi); }
+.takeaway-card:nth-child(3) { border-top-color: var(--design); }
+.takeaway-card b { color: var(--ink); display: block; margin-bottom: 3px; font-size: 13px; }
+.timeline-box { padding: 11px 13px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface2); margin-bottom: 14px; overflow: hidden; }
+[data-slot="timeline"] { width: 100%; max-width: 100%; overflow: hidden; }
+.tl-span { cursor: pointer; transition: filter .15s; }
+.tl-span:hover { filter: brightness(1.12); }
+.chart-split { display: grid; grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.14fr); gap: 14px; align-items: stretch; }
+.chart-card {
+  border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface2);
+  display: flex; flex-direction: column; justify-content: space-between; min-width: 0; overflow: hidden;
+}
+.chart-title { font-size: 13.5px; font-weight: 700; margin-bottom: 2px; color: var(--ink); }
+.chart-sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; overflow-wrap: anywhere; }
+.time-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.time-stat {
+  padding: 9px 11px; border-radius: 9px; background: var(--surface); border: 1px solid var(--border);
+  min-width: 0; overflow-wrap: anywhere;
+}
+.time-stat-val { font-size: 18px; font-weight: 750; line-height: 1.15; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.time-stat-lbl { font-size: 12px; font-weight: 600; color: var(--ink2); margin-top: 3px; }
+.time-stat-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.time-rows { display: grid; gap: 6px; margin: auto 0; }
+.time-row {
+  display: grid; gap: 4px; padding: 6px 9px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--grid); min-width: 0;
+}
+.time-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; font-size: 12.5px; }
+.time-bar-track { height: 5px; border-radius: 999px; background: var(--wash); overflow: hidden; }
+.time-bar-fill { height: 100%; border-radius: 999px; }
+.story-compare > *, .two-col > *, .module-grid > *, .goal-card > *, .browser-grid > *, .chart-split > * { min-width: 0; }
+.donut-wrap { display: grid; grid-template-columns: 148px minmax(0, 1fr); gap: 12px; align-items: center; margin: auto 0; }
+.donut-slice { cursor: pointer; transition: stroke-width .16s; }
+.donut-slice:hover { stroke-width: 26px; }
+.donut-legend { display: grid; gap: 6px; font-size: 12px; min-width: 0; }
+.legend-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 4px 7px; border-radius: 6px; cursor: pointer; min-width: 0;
+}
+.legend-item:hover { background: var(--wash); }
+.swatch { width: 9px; height: 9px; border-radius: 2.5px; display: inline-block; flex: none; }
+.bar-chart-row { cursor: pointer; transition: opacity .15s; }
+.bar-chart-row:hover rect.bar-bg { fill: var(--wash2); }
+.bar-chart-row.dimmed { opacity: 0.25; }
+.tw { overflow-x: auto; max-width: 100%; }
+table.clean { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.clean th, table.clean td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+table.clean th { color: var(--muted); font-weight: 600; font-size: 11.5px; white-space: nowrap; }
+table.clean tbody tr:hover { background: var(--wash); }
+table.clean tr:last-child td { border-bottom: 0; }
+.mini-bar { height: 9px; border-radius: 999px; background: var(--wash2); overflow: hidden; display: flex; min-width: 96px; }
+.wf-list { display: grid; gap: 7px; }
+.wf-row {
+  display: grid; grid-template-columns: minmax(165px, 210px) minmax(130px, 0.9fr) minmax(180px, 1.25fr) minmax(105px, 138px);
+  gap: 10px; align-items: center; padding: 8px 11px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--surface2); font-size: 12.5px; min-width: 0; overflow-wrap: anywhere;
+}
+.wf-row:hover { border-color: var(--agy); }
+.wf-row.dimmed { opacity: 0.25; }
+.wf-axis-track { position: relative; height: 14px; background: var(--wash); border-radius: 999px; overflow: hidden; }
+.wf-bar { position: absolute; top: 2px; height: 10px; border-radius: 999px; min-width: 6px; }
+.wf-bar.aborted { background: none !important; border: 1.6px dashed var(--critical); }
+.batch-fold { border: 1px solid var(--agy); border-radius: 10px; background: var(--surface2); padding: 9px 12px; min-width: 0; }
+.batch-fold summary { cursor: pointer; font-weight: 600; font-size: 12.5px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.risk-grid { display: grid; gap: 9px; }
+.risk-card { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); display: grid; gap: 4px; overflow-wrap: anywhere; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.badge.good { background: var(--good-bg); color: var(--good); }
+.badge.warn { background: var(--warning-bg); color: var(--warning); }
+.badge.crit { background: var(--critical-bg); color: var(--critical); }
+.badge.info { background: var(--info-bg); color: var(--agy); }
+.fold-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; min-width: 0; overflow: hidden; }
+.fold-box > summary { cursor: pointer; font-weight: 700; font-size: 13.5px; color: var(--ink); }
+svg.viz { display: block; width: 100%; max-width: 100%; height: auto; overflow: hidden; }
+svg.viz text { fill: var(--ink2); font-size: 11.5px; font-family: inherit; }
+.muted { color: var(--muted); font-size: 12px; }
+.floating-tip {
+  position: fixed; z-index: 95; pointer-events: none; max-width: 310px; padding: 9px 12px; border-radius: 10px;
+  background: rgba(20, 22, 28, 0.94); color: #f8fafc; border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35); font-size: 12px; line-height: 1.5; white-space: pre-line;
+}
+.floating-tip[hidden] { display: none !important; }
+.lightbox {
+  position: fixed; inset: 0; z-index: 90; background: rgba(9, 11, 16, 0.82);
+  display: grid; place-items: center; padding: 20px; backdrop-filter: blur(6px);
+}
+.lightbox[hidden] { display: none !important; }
+.lightbox-inner {
+  max-width: 1020px; width: 100%; max-height: 92vh; overflow: auto; background: var(--surface);
+  border-radius: 14px; padding: 18px; border: 1px solid var(--border-strong); box-shadow: var(--shadow-md);
+}
+.lightbox-inner img { display: block; max-width: 100%; height: auto; margin: 0 auto; border-radius: 8px; border: 1px solid var(--border); }
+footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: anywhere; }
+@media (max-width: 980px) {
+  .cockpit-grid, .chart-split, .two-col, .story-compare, .browser-grid, .module-grid, .goal-card { grid-template-columns: 1fr; }
+  .cockpit-side { position: static; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .takeaway-strip { grid-template-columns: 1fr; }
+  .wf-row { grid-template-columns: 1fr; gap: 6px; }
+  .donut-wrap { grid-template-columns: 1fr; justify-items: center; }
+}
+@media (max-width: 560px) {
+  .shell { padding: 10px 10px 28px; }
+  .hero-card, .deck, .fold-box { padding: 13px 12px; border-radius: 12px; }
+  .ask-banner { padding: 11px 11px; }
+  .ask-grid, .kpi-grid, .time-summary { grid-template-columns: 1fr; }
+  .seg-tabs { display: grid; grid-template-columns: 1fr; width: 100%; }
+  .seg-tab { width: 100%; justify-content: space-between; white-space: normal; text-align: left; }
+  .icon-btn { white-space: normal; text-align: left; }
 }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <p class="meta" data-slot="meta"></p>
-    <h1 data-slot="title"></h1>
-    <p class="lead" data-slot="result"></p>
-    <a class="banner" href="#asks" data-slot="banner" hidden></a>
-  </header>
-
-  <section id="done">
-    <h2>1. 做了什么，效果如何</h2>
-    <div class="tiles" data-slot="done-tiles"></div>
-    <div data-slot="delivered"></div>
-  </section>
-
-  <section id="goals">
-    <h2>2. 目标与证明</h2>
-    <p class="muted">按 spec 问题陈述里的现状，用同一口径重测。灰点是改前，蓝点是改后，竖线是目标。</p>
-    <div data-slot="goals"></div>
-  </section>
-
-  <section id="asks">
-    <h2>3. 要你做的</h2>
-    <div data-slot="asks"></div>
-  </section>
-
-  <section id="evidence">
-    <h2>4. 证据</h2>
-    <p class="muted">可以抽查的实测值、命令输出和截图，链接只作补充。</p>
-    <div data-slot="evidence"></div>
-  </section>
-
-  <section id="cost">
-    <h2>5. 代价与时间</h2>
-    <h3>时间线</h3>
-    <p class="muted">按资源分泳道；超过 45 分钟没有活动的空档压缩成一道竖纹。</p>
-    <div class="legend" data-slot="lane-legend"></div>
-    <div class="chart" data-slot="timeline"></div>
-    <h3>时间去向</h3>
-    <div class="chart" data-slot="time-bars"></div>
-    <h3>验证与合并</h3>
-    <div class="tiles" data-slot="verify-tiles"></div>
-    <h3>用量</h3>
-    <p class="muted">输入含缓存读取；条长是输入 token。</p>
-    <div class="chart" data-slot="usage-bars"></div>
-    <p class="muted" data-slot="usage-note"></p>
-    <h3>逐次派发</h3>
-    <p class="muted">每条是一次派发，条长按分钟使用同一刻度，颜色按框架。未知时不画时长，显示原因；悬停或聚焦可查看完整字段。</p>
-    <div class="dispatch-chart" data-slot="dispatch-bars" role="group" aria-label="逐次派发的分钟与用量"></div>
-    <details><summary>派发表格（查找）</summary><div data-slot="dispatch-table"></div></details>
-    <details><summary>验证明细</summary><div data-slot="verify-table"></div></details>
-  </section>
-
-  <section id="risks">
-    <h2>6. 风险与遗留</h2>
-    <div data-slot="risks"></div>
-  </section>
-
-  <details>
-    <summary>流程发现与数据口径</summary>
-    <div data-slot="findings"></div>
-    <div data-slot="notes"></div>
-  </details>
-
-  <footer data-slot="footer"></footer>
-</main>
-<div class="tip" data-slot="tip" hidden></div>
-
+<main id="app"></main>
+<div class="floating-tip" id="floating-tip" hidden></div>
+<div class="lightbox" id="lightbox" hidden>
+  <div class="lightbox-inner" id="lightbox-body"></div>
+</div>
 <script type="application/json" data-slot="data">
-{
- "report": {
-  "spec": 50,
-  "title": "agy 全链路接入、受限席位门禁与评分表时间窗修正",
-  "date": "2026-11-15",
-  "timezone": "Asia/Shanghai",
-  "repo": "JinhaoFang/agent-workflow",
-  "pr": {
-   "number": 58,
-   "state": "验收通过 · 待合并"
-  },
-  "result": "打通第四框架 Antigravity CLI（agy）的无头流式派发、独立起点实体技能隔离、零配额 doctor 自检与评分表原生归因，并一次性修复受限席位门禁、跨框架四元组、主会话与子代理时间窗裁剪、>45m 停工剥离、半途残缺派发容错及字符串专项标识。全套验证 609/609 通过，必读七份文档减少 59 字节（51,037 B）。",
-  "story": {
-   "before": "项目组在日常高强度协作中已切入 Antigravity CLI（agy），但 run-spec 仅认 Codex / Claude Code / pi：工程与审查无法派给 agy，spec-review 与 watch 误配无受限工具集框架时 doctor 不拦截，评分表更不认识 agy 会话与原生子代理，且跨天长会话未裁剪时间窗、>45m 停工空档全算进“等用户”、单条中断派发会清空整泳道统计。",
-   "afterSteps": [
-    "接入 agy 流式适配器与短命实体技能隔离：经 --input-format/--output-format stream-json 无头调用，每次在 .codex-runs/agy-isolation-* 构建排除 run-spec / setup-run-spec 的实体技能副本并经零配额 -p /skills 校验，叠加 Deny > Ask > Allow 双路径拒绝规则，三档无头权限避免软拒绝退出 0 假成功。",
-    "前移 doctor 门禁与零配额预检：对 spec-review / watch 强制核验适配器 restrictedCommand 能力；对 agy 模型与强度执行零 Token 的 /model、/effort 实探（拒绝裸前缀自动补全）；对超过 24,000 字节的 AGENTS.md / SKILL.md 给出单文件截断预警。",
-    "升级评分表四框架四元组与时间窗归因：原生解析 agy transcript.jsonl 与 invoke_subagent 子会话，统一输出（席位/角色 · 框架 · 模型 · 思考强度）四元组，按 [startedAt, cutoffAt] 裁剪事件，拆分 10–45m 等用户与 >45m 停工空档，支持半途中断容错、零派发合法标记、>10 同前缀折叠与字符串 --spec。"
-   ]
-  },
-  "archNodes": [
-   {
-    "title": "1. 席位解析与 doctor 预检",
-    "sub": "restrictedCommand 门禁 · /model 零配额校验",
-    "tip": "doctor 在开工前拦截无受限工具集能力的 spec-review/watch 配置，并用 total_tokens=0 的 -p /model 与 /effort 校验完整模型 ID，提前暴露 24 KB 截断风险。"
-   },
-   {
-    "title": "2. agy 无头隔离派发",
-    "sub": "agy-launch 独立起点 · 三档无头权限",
-    "tip": "agy-launch.ts 在独立隔离目录复制允许技能并写 exclude 清单，启动前跑 /skills 零配额核验；把 result.denied_actions 非空判为失败，杜绝无头软拒绝假成功。"
-   },
-   {
-    "title": "3. 四元组与时间窗评分表",
-    "sub": "[startedAt, cutoffAt] · 停工剥离 · 容错汇总",
-    "tip": "scorecard 关联 agy 主会话与 invoke_subagent 子代理，按窗口切片并去重共享会话，把 >45m 跨夜停工归入 longPause，保留有效派发累计并单列 anomalies。"
-   }
-  ],
-  "delivered": [
-   {
-    "what": "Antigravity CLI（agy）派发适配器与无头技能隔离",
-    "tickets": [
-     53
-    ],
-    "meaning": "engineering、review、research 席位可直接配置 agy，支持 NDJSON 流式事件、429/并发超限自动重排、短命实体技能隔离与三档无头权限映射，彻底杜绝 denied_actions 软拒绝假成功。"
-   },
-   {
-    "what": "doctor 受限席位门禁、零配额探测与 24 KB 截断预警",
-    "tickets": [
-     53
-    ],
-    "meaning": "spec-review 与 watch 误配 codex/agy 时提前以退出码 1 阻断并列出 claude、pi；agy 模型与思考强度用 0 Token 实探核验完整 ID；个人 seats.json 缺失与 >24 KB 技能文件一目了然。"
-   },
-   {
-    "what": "四框架评分表、agy 原生子代理、时间窗与容错升级",
-    "tickets": [
-     54,
-     57
-    ],
-    "meaning": "原生读取 agy 主会话与 invoke_subagent 子代理，输出完整四元组，按 [startedAt, cutoffAt] 精准切片，拆分 10–45m 等用户与 >45m 停工空档，支持断连容错、纯主会话零派发、>10 批折叠及字符串 --spec。"
-   },
-   {
-    "what": "V5 复盘评估、agy 接入说明与验证入口扩展",
-    "tickets": [
-     52
-    ],
-    "meaning": "补齐 run-spec-migration.md 的 V5 用后评估与观察 #128–#130，同步 setup-run-spec 四框架安装与席位模板，新增验证入口 dispatch.4。"
-   }
-  ],
-  "goals": [
-   {
-    "name": "agy 全链路派发、隔离与评分表支持",
-    "unit": "",
-    "before": "0 处支持（配置报错、无法派发、评分表不识 transcript.jsonl）",
-    "after": "派发 + 实体隔离 + doctor + 评分表四链路全通",
-    "status": "good",
-    "statusText": "本机 agy 1.5.9 实测通过",
-    "method": "在本机 agy 1.5.9 执行只读（git rev-parse / merge-base / grep）与可写（edit_file + node --version）真实无头派发，核对 /skills 隔离结果、denied_actions 与 transcript.jsonl 评分表解析。",
-    "evidence": {
-     "output": "read-only & workspace-write: exit=0, denied_actions=[], blocked=[run-spec,setup-run-spec]\ndispatch.4 dry-run: 席位 engineering · 框架 agy · 权限 workspace-write -> exit=0\nscorecard 50 --session transcript.jsonl: mainSession(agy · gemini-4-carbon-high · high) 解析成功"
-    }
-   },
-   {
-    "name": "受限席位（spec-review / watch）能力门禁与 agy 零配额模型自检",
-    "unit": "",
-    "before": "doctor 误放行无受限工具集框架；裸模型前缀被静默补全",
-    "after": "缺 restrictedCommand 退出 1；/model 裸前缀零 Token 拦截",
-    "status": "good",
-    "statusText": "门禁生效",
-    "method": "CLI 测试与实测分别将 spec-review/watch 指向 codex、agy，以及向 doctor 传入裸前缀 gemini-4-carbon，核对退出码、提示文案与 0 Token 消耗。",
-    "evidence": {
-     "output": "spec-review=agy -> exit=1（列出支持受限工具集的 claude, pi）\n/model gemini-4-carbon -> total_tokens=0, duration=0s，因返回 gemini-4-carbon-medium != 配置值判失败"
-    }
-   },
-   {
-    "name": "评分表时间窗裁剪、停工剥离、断连容错与字符串专项标识",
-    "unit": "",
-    "before": "跨天全算入、>45m 混入等用户、1 条残缺清空整泳道、仅认整数 spec",
-    "after": "窗口精准裁剪、longPause 独立、残缺保留已知累计、支持字符串 --spec",
-    "status": "good",
-    "statusText": "67 项评分表与 run 测试锁死",
-    "method": "scorecard.test.ts 与 run.test.ts 覆盖跨窗主会话/子代理、共享 sessionId 合并、10–45m vs >45m、残缺派发 anomalies、零派发、>10 批折叠与数字开头字符串专项标识。",
-    "evidence": {
-     "output": "run --seat review --spec 2026-audit --dry-run -> review-spec-id-2026-audit (exit=0)\nscorecard.test.ts + run.test.ts -> 67/67 PASS；land 全量验证 -> 609/609 PASS"
-    }
-   },
-   {
-    "name": "必读七份说明文档总字节数",
-    "unit": "字节",
-    "before": 51096,
-    "after": 51037,
-    "target": 51096,
-    "status": "good",
-    "statusText": "净减 59 字节",
-    "method": "对 run-spec 三份与 setup-run-spec 四份必读文件执行 wc -c 合计，并检查全部 AGENTS.md 与 SKILL.md 单文件体积 < 24,000 字节。",
-    "evidence": {
-     "output": "7 份必读文件合计：51,037 字节（<= 51,096 字节上限）\n单文件最大：verification/SKILL.md 12,594 字节（远低于 agy 24,000 字节截断线）"
-    }
-   }
-  ],
-  "asks": [
-   {
-    "kind": "批准",
-    "what": "审阅并批准合并 PR #58（Spec #50），随后连同 Spec #51 一起合入 main 并打 workflow-v6 标签",
-    "why": "Spec #50 全套本机 CI（609 项测试 + 提交规范检查）已通过，Spec #51 基于本分支自举实测 agy 工程派发并完成 V6 驾驶舱改版。",
-    "options": [
-     "先合并 PR #58 到 main，再将 Spec #51 PR 改基合并并发布 workflow-v6",
-     "指出需调整的具体项"
-    ],
-    "recommend": "待同时审阅完 Spec #50 与 Spec #51 两份 PR 后，按 #58 → Spec #51 PR 顺序合并并统一发布 workflow-v6。"
-   }
-  ],
-  "evidence": [
-   {
-    "claim": "首轮验收拦截 agy 无头软拒绝隐患并实机闭环",
-    "value": "read-only 与 workspace-write 真实 agy 1.5.9 均 exit=0、denied_actions=[]",
-    "output": "工单 #53 首轮将 workspace-write 设为 request-review，导致无头模式写文件与跑命令被软拒绝但进程仍退出 0；设计负责人审阅代码当场退回返工（gh-53-2），改为把非空 denied_actions 判失败并补齐仓库根读写与跨平台只读命令白名单，经真实 agy 1.5.9 闭环验证。"
-   },
-   {
-    "claim": "收尾审查检出 5 项边界漏项并经返工工单 #57 清零",
-    "value": "review-50-final 检出的 F1–F4、S1 与默认起点设计项全部修复并通过 609 项全量测试",
-    "output": "修复共享 sessionId 多文件合并、时间窗前启动跨窗活跃子代理归入、纯数字开头字符串 --spec 审查默认前缀 review-spec-id-<S>、Claude 流式分片 firstEdit 输入去重，以及未传 --started-at 时自动涵盖建分支前的写 spec 阶段。"
-   },
-   {
-    "claim": "候选包离线安装与已安装 doctor 核验通过",
-    "value": "install.1–install.4 逐文件 SHA-256 一致，已安装副本 doctor 通过",
-    "output": "通过 docs/verification/workflow/install.mjs 从本地树安装 run-spec 与 setup-run-spec 到双入口（.agents/skills 实体 + .claude/skills 软链），校验两份技能全部文件哈希一致且 doctor 零失败。"
-   }
-  ],
-  "risks": [
-   {
-    "level": "warning",
-    "what": "agy 无头可写与只读模式没有操作系统内核级路径沙箱",
-    "impact": "agy 依赖工具权限规则（Deny > Ask > Allow）拦截对屏蔽技能目录的读写，shell 子进程自身不带内核级目录隔离；该损失已在 doctor 输出与 dispatch/README.md 如实披露。",
-    "next": "高敏不可信代码审查若要求严格无 shell 工具集，继续走 spec-review 席位（claude 或 pi 受限模式）。"
-   },
-   {
-    "level": "warning",
-    "what": "两项人工合成极端快照边界按接受不修记录在案",
-    "impact": "review-50-rework 指出的“截点后瞬间空文件子代理”（已在 Spec #51 #55 顺带过滤入队）与“手工半步截断重叠 agy 快照”在真实单文件追加日志中极难发生，不影响常规评分表。",
-    "next": "R1 入队前过滤已在紧随其后的 #55 收口；R2 保持观察。"
-   }
-  ],
-  "takeaways": [
-   {
-    "title": "🛡 拦住无头软拒绝真隐患",
-    "body": "#53 首轮验收抓出 agy 无头 request-review 软拒绝仍返 exit=0 的致命假成功，返工把 denied_actions 纳入硬门禁并实机跑通。"
-   },
-   {
-    "title": "🔍 双轮跨框架审查互补",
-    "body": "设计负责人用 agy (carbon-high)，工程与审查走 pi (gpt-6.1-sol)，终审精准揪出共享会话与流式分片去重 4 处边界并在 #57 闭环。"
-   },
-   {
-    "title": "📉 新增整套框架仍减重 59 B",
-    "body": "把机械判断收进 doctor 与适配器代码，七份必读文档从 51,096 B 压到 51,037 B，零规则膨胀。"
-   }
-  ],
-  "findings": [
-   "agy 1.5.9 无头模式（--input-format stream-json）没有交互式确认弹窗，任何命中 request-review 的工具调用都会写入 result.denied_actions 并以 status=SUCCESS、退出码 0 结束；派发层必须显式检查 denied_actions 为空才算成功。",
-   "agy 1.5.9 不发现软链接技能目录，且 .agents/skills.json 的 exclude 仅匹配裸技能名（带正则锚点不生效）；采用短命实体目录副本 + 裸名 exclude + 启动前零配额 /skills 核验可稳定实现单次派发隔离。",
-   "git diff --check main...HEAD 检查已提交的分支差异，曾漏看文件末尾多余空行，收尾审查提醒后已在 172dc35 修正。"
-  ],
-  "notes": [
-   {
-    "item": "主会话时间窗",
-    "note": "主会话为本机 Antigravity CLI 会话（80833a1f-cfd4-4a37-bbf1-af97a5e3ff8c），未显式传 --started-at 时默认下界自动包含建分支前的需求探索、V6 原型打磨与写 spec 阶段，上界截于本 spec 收尾。"
-   },
-   {
-    "item": "返工审查取舍",
-    "note": "review-50-final 的全部 5 项问题已在 #57 修复；review-50-rework 的两项合成极端边界按方法层真实发生频率判为接受不修并写入 PR #58 正文。"
-   }
-  ]
- },
- "scorecard": {
-  "version": 2,
-  "spec": 50,
-  "startedAt": "2026-11-14T10:54:30.000Z",
-  "mainFrameworks": [
-   "agy"
-  ],
-  "mainSessions": [
-   {
-    "session": "agy:80833a1f-cfd4-4a37-bbf1-af97a5e3ff8c",
-    "path": "/home/jh1/.gemini/antigravity-cli/brain/80833a1f-cfd4-4a37-bbf1-af97a5e3ff8c/.system_generated/logs/transcript.jsonl",
-    "role": "design",
-    "seat": "design",
-    "agent": "agy",
-    "framework": "agy",
-    "model": null,
-    "actualModel": "gemini-4-carbon-high",
-    "effort": null,
-    "actualEffort": "high",
-    "sources": {
-     "actualModel": "session",
-     "actualEffort": "manual"
-    },
-    "usage": {
-     "inputTokens": 41118734,
-     "cachedInputTokens": 38043062,
-     "outputTokens": 348037
-    },
-    "child": false,
-    "startedAt": "2026-11-14T10:54:30.000Z",
-    "cutoffAt": "2026-11-14T17:00:55.000Z"
-   }
-  ],
-  "subagents": [],
-  "subagentAnomalies": [],
-  "batches": [],
-  "dispatchLanes": {
-   "value": [
-    {
-     "framework": "pi",
-     "anomalies": [],
-     "time": {
-      "value": {
-       "spans": [
-        {
-         "start": "2026-11-14T14:58:13.281Z",
-         "end": "2026-11-14T15:45:26.357Z"
-        },
-        {
-         "start": "2026-11-14T15:53:30.244Z",
-         "end": "2026-11-14T16:08:51.901Z"
-        },
-        {
-         "start": "2026-11-14T16:13:30.362Z",
-         "end": "2026-11-14T16:22:35.347Z"
-        },
-        {
-         "start": "2026-11-14T16:27:36.774Z",
-         "end": "2026-11-14T16:44:38.469Z"
-        },
-        {
-         "start": "2026-11-14T16:50:39.679Z",
-         "end": "2026-11-14T16:56:44.719Z"
-        }
-       ],
-       "minutes": 94.77421666666667
-      },
-      "reason": null
-     }
-    }
-   ],
-   "reason": null
-  },
-  "recordBindings": [
-   "review-50-final",
-   "review-50-rework"
-  ],
-  "cutoffAt": "2026-11-14T17:00:55.518Z",
-  "collectedAt": "2026-11-14T17:02:18.186Z",
-  "verification": {
-   "value": {
-    "runs": [
-     {
-      "layer": "full",
-      "target": {
-       "kind": "main"
-      },
-      "caller": "verify",
-      "branch": "spec/50-agy-integration",
-      "start": "2026-11-14T14:55:07.418Z",
-      "end": "2026-11-14T14:56:48.881Z",
-      "queuedMinutes": 0,
-      "minutes": 1.69105,
-      "exitCode": 0
-     },
-     {
-      "layer": "static",
-      "target": {
-       "kind": "main"
-      },
-      "caller": "verify",
-      "branch": "spec/50-agy-integration",
-      "start": "2026-11-14T15:02:21.157Z",
-      "end": "2026-11-14T15:02:24.894Z",
-      "queuedMinutes": 0,
-      "minutes": 0.062283333333333336,
-      "exitCode": 0
-     },
-     {
-      "layer": "full",
-      "target": {
-       "kind": "ticket",
-       "number": 54
-      },
-      "caller": "land",
-      "branch": "ticket/54",
-      "start": "2026-11-14T15:41:12.558Z",
-      "end": "2026-11-14T15:43:01.787Z",
-      "queuedMinutes": 0,
-      "minutes": 1.8204833333333332,
-      "exitCode": 0
-     },
-     {
-      "layer": "static",
-      "target": {
-       "kind": "main"
-      },
-      "caller": "verify",
-      "branch": "spec/50-agy-integration",
-      "start": "2026-11-14T15:54:23.855Z",
-      "end": "2026-11-14T15:54:27.516Z",
-      "queuedMinutes": 0,
-      "minutes": 0.061016666666666663,
-      "exitCode": 0
-     },
-     {
-      "layer": "full",
-      "target": {
-       "kind": "ticket",
-       "number": 53
-      },
-      "caller": "land",
-      "branch": "ticket/53",
-      "start": "2026-11-14T16:09:57.362Z",
-      "end": "2026-11-14T16:11:51.367Z",
-      "queuedMinutes": 0,
-      "minutes": 1.9000833333333333,
-      "exitCode": 0
-     },
-     {
-      "layer": "static",
-      "target": {
-       "kind": "main"
-      },
-      "caller": "verify",
-      "branch": "spec/50-agy-integration",
-      "start": "2026-11-14T16:25:32.927Z",
-      "end": "2026-11-14T16:25:38.456Z",
-      "queuedMinutes": 0,
-      "minutes": 0.09215,
-      "exitCode": 0
-     },
-     {
-      "layer": "full",
-      "target": {
-       "kind": "ticket",
-       "number": 57
-      },
-      "caller": "land",
-      "branch": "ticket/57",
-      "start": "2026-11-14T16:47:05.138Z",
-      "end": "2026-11-14T16:48:42.748Z",
-      "queuedMinutes": 0,
-      "minutes": 1.6268333333333334,
-      "exitCode": 0
-     },
-     {
-      "layer": "static",
-      "target": {
-       "kind": "main"
-      },
-      "caller": "verify",
-      "branch": "spec/50-agy-integration",
-      "start": "2026-11-14T16:49:25.645Z",
-      "end": "2026-11-14T16:49:29.133Z",
-      "queuedMinutes": 0,
-      "minutes": 0.058133333333333335,
-      "exitCode": 0
-     },
-     {
-      "layer": "full",
-      "target": {
-       "kind": "pr",
-       "number": 58
-      },
-      "caller": "pr-check",
-      "branch": "spec/50-agy-integration",
-      "start": "2026-11-14T16:59:19.458Z",
-      "end": "2026-11-14T17:00:55.518Z",
-      "queuedMinutes": 0,
-      "minutes": 1.601,
-      "exitCode": 0
-     }
-    ],
-    "fullCount": 5,
-    "fullMinutes": 8.63945,
-    "staticCount": 4
-   },
-   "reason": null
-  },
-  "merges": {
-   "value": {
-    "landCount": 3,
-    "fullVerificationFailures": 0,
-    "stops": {
-     "rebaseConflict": 0,
-     "installFailure": 0,
-     "verificationFailure": 0,
-     "pushFailure": 0,
-     "other": 0
-    }
-   },
-   "reason": null
-  },
-  "dispatches": {
-   "value": [
-    {
-     "record": "gh-53",
-     "ticket": 53,
-     "seat": "engineering",
-     "workType": "default",
-     "framework": "pi",
-     "identity": {
-      "role": "工程负责人",
-      "seat": "engineering",
-      "agent": "pi",
-      "framework": "pi",
-      "model": "openai/gpt-6.1-sol",
-      "actualModel": "openai/gpt-6.1-sol",
-      "effort": "xhigh",
-      "actualEffort": "xhigh"
-     },
-     "model": "openai/gpt-6.1-sol",
-     "effort": "xhigh",
-     "permission": "full",
-     "actualModel": "openai/gpt-6.1-sol",
-     "actualEffort": "xhigh",
-     "category": {
-      "value": "首次",
-      "reason": null
-     },
-     "start": {
-      "value": "2026-11-14T14:58:13.281Z",
-      "reason": null
-     },
-     "end": {
-      "value": "2026-11-14T15:45:26.357Z",
-      "reason": null
-     },
-     "minutes": {
-      "value": 47.217933333333335,
-      "reason": null
-     },
-     "exitCode": {
-      "value": 0,
-      "reason": null
-     },
-     "usage": {
-      "value": {
-       "inputTokens": 13874771,
-       "cachedInputTokens": 13659392,
-       "outputTokens": 55757
-      },
-      "reason": null
-     }
-    },
-    {
-     "record": "gh-54",
-     "ticket": 54,
-     "seat": "engineering",
-     "workType": "default",
-     "framework": "pi",
-     "identity": {
-      "role": "工程负责人",
-      "seat": "engineering",
-      "agent": "pi",
-      "framework": "pi",
-      "model": "openai/gpt-6.1-sol",
-      "actualModel": "openai/gpt-6.1-sol",
-      "effort": "xhigh",
-      "actualEffort": "xhigh"
-     },
-     "model": "openai/gpt-6.1-sol",
-     "effort": "xhigh",
-     "permission": "full",
-     "actualModel": "openai/gpt-6.1-sol",
-     "actualEffort": "xhigh",
-     "category": {
-      "value": "首次",
-      "reason": null
-     },
-     "start": {
-      "value": "2026-11-14T14:58:17.342Z",
-      "reason": null
-     },
-     "end": {
-      "value": "2026-11-14T15:40:01.673Z",
-      "reason": null
-     },
-     "minutes": {
-      "value": 41.73885,
-      "reason": null
-     },
-     "exitCode": {
-      "value": 0,
-      "reason": null
-     },
-     "usage": {
-      "value": {
-       "inputTokens": 9457180,
-       "cachedInputTokens": 9300736,
-       "outputTokens": 62141
-      },
-      "reason": null
-     }
-    },
-    {
-     "record": "gh-53-2",
-     "ticket": 53,
-     "seat": "engineering",
-     "workType": "default",
-     "framework": "pi",
-     "identity": {
-      "role": "工程负责人",
-      "seat": "engineering",
-      "agent": "pi",
-      "framework": "pi",
-      "model": "openai/gpt-6.1-sol",
-      "actualModel": "openai/gpt-6.1-sol",
-      "effort": "xhigh",
-      "actualEffort": "xhigh"
-     },
-     "model": "openai/gpt-6.1-sol",
-     "effort": "xhigh",
-     "permission": "full",
-     "actualModel": "openai/gpt-6.1-sol",
-     "actualEffort": "xhigh",
-     "category": {
-      "value": null,
-      "reason": "现有记录不足以区分返工和续做"
-     },
-     "start": {
-      "value": "2026-11-14T15:53:30.244Z",
-      "reason": null
-     },
-     "end": {
-      "value": "2026-11-14T16:08:51.901Z",
-      "reason": null
-     },
-     "minutes": {
-      "value": 15.36095,
-      "reason": null
-     },
-     "exitCode": {
-      "value": 0,
-      "reason": null
-     },
-     "usage": {
-      "value": {
-       "inputTokens": 3136384,
-       "cachedInputTokens": 3023360,
-       "outputTokens": 24736
-      },
-      "reason": null
-     }
-    },
-    {
-     "record": "review-50-final",
-     "ticket": null,
-     "seat": "review",
-     "workType": "default",
-     "framework": "pi",
-     "identity": {
-      "role": "工程负责人",
-      "seat": "review",
-      "agent": "pi",
-      "framework": "pi",
-      "model": "openai/gpt-6.1-sol",
-      "actualModel": "openai/gpt-6.1-sol",
-      "effort": "xhigh",
-      "actualEffort": "xhigh"
-     },
-     "model": "openai/gpt-6.1-sol",
-     "effort": "xhigh",
-     "permission": "read-only",
-     "actualModel": "openai/gpt-6.1-sol",
-     "actualEffort": "xhigh",
-     "category": {
-      "value": "审查",
-      "reason": null
-     },
-     "start": {
-      "value": "2026-11-14T16:13:30.362Z",
-      "reason": null
-     },
-     "end": {
-      "value": "2026-11-14T16:22:35.347Z",
-      "reason": null
-     },
-     "minutes": {
-      "value": 9.083083333333333,
-      "reason": null
-     },
-     "exitCode": {
-      "value": 0,
-      "reason": null
-     },
-     "usage": {
-      "value": {
-       "inputTokens": 2161406,
-       "cachedInputTokens": 1999232,
-       "outputTokens": 15593
-      },
-      "reason": null
-     }
-    },
-    {
-     "record": "gh-57",
-     "ticket": 57,
-     "seat": "engineering",
-     "workType": "default",
-     "framework": "pi",
-     "identity": {
-      "role": "工程负责人",
-      "seat": "engineering",
-      "agent": "pi",
-      "framework": "pi",
-      "model": "openai/gpt-6.1-sol",
-      "actualModel": "openai/gpt-6.1-sol",
-      "effort": "xhigh",
-      "actualEffort": "xhigh"
-     },
-     "model": "openai/gpt-6.1-sol",
-     "effort": "xhigh",
-     "permission": "full",
-     "actualModel": "openai/gpt-6.1-sol",
-     "actualEffort": "xhigh",
-     "category": {
-      "value": "首次",
-      "reason": null
-     },
-     "start": {
-      "value": "2026-11-14T16:27:36.774Z",
-      "reason": null
-     },
-     "end": {
-      "value": "2026-11-14T16:44:38.469Z",
-      "reason": null
-     },
-     "minutes": {
-      "value": 17.02825,
-      "reason": null
-     },
-     "exitCode": {
-      "value": 0,
-      "reason": null
-     },
-     "usage": {
-      "value": {
-       "inputTokens": 3139056,
-       "cachedInputTokens": 2999680,
-       "outputTokens": 29773
-      },
-      "reason": null
-     }
-    },
-    {
-     "record": "review-50-rework",
-     "ticket": null,
-     "seat": "review",
-     "workType": "default",
-     "framework": "pi",
-     "identity": {
-      "role": "工程负责人",
-      "seat": "review",
-      "agent": "pi",
-      "framework": "pi",
-      "model": "openai/gpt-6.1-sol",
-      "actualModel": "openai/gpt-6.1-sol",
-      "effort": "xhigh",
-      "actualEffort": "xhigh"
-     },
-     "model": "openai/gpt-6.1-sol",
-     "effort": "xhigh",
-     "permission": "read-only",
-     "actualModel": "openai/gpt-6.1-sol",
-     "actualEffort": "xhigh",
-     "category": {
-      "value": "审查",
-      "reason": null
-     },
-     "start": {
-      "value": "2026-11-14T16:50:39.679Z",
-      "reason": null
-     },
-     "end": {
-      "value": "2026-11-14T16:56:44.719Z",
-      "reason": null
-     },
-     "minutes": {
-      "value": 6.084,
-      "reason": null
-     },
-     "exitCode": {
-      "value": 0,
-      "reason": null
-     },
-     "usage": {
-      "value": {
-       "inputTokens": 1384620,
-       "cachedInputTokens": 1262848,
-       "outputTokens": 11730
-      },
-      "reason": null
-     }
-    }
-   ],
-   "reason": null
-  },
-  "time": {
-   "dispatchSlots": {
-    "value": {
-     "spans": [
-      {
-       "start": "2026-11-14T14:58:13.281Z",
-       "end": "2026-11-14T15:45:26.357Z"
-      },
-      {
-       "start": "2026-11-14T15:53:30.244Z",
-       "end": "2026-11-14T16:08:51.901Z"
-      },
-      {
-       "start": "2026-11-14T16:13:30.362Z",
-       "end": "2026-11-14T16:22:35.347Z"
-      },
-      {
-       "start": "2026-11-14T16:27:36.774Z",
-       "end": "2026-11-14T16:44:38.469Z"
-      },
-      {
-       "start": "2026-11-14T16:50:39.679Z",
-       "end": "2026-11-14T16:56:44.719Z"
-      }
-     ],
-     "minutes": 94.77421666666667
-    },
-    "reason": null
-   },
-   "verification": {
-    "value": {
-     "spans": [
-      {
-       "start": "2026-11-14T14:55:07.418Z",
-       "end": "2026-11-14T14:56:48.881Z"
-      },
-      {
-       "start": "2026-11-14T15:02:21.157Z",
-       "end": "2026-11-14T15:02:24.894Z"
-      },
-      {
-       "start": "2026-11-14T15:41:12.558Z",
-       "end": "2026-11-14T15:43:01.787Z"
-      },
-      {
-       "start": "2026-11-14T15:54:23.855Z",
-       "end": "2026-11-14T15:54:27.516Z"
-      },
-      {
-       "start": "2026-11-14T16:09:57.362Z",
-       "end": "2026-11-14T16:11:51.367Z"
-      },
-      {
-       "start": "2026-11-14T16:25:32.927Z",
-       "end": "2026-11-14T16:25:38.456Z"
-      },
-      {
-       "start": "2026-11-14T16:47:05.138Z",
-       "end": "2026-11-14T16:48:42.748Z"
-      },
-      {
-       "start": "2026-11-14T16:49:25.645Z",
-       "end": "2026-11-14T16:49:29.133Z"
-      },
-      {
-       "start": "2026-11-14T16:59:19.458Z",
-       "end": "2026-11-14T17:00:55.518Z"
-      }
-     ],
-     "minutes": 8.913033333333333
-    },
-    "reason": null
-   },
-   "queue": {
-    "value": {
-     "spans": [],
-     "minutes": 0
-    },
-    "reason": null
-   },
-   "designLead": {
-    "value": {
-     "spans": [
-      {
-       "start": "2026-11-14T10:54:30.000Z",
-       "end": "2026-11-14T11:09:17.000Z"
-      },
-      {
-       "start": "2026-11-14T11:39:11.000Z",
-       "end": "2026-11-14T11:57:28.000Z"
-      },
-      {
-       "start": "2026-11-14T12:52:33.000Z",
-       "end": "2026-11-14T13:04:54.000Z"
-      },
-      {
-       "start": "2026-11-14T13:25:03.000Z",
-       "end": "2026-11-14T13:54:52.000Z"
-      },
-      {
-       "start": "2026-11-14T14:23:40.000Z",
-       "end": "2026-11-14T15:05:38.000Z"
-      },
-      {
-       "start": "2026-11-14T15:40:01.000Z",
-       "end": "2026-11-14T15:55:30.000Z"
-      },
-      {
-       "start": "2026-11-14T16:08:51.000Z",
-       "end": "2026-11-14T16:28:48.000Z"
-      },
-      {
-       "start": "2026-11-14T16:44:38.000Z",
-       "end": "2026-11-14T17:00:55.000Z"
-      }
-     ],
-     "minutes": 168.91666666666666
-    },
-    "reason": null
-   },
-   "waitingUser": {
-    "value": {
-     "spans": [
-      {
-       "start": "2026-11-14T11:09:17.000Z",
-       "end": "2026-11-14T11:39:11.000Z"
-      },
-      {
-       "start": "2026-11-14T13:04:54.000Z",
-       "end": "2026-11-14T13:25:03.000Z"
-      },
-      {
-       "start": "2026-11-14T13:54:52.000Z",
-       "end": "2026-11-14T14:23:40.000Z"
-      }
-     ],
-     "minutes": 78.85
-    },
-    "reason": null
-   },
-   "longPause": {
-    "value": {
-     "count": 1,
-     "spans": [
-      {
-       "start": "2026-11-14T11:57:28.000Z",
-       "end": "2026-11-14T12:52:33.000Z"
-      }
-     ],
-     "minutes": 55.083333333333336,
-     "intervals": [
-      {
-       "start": "2026-11-14T11:57:28.000Z",
-       "end": "2026-11-14T12:52:33.000Z"
-      }
-     ]
-    },
-    "reason": null
-   }
-  },
-  "overhead": {
-   "value": [
-    {
-     "record": "gh-53",
-     "firstEditAt": {
-      "value": "2026-11-14T15:07:59.846Z",
-      "reason": null
-     },
-     "minutes": {
-      "value": 9.776083333333334,
-      "reason": null
-     },
-     "inputTokens": {
-      "value": 4478273,
-      "reason": null
-     }
-    },
-    {
-     "record": "gh-54",
-     "firstEditAt": {
-      "value": "2026-11-14T15:00:27.554Z",
-      "reason": null
-     },
-     "minutes": {
-      "value": 2.1702,
-      "reason": null
-     },
-     "inputTokens": {
-      "value": 670329,
-      "reason": null
-     }
-    },
-    {
-     "record": "gh-53-2",
-     "firstEditAt": {
-      "value": "2026-11-14T15:55:58.768Z",
-      "reason": null
-     },
-     "minutes": {
-      "value": 2.4754,
-      "reason": null
-     },
-     "inputTokens": {
-      "value": 268367,
-      "reason": null
-     }
-    },
-    {
-     "record": "review-50-final",
-     "firstEditAt": {
-      "value": null,
-      "reason": "只读席位不统计首次编辑"
-     },
-     "minutes": {
-      "value": null,
-      "reason": "只读席位不统计首次编辑"
-     },
-     "inputTokens": {
-      "value": null,
-      "reason": "只读席位不统计首次编辑"
-     }
-    },
-    {
-     "record": "gh-57",
-     "firstEditAt": {
-      "value": "2026-11-14T16:29:27.957Z",
-      "reason": null
-     },
-     "minutes": {
-      "value": 1.85305,
-      "reason": null
-     },
-     "inputTokens": {
-      "value": 413964,
-      "reason": null
-     }
-    },
-    {
-     "record": "review-50-rework",
-     "firstEditAt": {
-      "value": null,
-      "reason": "只读席位不统计首次编辑"
-     },
-     "minutes": {
-      "value": null,
-      "reason": "只读席位不统计首次编辑"
-     },
-     "inputTokens": {
-      "value": null,
-      "reason": "只读席位不统计首次编辑"
-     }
-    }
-   ],
-   "reason": null
-  },
-  "userInterventions": {
-   "value": 9,
-   "reason": null
-  },
-  "failures": {
-   "dispatchWithoutReport": {
-    "value": 0,
-    "reason": null
-   },
-   "landStops": {
-    "value": 0,
-    "reason": null
-   },
-   "verificationLaunch": {
-    "value": 0,
-    "reason": null
-   }
-  },
-  "usage": {
-   "dispatches": {
-    "value": [
-     {
-      "seat": "engineering",
-      "framework": "pi",
-      "identities": [
-       {
-        "role": "工程负责人",
-        "seat": "engineering",
-        "agent": "pi",
-        "framework": "pi",
-        "model": "openai/gpt-6.1-sol",
-        "actualModel": "openai/gpt-6.1-sol",
-        "effort": "xhigh",
-        "actualEffort": "xhigh"
-       }
-      ],
-      "anomalies": [],
-      "usage": {
-       "value": {
-        "inputTokens": 29607391,
-        "cachedInputTokens": 28983168,
-        "outputTokens": 172407
-       },
-       "reason": null
-      },
-      "complete": true
-     },
-     {
-      "seat": "review",
-      "framework": "pi",
-      "identities": [
-       {
-        "role": "工程负责人",
-        "seat": "review",
-        "agent": "pi",
-        "framework": "pi",
-        "model": "openai/gpt-6.1-sol",
-        "actualModel": "openai/gpt-6.1-sol",
-        "effort": "xhigh",
-        "actualEffort": "xhigh"
-       }
-      ],
-      "anomalies": [],
-      "usage": {
-       "value": {
-        "inputTokens": 3546026,
-        "cachedInputTokens": 3262080,
-        "outputTokens": 27323
-       },
-       "reason": null
-      },
-      "complete": true
-     }
-    ],
-    "reason": null
-   },
-   "mainSession": {
-    "value": {
-     "inputTokens": 41118734,
-     "cachedInputTokens": 38043062,
-     "outputTokens": 348037
-    },
-    "reason": null
-   },
-   "independentReview": {
-    "value": null,
-    "reason": "未记录独立审查或 JSON 用量不完整"
-   },
-   "subagents": {
-    "value": null,
-    "reason": "未记录可关联的子代理完整用量"
-   },
-   "subagentNotifications": {
-    "value": null,
-    "reason": "未提供 Claude 会话或任务通知没有 subagent_tokens"
-   }
-  },
-  "missing": [
-   {
-    "field": "dispatches.gh-53-2.category",
-    "reason": "现有记录不足以区分返工和续做"
-   },
-   {
-    "field": "usage.independentReview",
-    "reason": "未记录独立审查或 JSON 用量不完整"
-   },
-   {
-    "field": "usage.subagents",
-    "reason": "未记录可关联的子代理完整用量"
-   },
-   {
-    "field": "usage.subagentNotifications",
-    "reason": "未提供 Claude 会话或任务通知没有 subagent_tokens"
-   }
-  ]
- }
-}
+{"report":{"spec":50,"title":"接入 agy，评分表按 spec 起止时间计时","date":"2026-11-15","timezone":"Asia/Shanghai","repo":"JinhaoFang/agent-workflow","pr":{"number":58,"state":"验收通过，待合并"},"result":"工程、审查、调研席位可以配 agy；只给读文件工具的两个席位（派发前审查、巡检）配了 agy 或 codex 时，doctor 开工前报错；评分表能读 agy 会话和子代理，只算 spec 起止时间内的部分，超过 45 分钟的停顿单列。完整验证 609 项通过。","story":{"before":"你在 organize_management 已经用 agy 做设计负责人，但 run-spec 只认 Codex、Claude Code、pi：工程和审查派不给 agy，评分表不认 agy 的会话；跨天的会话整段算进来，过夜的停顿全算成「等用户」；一条中途断掉的派发会让整条泳道没有数。","afterSteps":["派发层能启动 agy：每次派发前在临时目录复制一份技能，去掉 run-spec 和 setup-run-spec，先用不花额度的 /skills 确认它们看不到，再开工。","doctor 开工前检查：派发前审查和巡检只能配 Claude 或 pi；agy 的模型名和思考强度用不花额度的命令核对，名字不完整就报错。","评分表读 agy 会话和子代理，只算 spec 起止时间内的部分；10—45 分钟的停顿算等用户，超过 45 分钟单列；断掉的派发保留已知的数，缺的标出来。"]},"delivered":[{"what":"agy 派发和技能隔离","tickets":[53],"meaning":"工程、审查、调研席位可以配 agy。agy 无头模式遇到要确认的操作会直接拒绝，却仍退出 0；派发层把这种情况判为失败。"},{"what":"doctor 开工前检查","tickets":[53],"meaning":"受限席位配错、agy 模型名不完整、技能说明超过 24 KB（agy 会截断）时，开工前就能看到。"},{"what":"评分表读 agy 会话，按起止时间计时","tickets":[54,57],"meaning":"主会话和子代理都按 spec 的起止时间切，长停顿单列，断掉的派发不再让整条泳道没有数。"},{"what":"v5 用后评估和 agy 安装说明","tickets":[52],"meaning":"观察记录补上 v5 用后评估和第 128—130 条；setup-run-spec 写明四个框架的安装和席位配置。"}],"goals":[{"name":"工程、审查、调研能派给 agy","unit":"","before":"不能派","after":"工程派发跑通；只读席位只跑过写好的命令","target":"退出 0，没有被静默拒绝的操作","status":"warning","statusText":"工程派发通过；审查、调研到 spec #51 的 #70 才能跑 git","method":"本机真实派发：只读跑 git 和 grep，可写改文件并跑 node --version；看退出码、denied_actions 和 /skills 隔离结果。","evidence":{"output":"只读、可写：退出 0，denied_actions=[]，看不到 run-spec、setup-run-spec"}},{"name":"受限席位配错时开工前报错","unit":"","before":"doctor 放行","after":"配 codex 或 agy 时退出 1，并列出可用的 claude、pi","target":"开工前报错","status":"good","statusText":"测试和实测通过","method":"CLI 测试和实测：把派发前审查、巡检分别配成 codex、agy；向 doctor 传不完整的模型名 gemini-4-carbon。","evidence":{"output":"spec-review=agy → 退出 1（列出 claude、pi）\n/model gemini-4-carbon → 返回 gemini-4-carbon-medium，和配置不一致，报错，用量 0"}},{"name":"评分表只算本 spec 时间内","unit":"","before":"跨天会话整段算入，过夜停顿算等用户","after":"按起止时间切；等用户和超过 45 分钟的停顿单列，见「代价与时间」的时间页签","target":"按起止时间切，长停顿单列","status":"good","statusText":"评分表测试通过","method":"scorecard.test.ts、run.test.ts 覆盖跨时间窗的主会话和子代理、共享会话合并、10—45 分钟与超过 45 分钟、断掉的派发、零派发。"},{"name":"必读说明不变多","unit":"字节","before":51096,"after":51037,"target":51096,"status":"good","statusText":"比 v5 少 59 字节","method":"wc -c 统计 run-spec 三份、setup-run-spec 四份必读文件。"}],"asks":[],"risks":[{"level":"warning","what":"审查、调研席位配 agy 时，第一次真用跑不了 git","impact":"本 spec 的只读实测在提示里写好了命令，没走过真实审查；spec #51 第一次用 agy 审查时，git -C 写法不在只读白名单里，被拒后本轮结束。","next":"spec #51 的 #70 已修，修后用 agy 只读席位跑完了一次审查（观察第 139 条）。"},{"level":"warning","what":"agy 没有系统级的路径隔离","impact":"agy 靠工具权限规则拦住对两个流程技能的读取；它跑的 shell 命令仍然读得到。doctor 输出和派发说明里写明了。","next":"要求严格不能跑命令的审查，用派发前审查席位（Claude 或 pi）。"},{"level":"warning","what":"有两个功能还没有真实需要","impact":"字符串形式的 spec 编号、同前缀超过 10 条派发折叠显示，是按设想加的，目前没有 spec 用到。","next":"下个版本仍没用就删（观察第 129 条）。"},{"level":"warning","what":"两种极端情况没修","impact":"review-50-rework 提出：时间窗截止后刚启动的空子代理、手工截断的 agy 记录片段重叠。真实记录里很难出现。","next":"第一种已在 spec #51 的 #55 顺带处理；第二种出现了再修。"}],"findings":["agy 无头模式遇到需要确认的工具调用时不弹窗，直接拒绝，进程仍退出 0；派发层要检查 denied_actions 为空才算成功（#53 第一次验收发现）。","agy 1.5.9 不发现软链接的技能目录；skills.json 的 exclude 只认技能名原文，写成正则不生效。","提交前用 git diff --check main...HEAD 只查了已提交的差异，漏了文件末尾的空行；收尾审查发现后在 172dc35 修了。"],"notes":[{"item":"主会话时间窗","note":"agy 主会话 80833a1f，未传 --started-at，时间从建分支前写 spec 开始算，包括 v6 原型的打磨；spec #51 从 2026-11-14T17:04:28Z 起算，两份不重复。"},{"item":"agy 主会话的思考强度","note":"agy 会话记录里没有思考强度，评分表用手填的 high（来源标为 manual）。模型名来自会话记录。"},{"item":"审查意见的取舍","note":"review-50-final 的 5 项在 #57 修了；review-50-rework 的 2 项判为不修，写进 PR #58。"},{"item":"工单一次通过的算法","note":"#53 第一次验收退回后又派了一次（gh-53-2），现有记录分不清是返工还是续做，算重派，评分表标为不完整。"}],"dispatchNotes":{"gh-53":"验收退回：可写模式下 agy 静默拒绝写文件，仍退出 0","gh-53-2":"返工：被拒绝的操作判为失败，补上仓库根的读写权限","gh-54":"评分表读 agy 会话、按时间窗切、长停顿单列，一次通过","review-50-final":"审查整个分支，提出 5 项，交给 #57","gh-57":"修 5 项，完整验证 609 项通过","review-50-rework":"复查，前 5 项已修；另提 2 项极端情况，判为不修"},"evidence":[{"claim":"agy 静默拒绝不再算成功","value":"只读、可写两种派发：退出 0，denied_actions 为空","output":"#53 第一次验收发现：可写模式下 agy 拒绝写文件和跑命令，进程仍退出 0；返工后非空 denied_actions 判失败，本机 agy 1.5.9 重跑通过。"},{"claim":"收尾审查的 5 项都修了","value":"#57 修完，完整验证 609 项通过","output":"共享会话的多个文件合并、时间窗前启动的子代理归属、数字开头的字符串 spec 编号、Claude 流式分片的首次改文件输入去重、未传 --started-at 时包含写 spec 阶段。"},{"claim":"候选包可以安装","value":"install.1—install.4 通过，安装后 doctor 通过","output":"从本地树把 run-spec、setup-run-spec 装到 .agents/skills 和 .claude/skills，两处文件哈希一致。"}]},"scorecard":{"version":2,"spec":50,"startedAt":"2026-11-14T10:54:30.000Z","mainFrameworks":["agy"],"mainSessions":[{"session":"agy:80833a1f-cfd4-4a37-bbf1-af97a5e3ff8c","path":"/home/jh1/.gemini/antigravity-cli/brain/80833a1f-cfd4-4a37-bbf1-af97a5e3ff8c/.system_generated/logs/transcript.jsonl","role":"design","seat":"design","agent":"agy","framework":"agy","model":null,"actualModel":"gemini-4-carbon-high","effort":null,"actualEffort":"high","sources":{"actualModel":"session","actualEffort":"manual"},"usage":{"inputTokens":41118734,"cachedInputTokens":38043062,"outputTokens":348037},"child":false,"startedAt":"2026-11-14T10:54:30.000Z","cutoffAt":"2026-11-14T17:00:55.000Z","spans":[{"start":"2026-11-14T10:54:30.000Z","end":"2026-11-14T11:09:17.000Z"},{"start":"2026-11-14T11:39:11.000Z","end":"2026-11-14T11:57:28.000Z"},{"start":"2026-11-14T12:52:33.000Z","end":"2026-11-14T13:04:54.000Z"},{"start":"2026-11-14T13:25:03.000Z","end":"2026-11-14T13:54:52.000Z"},{"start":"2026-11-14T14:23:40.000Z","end":"2026-11-14T15:05:38.000Z"},{"start":"2026-11-14T15:40:01.000Z","end":"2026-11-14T15:55:30.000Z"},{"start":"2026-11-14T16:08:51.000Z","end":"2026-11-14T16:28:48.000Z"},{"start":"2026-11-14T16:44:38.000Z","end":"2026-11-14T17:00:55.000Z"}]}],"subagents":[],"subagentAnomalies":[],"batches":[],"dispatchLanes":{"value":[{"framework":"pi","anomalies":[],"time":{"value":{"spans":[{"start":"2026-11-14T14:58:13.281Z","end":"2026-11-14T15:45:26.357Z"},{"start":"2026-11-14T15:53:30.244Z","end":"2026-11-14T16:08:51.901Z"},{"start":"2026-11-14T16:13:30.362Z","end":"2026-11-14T16:22:35.347Z"},{"start":"2026-11-14T16:27:36.774Z","end":"2026-11-14T16:44:38.469Z"},{"start":"2026-11-14T16:50:39.679Z","end":"2026-11-14T16:56:44.719Z"}],"minutes":94.77421666666667},"reason":null}}],"reason":null},"recordBindings":["review-50-final","review-50-rework"],"cutoffAt":"2026-11-14T17:00:55.518Z","collectedAt":"2026-11-15T08:02:37.680Z","verification":{"value":{"runs":[{"layer":"full","target":{"kind":"main"},"caller":"verify","branch":"spec/50-agy-integration","start":"2026-11-14T14:55:07.418Z","end":"2026-11-14T14:56:48.881Z","queuedMinutes":0,"minutes":1.69105,"exitCode":0},{"layer":"static","target":{"kind":"main"},"caller":"verify","branch":"spec/50-agy-integration","start":"2026-11-14T15:02:21.157Z","end":"2026-11-14T15:02:24.894Z","queuedMinutes":0,"minutes":0.062283333333333336,"exitCode":0},{"layer":"full","target":{"kind":"ticket","number":54},"caller":"land","branch":"ticket/54","start":"2026-11-14T15:41:12.558Z","end":"2026-11-14T15:43:01.787Z","queuedMinutes":0,"minutes":1.8204833333333332,"exitCode":0},{"layer":"static","target":{"kind":"main"},"caller":"verify","branch":"spec/50-agy-integration","start":"2026-11-14T15:54:23.855Z","end":"2026-11-14T15:54:27.516Z","queuedMinutes":0,"minutes":0.061016666666666663,"exitCode":0},{"layer":"full","target":{"kind":"ticket","number":53},"caller":"land","branch":"ticket/53","start":"2026-11-14T16:09:57.362Z","end":"2026-11-14T16:11:51.367Z","queuedMinutes":0,"minutes":1.9000833333333333,"exitCode":0},{"layer":"static","target":{"kind":"main"},"caller":"verify","branch":"spec/50-agy-integration","start":"2026-11-14T16:25:32.927Z","end":"2026-11-14T16:25:38.456Z","queuedMinutes":0,"minutes":0.09215,"exitCode":0},{"layer":"full","target":{"kind":"ticket","number":57},"caller":"land","branch":"ticket/57","start":"2026-11-14T16:47:05.138Z","end":"2026-11-14T16:48:42.748Z","queuedMinutes":0,"minutes":1.6268333333333334,"exitCode":0},{"layer":"static","target":{"kind":"main"},"caller":"verify","branch":"spec/50-agy-integration","start":"2026-11-14T16:49:25.645Z","end":"2026-11-14T16:49:29.133Z","queuedMinutes":0,"minutes":0.058133333333333335,"exitCode":0},{"layer":"full","target":{"kind":"pr","number":58},"caller":"pr-check","branch":"spec/50-agy-integration","start":"2026-11-14T16:59:19.458Z","end":"2026-11-14T17:00:55.518Z","queuedMinutes":0,"minutes":1.601,"exitCode":0}],"fullCount":5,"fullMinutes":8.63945,"staticCount":4},"reason":null},"merges":{"value":{"landCount":3,"fullVerificationFailures":0,"stops":{"rebaseConflict":0,"installFailure":0,"verificationFailure":0,"pushFailure":0,"other":0}},"reason":null},"dispatches":{"value":[{"record":"gh-53","ticket":53,"seat":"engineering","workType":"default","framework":"pi","identity":{"role":"工程负责人","seat":"engineering","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh"},"model":"openai/gpt-6.1-sol","effort":"xhigh","permission":"full","actualModel":"openai/gpt-6.1-sol","actualEffort":"xhigh","category":{"value":"首次","reason":null},"start":{"value":"2026-11-14T14:58:13.281Z","reason":null},"end":{"value":"2026-11-14T15:45:26.357Z","reason":null},"minutes":{"value":47.217933333333335,"reason":null},"exitCode":{"value":0,"reason":null},"usage":{"value":{"inputTokens":13874771,"cachedInputTokens":13659392,"outputTokens":55757},"reason":null}},{"record":"gh-54","ticket":54,"seat":"engineering","workType":"default","framework":"pi","identity":{"role":"工程负责人","seat":"engineering","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh"},"model":"openai/gpt-6.1-sol","effort":"xhigh","permission":"full","actualModel":"openai/gpt-6.1-sol","actualEffort":"xhigh","category":{"value":"首次","reason":null},"start":{"value":"2026-11-14T14:58:17.342Z","reason":null},"end":{"value":"2026-11-14T15:40:01.673Z","reason":null},"minutes":{"value":41.73885,"reason":null},"exitCode":{"value":0,"reason":null},"usage":{"value":{"inputTokens":9457180,"cachedInputTokens":9300736,"outputTokens":62141},"reason":null}},{"record":"gh-53-2","ticket":53,"seat":"engineering","workType":"default","framework":"pi","identity":{"role":"工程负责人","seat":"engineering","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh"},"model":"openai/gpt-6.1-sol","effort":"xhigh","permission":"full","actualModel":"openai/gpt-6.1-sol","actualEffort":"xhigh","category":{"value":null,"reason":"现有记录不足以区分返工和续做"},"start":{"value":"2026-11-14T15:53:30.244Z","reason":null},"end":{"value":"2026-11-14T16:08:51.901Z","reason":null},"minutes":{"value":15.36095,"reason":null},"exitCode":{"value":0,"reason":null},"usage":{"value":{"inputTokens":3136384,"cachedInputTokens":3023360,"outputTokens":24736},"reason":null}},{"record":"review-50-final","ticket":null,"seat":"review","workType":"default","framework":"pi","identity":{"role":"工程负责人","seat":"review","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh"},"model":"openai/gpt-6.1-sol","effort":"xhigh","permission":"read-only","actualModel":"openai/gpt-6.1-sol","actualEffort":"xhigh","category":{"value":"审查","reason":null},"start":{"value":"2026-11-14T16:13:30.362Z","reason":null},"end":{"value":"2026-11-14T16:22:35.347Z","reason":null},"minutes":{"value":9.083083333333333,"reason":null},"exitCode":{"value":0,"reason":null},"usage":{"value":{"inputTokens":2161406,"cachedInputTokens":1999232,"outputTokens":15593},"reason":null}},{"record":"gh-57","ticket":57,"seat":"engineering","workType":"default","framework":"pi","identity":{"role":"工程负责人","seat":"engineering","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh"},"model":"openai/gpt-6.1-sol","effort":"xhigh","permission":"full","actualModel":"openai/gpt-6.1-sol","actualEffort":"xhigh","category":{"value":"首次","reason":null},"start":{"value":"2026-11-14T16:27:36.774Z","reason":null},"end":{"value":"2026-11-14T16:44:38.469Z","reason":null},"minutes":{"value":17.02825,"reason":null},"exitCode":{"value":0,"reason":null},"usage":{"value":{"inputTokens":3139056,"cachedInputTokens":2999680,"outputTokens":29773},"reason":null}},{"record":"review-50-rework","ticket":null,"seat":"review","workType":"default","framework":"pi","identity":{"role":"工程负责人","seat":"review","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh"},"model":"openai/gpt-6.1-sol","effort":"xhigh","permission":"read-only","actualModel":"openai/gpt-6.1-sol","actualEffort":"xhigh","category":{"value":"审查","reason":null},"start":{"value":"2026-11-14T16:50:39.679Z","reason":null},"end":{"value":"2026-11-14T16:56:44.719Z","reason":null},"minutes":{"value":6.084,"reason":null},"exitCode":{"value":0,"reason":null},"usage":{"value":{"inputTokens":1384620,"cachedInputTokens":1262848,"outputTokens":11730},"reason":null}}],"reason":null},"time":{"dispatchSlots":{"value":{"spans":[{"start":"2026-11-14T14:58:13.281Z","end":"2026-11-14T15:45:26.357Z"},{"start":"2026-11-14T15:53:30.244Z","end":"2026-11-14T16:08:51.901Z"},{"start":"2026-11-14T16:13:30.362Z","end":"2026-11-14T16:22:35.347Z"},{"start":"2026-11-14T16:27:36.774Z","end":"2026-11-14T16:44:38.469Z"},{"start":"2026-11-14T16:50:39.679Z","end":"2026-11-14T16:56:44.719Z"}],"minutes":94.77421666666667},"reason":null},"verification":{"value":{"spans":[{"start":"2026-11-14T14:55:07.418Z","end":"2026-11-14T14:56:48.881Z"},{"start":"2026-11-14T15:02:21.157Z","end":"2026-11-14T15:02:24.894Z"},{"start":"2026-11-14T15:41:12.558Z","end":"2026-11-14T15:43:01.787Z"},{"start":"2026-11-14T15:54:23.855Z","end":"2026-11-14T15:54:27.516Z"},{"start":"2026-11-14T16:09:57.362Z","end":"2026-11-14T16:11:51.367Z"},{"start":"2026-11-14T16:25:32.927Z","end":"2026-11-14T16:25:38.456Z"},{"start":"2026-11-14T16:47:05.138Z","end":"2026-11-14T16:48:42.748Z"},{"start":"2026-11-14T16:49:25.645Z","end":"2026-11-14T16:49:29.133Z"},{"start":"2026-11-14T16:59:19.458Z","end":"2026-11-14T17:00:55.518Z"}],"minutes":8.913033333333333},"reason":null},"queue":{"value":{"spans":[],"minutes":0},"reason":null},"designLead":{"value":{"spans":[{"start":"2026-11-14T10:54:30.000Z","end":"2026-11-14T11:09:17.000Z"},{"start":"2026-11-14T11:39:11.000Z","end":"2026-11-14T11:57:28.000Z"},{"start":"2026-11-14T12:52:33.000Z","end":"2026-11-14T13:04:54.000Z"},{"start":"2026-11-14T13:25:03.000Z","end":"2026-11-14T13:54:52.000Z"},{"start":"2026-11-14T14:23:40.000Z","end":"2026-11-14T15:05:38.000Z"},{"start":"2026-11-14T15:40:01.000Z","end":"2026-11-14T15:55:30.000Z"},{"start":"2026-11-14T16:08:51.000Z","end":"2026-11-14T16:28:48.000Z"},{"start":"2026-11-14T16:44:38.000Z","end":"2026-11-14T17:00:55.000Z"}],"minutes":168.91666666666666},"reason":null},"waitingUser":{"value":{"spans":[{"start":"2026-11-14T11:09:17.000Z","end":"2026-11-14T11:39:11.000Z"},{"start":"2026-11-14T13:04:54.000Z","end":"2026-11-14T13:25:03.000Z"},{"start":"2026-11-14T13:54:52.000Z","end":"2026-11-14T14:23:40.000Z"}],"minutes":78.85},"reason":null},"longPause":{"value":{"count":1,"spans":[{"start":"2026-11-14T11:57:28.000Z","end":"2026-11-14T12:52:33.000Z"}],"minutes":55.083333333333336,"intervals":[{"start":"2026-11-14T11:57:28.000Z","end":"2026-11-14T12:52:33.000Z"}]},"reason":null}},"overhead":{"value":[{"record":"gh-53","firstEditAt":{"value":null,"reason":"会话中未找到可识别的首次写改文件事件"},"minutes":{"value":null,"reason":"缺少派发开始或首次写改文件事件"},"inputTokens":{"value":null,"reason":"首次改文件之前缺少完整用量"}},{"record":"gh-54","firstEditAt":{"value":null,"reason":"会话中未找到可识别的首次写改文件事件"},"minutes":{"value":null,"reason":"缺少派发开始或首次写改文件事件"},"inputTokens":{"value":null,"reason":"首次改文件之前缺少完整用量"}},{"record":"gh-53-2","firstEditAt":{"value":null,"reason":"会话中未找到可识别的首次写改文件事件"},"minutes":{"value":null,"reason":"缺少派发开始或首次写改文件事件"},"inputTokens":{"value":null,"reason":"首次改文件之前缺少完整用量"}},{"record":"review-50-final","firstEditAt":{"value":null,"reason":"只读席位不统计首次编辑"},"minutes":{"value":null,"reason":"只读席位不统计首次编辑"},"inputTokens":{"value":null,"reason":"只读席位不统计首次编辑"}},{"record":"gh-57","firstEditAt":{"value":null,"reason":"会话中未找到可识别的首次写改文件事件"},"minutes":{"value":null,"reason":"缺少派发开始或首次写改文件事件"},"inputTokens":{"value":null,"reason":"首次改文件之前缺少完整用量"}},{"record":"review-50-rework","firstEditAt":{"value":null,"reason":"只读席位不统计首次编辑"},"minutes":{"value":null,"reason":"只读席位不统计首次编辑"},"inputTokens":{"value":null,"reason":"只读席位不统计首次编辑"}}],"reason":null},"userInterventions":{"value":9,"reason":null},"failures":{"dispatchWithoutReport":{"value":0,"reason":null},"landStops":{"value":0,"reason":null},"verificationLaunch":{"value":0,"reason":null}},"usage":{"dispatches":{"value":[{"seat":"engineering","framework":"pi","identities":[{"role":"工程负责人","seat":"engineering","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh"}],"anomalies":[],"usage":{"value":{"inputTokens":29607391,"cachedInputTokens":28983168,"outputTokens":172407},"reason":null},"complete":true},{"seat":"review","framework":"pi","identities":[{"role":"工程负责人","seat":"review","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh"}],"anomalies":[],"usage":{"value":{"inputTokens":3546026,"cachedInputTokens":3262080,"outputTokens":27323},"reason":null},"complete":true}],"reason":null},"mainSession":{"value":{"inputTokens":41118734,"cachedInputTokens":38043062,"outputTokens":348037},"reason":null},"independentReview":{"value":null,"reason":"未记录独立审查或 JSON 用量不完整"},"subagents":{"value":null,"reason":"未记录可关联的子代理完整用量"},"subagentNotifications":{"value":null,"reason":"未提供 Claude 会话或任务通知没有 subagent_tokens"}},"cockpit":{"totals":{"value":{"freshInput":3983841,"output":547767,"cachedReplay":70288310,"input":74272151,"turns":null},"reason":null,"complete":false,"anomalies":[{"source":"gh-53-2","reason":"现有记录不足以区分返工和续做"}]},"activeMinutes":{"value":232.49196666666666,"reason":null,"complete":true,"anomalies":[]},"wallSpanMinutes":{"value":366.4253,"reason":null,"complete":true,"anomalies":[]},"tickets":{"value":{"total":3,"firstPass":2,"rework":0,"redispatch":1,"interrupted":1,"dispatches":4,"reworkDispatches":0},"reason":null,"complete":false,"anomalies":[{"source":"gh-53-2","reason":"现有记录不足以区分返工和续做"}]},"seats":[{"role":"design","seat":"design","agent":"agy","framework":"agy","model":"gemini-4-carbon-high","actualModel":"gemini-4-carbon-high","effort":"high","actualEffort":"high","runs":1,"spans":[{"start":"2026-11-14T10:54:30.000Z","end":"2026-11-14T11:09:17.000Z"},{"start":"2026-11-14T11:39:11.000Z","end":"2026-11-14T11:57:28.000Z"},{"start":"2026-11-14T12:52:33.000Z","end":"2026-11-14T13:04:54.000Z"},{"start":"2026-11-14T13:25:03.000Z","end":"2026-11-14T13:54:52.000Z"},{"start":"2026-11-14T14:23:40.000Z","end":"2026-11-14T15:05:38.000Z"},{"start":"2026-11-14T15:40:01.000Z","end":"2026-11-14T15:55:30.000Z"},{"start":"2026-11-14T16:08:51.000Z","end":"2026-11-14T16:28:48.000Z"},{"start":"2026-11-14T16:44:38.000Z","end":"2026-11-14T17:00:55.000Z"}],"activeMinutes":168.91666666666666,"medianFirstEditMinutes":null,"tickets":{"value":null,"reason":"非工程工单派发席位不统计工单一次通过率","complete":true,"anomalies":[]},"usage":{"value":{"freshInput":3075672,"output":348037,"cachedReplay":38043062,"input":41118734,"turns":528},"reason":null},"complete":true,"anomalies":[]},{"role":"工程负责人","seat":"engineering","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh","runs":4,"spans":[{"start":"2026-11-14T14:58:13.281Z","end":"2026-11-14T15:45:26.357Z"},{"start":"2026-11-14T15:53:30.244Z","end":"2026-11-14T16:08:51.901Z"},{"start":"2026-11-14T16:27:36.774Z","end":"2026-11-14T16:44:38.469Z"}],"activeMinutes":79.60713333333334,"medianFirstEditMinutes":null,"tickets":{"value":{"total":3,"firstPass":2,"rework":0,"redispatch":1,"interrupted":1,"dispatches":4,"reworkDispatches":0},"reason":null,"complete":false,"anomalies":[{"source":"gh-53-2","reason":"现有记录不足以区分返工和续做"}]},"usage":{"value":{"freshInput":624223,"output":172407,"cachedReplay":28983168,"input":29607391,"turns":null},"reason":null},"complete":false,"anomalies":[{"source":"gh-53-2","reason":"现有记录不足以区分返工和续做"}]},{"role":"工程负责人","seat":"review","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh","runs":2,"spans":[{"start":"2026-11-14T16:13:30.362Z","end":"2026-11-14T16:22:35.347Z"},{"start":"2026-11-14T16:50:39.679Z","end":"2026-11-14T16:56:44.719Z"}],"activeMinutes":15.167083333333332,"medianFirstEditMinutes":null,"tickets":{"value":null,"reason":"非工程工单派发席位不统计工单一次通过率","complete":true,"anomalies":[]},"usage":{"value":{"freshInput":283946,"output":27323,"cachedReplay":3262080,"input":3546026,"turns":null},"reason":null},"complete":true,"anomalies":[]}]},"missing":[{"field":"overhead.gh-53.firstEditAt","reason":"会话中未找到可识别的首次写改文件事件"},{"field":"overhead.gh-53.minutes","reason":"缺少派发开始或首次写改文件事件"},{"field":"overhead.gh-53.inputTokens","reason":"首次改文件之前缺少完整用量"},{"field":"overhead.gh-54.firstEditAt","reason":"会话中未找到可识别的首次写改文件事件"},{"field":"overhead.gh-54.minutes","reason":"缺少派发开始或首次写改文件事件"},{"field":"overhead.gh-54.inputTokens","reason":"首次改文件之前缺少完整用量"},{"field":"dispatches.gh-53-2.category","reason":"现有记录不足以区分返工和续做"},{"field":"overhead.gh-53-2.firstEditAt","reason":"会话中未找到可识别的首次写改文件事件"},{"field":"overhead.gh-53-2.minutes","reason":"缺少派发开始或首次写改文件事件"},{"field":"overhead.gh-53-2.inputTokens","reason":"首次改文件之前缺少完整用量"},{"field":"overhead.gh-57.firstEditAt","reason":"会话中未找到可识别的首次写改文件事件"},{"field":"overhead.gh-57.minutes","reason":"缺少派发开始或首次写改文件事件"},{"field":"overhead.gh-57.inputTokens","reason":"首次改文件之前缺少完整用量"},{"field":"usage.independentReview","reason":"未记录独立审查或 JSON 用量不完整"},{"field":"usage.subagents","reason":"未记录可关联的子代理完整用量"},{"field":"usage.subagentNotifications","reason":"未提供 Claude 会话或任务通知没有 subagent_tokens"}]}}
 </script>
 <script>
-{
-  const $ = (slot) => document.querySelector(`[data-slot="${slot}"]`);
-  const el = (tag, attrs = {}, ...kids) => {
-    const node = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (v === null || v === undefined || v === false) continue;
-      if (k === "text") node.textContent = v;
-      else if (k === "style") node.style.cssText = v;
-      else node.setAttribute(k, v === true ? "" : v);
-    }
-    for (const kid of kids.flat()) if (kid !== null && kid !== undefined) node.append(kid);
-    return node;
+(() => {
+  "use strict";
+
+  const FW_META = {
+    agy: { solid: "var(--agy)", hex: "#2563eb", label: "agy" },
+    pi: { solid: "var(--pi)", hex: "#0d9488", label: "pi" },
+    claude: { solid: "var(--claude)", hex: "#ea580c", label: "Claude Code" },
+    codex: { solid: "var(--codex)", hex: "#4f46e5", label: "Codex" }
   };
-  const NS = "http://www.w3.org/2000/svg";
-  const svgEl = (tag, attrs = {}, text) => {
-    const node = document.createElementNS(NS, tag);
-    for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) node.setAttribute(k, v);
-    if (text !== undefined) node.textContent = text;
-    return node;
+  const SEAT_LABEL = {
+    director: "设计负责人",
+    design: "设计负责人",
+    main: "设计负责人",
+    subagent: "原生子代理",
+    engineering: "工程负责人",
+    review: "代码审查",
+    research: "调研与辅助",
+    "spec-review": "独立审查",
+    watch: "巡检"
   };
-  const put = (slot, ...content) => $(slot).append(...content.flat(2).filter((c) => c !== null && c !== undefined));
-  const DATA = JSON.parse($("data").textContent);
-  const R = DATA.report;
-  const S = DATA.scorecard;
-  const val = (field) => (field && typeof field === "object" && "value" in field ? field.value : field);
-  const why = (field) => (field && typeof field === "object" && field.reason ? field.reason.replace(/^未记录[：:]\s*/, "") : "缺数");
-  const tz = R.timezone || undefined;
-  const fmtNum = (n, digits = 0) => (n === null || n === undefined ? "未知" : Number(n).toLocaleString("zh-CN", { maximumFractionDigits: digits }));
+
+  const val = (f) => (f && typeof f === "object" && "value" in f ? f.value : f);
+  const why = (f) => (f && typeof f === "object" && f.reason ? String(f.reason).replace(/^未记录[：:]\s*/, "") : "缺数");
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const numFmt = (n, d = 0) => (n === null || n === undefined || !Number.isFinite(Number(n)) ? "未记录" : Number(n).toLocaleString("zh-CN", { maximumFractionDigits: d }));
+  const fmtTok = (n) => {
+    if (n === null || n === undefined || !Number.isFinite(Number(n))) return "未记录";
+    const v = Number(n);
+    if (v >= 1e8) return `${(v / 1e8).toFixed(2)} 亿`;
+    if (v >= 1e4) return `${(v / 1e4).toFixed(v >= 1e6 ? 0 : 1).replace(/\.0$/, "")} 万`;
+    return numFmt(v);
+  };
   const fmtMin = (m) => {
-    if (m === null || m === undefined) return "未知";
-    if (m < 60) return `${fmtNum(m, 1)} 分钟`;
-    return `${Math.floor(m / 60)} 小时 ${Math.round(m % 60)} 分`;
-  };
-  const fmtTok = (n) => (n === null || n === undefined ? "未知" : n >= 1e4 ? `${fmtNum(n / 1e4, n >= 1e6 ? 0 : 1)} 万` : fmtNum(n));
-  const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString("zh-CN", { timeZone: tz, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "未知");
-  const fmtClock = (ms) => new Date(ms).toLocaleTimeString("zh-CN", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false });
-  const link = (text, href) => (href ? el("a", { href, text }) : document.createTextNode(text));
-  const issue = (n) => link(`#${n}`, R.repo ? `https://github.com/${R.repo}/issues/${n}` : null);
-  const status = (level, text) => {
-    const icon = { good: "✓", warning: "!", serious: "!", critical: "✕", info: "i" }[level] || "·";
-    return el("span", { class: `status st-${level}` }, el("i", { text: icon }), text);
-  };
-  const evidenceBlock = (ev) => {
-    if (!ev) return null;
-    const box = el("div", { class: "ev" });
-    if (ev.value) box.append(el("div", { class: "num", text: ev.value }));
-    if (ev.output) box.append(el("pre", { text: ev.output }));
-    if (ev.image) box.append(el("img", { class: "thumb", src: ev.image, alt: ev.imageAlt || "截图" }));
-    if (ev.link) box.append(el("div", {}, link(ev.linkText || "原始记录", ev.link)));
-    return box;
-  };
-  const tip = $("tip");
-  const showTip = (target, x, y) => {
-    if (!target) { tip.hidden = true; return; }
-    tip.textContent = target.getAttribute("data-tip");
-    tip.hidden = false;
-    tip.style.left = `${Math.max(8, Math.min(x + 12, window.innerWidth - tip.offsetWidth - 8))}px`;
-    tip.style.top = `${Math.max(8, Math.min(y + 12, window.innerHeight - tip.offsetHeight - 8))}px`;
-  };
-  document.addEventListener("pointermove", (event) => showTip(event.target.closest && event.target.closest("[data-tip]"), event.clientX, event.clientY));
-  document.addEventListener("focusin", (event) => {
-    const target = event.target.closest && event.target.closest("[data-tip]");
-    if (target) { const box = target.getBoundingClientRect(); showTip(target, box.left, box.top); }
-  });
-  document.addEventListener("focusout", () => { tip.hidden = true; });
-
-  document.title = `spec #${R.spec} 汇报：${R.title}`;
-  $("meta").textContent = [R.date, `spec #${R.spec}`, R.pr ? `PR #${R.pr.number}（${R.pr.state}）` : null].filter(Boolean).join(" · ");
-  $("title").textContent = R.title;
-  $("result").textContent = R.result;
-  const asks = R.asks || [];
-  if (asks.length) {
-    const banner = $("banner");
-    banner.hidden = false;
-    banner.append(el("b", { text: `有 ${asks.length} 件事要你做` }), "：", asks.map((a) => a.what).join("；"), " → 第 3 节");
-  }
-
-  const goals = R.goals || [];
-  const judged = goals.filter((g) => g.status !== "info");
-  const met = judged.filter((g) => g.status === "good").length;
-  const dispatches = val(S && S.dispatches) || [];
-  const tickets = new Set(dispatches.map((d) => d.ticket).filter((t) => t !== null && t !== undefined));
-  const spanStarts = [];
-  const spanEnds = [];
-  if (S) for (const lane of Object.values(S.time || {})) for (const s of (val(lane) || {}).spans || []) { spanStarts.push(Date.parse(s.start)); spanEnds.push(Date.parse(s.end)); }
-  const wall = spanStarts.length ? (Math.max(...spanEnds) - Math.min(...spanStarts)) / 60000 : null;
-  const tile = (v, k, n) => el("div", { class: "tile" }, el("div", { class: "v", text: v }), el("div", { class: "k", text: k }), n ? el("div", { class: "n", text: n }) : null);
-  put("done-tiles", 
-    tile(judged.length ? `${met}/${judged.length}` : "—", "目标达成", [judged.length - met ? `${judged.length - met} 项未完全达成` : null, goals.length - judged.length ? `另 ${goals.length - judged.length} 项只报告` : null].filter(Boolean).join("，") || null),
-    tile(String((R.delivered || []).length), "交付", S ? `派发工单 ${tickets.size} 张` : null),
-    tile(fmtMin(wall), "从开工到数据截点", S ? `截点 ${fmtTime(S.cutoffAt)}` : null),
-  );
-  const delivered = R.delivered || [];
-  put("delivered", delivered.length
-    ? el("div", { class: "tw" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { text: "交付" }), el("th", { text: "工单" }), el("th", { text: "对你的意义" }))),
-        el("tbody", {}, delivered.map((d) => el("tr", {}, el("td", { text: d.what }), el("td", {}, (d.tickets || []).flatMap((t, i) => (i ? [" ", issue(t)] : [issue(t)]))), el("td", { text: d.meaning }))))))
-    : el("p", { class: "empty", text: "无" }));
-
-  const dumbbell = (g, W) => {
-    const nums = [g.before, g.after, g.target].filter((n) => typeof n === "number");
-    if (nums.length < 2) return null;
-    const max = Math.max(...nums) * 1.08 || 1;
-    const H = 46, L = 6, Rr = 6, x = (n) => L + (n / max) * (W - L - Rr);
-    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${g.name}：改前 ${g.before}，改后 ${g.after}` });
-    svg.append(svgEl("line", { class: "axis", x1: L, x2: W - Rr, y1: 30, y2: 30 }));
-    if (typeof g.before === "number" && typeof g.after === "number") svg.append(svgEl("line", { x1: x(g.before), x2: x(g.after), y1: 18, y2: 18, stroke: "var(--axis)", "stroke-width": 2 }));
-    if (typeof g.target === "number") svg.append(svgEl("line", { x1: x(g.target), x2: x(g.target), y1: 8, y2: 28, stroke: "var(--ink2)", "stroke-width": 2 }));
-    const dot = (n, fill, label, anchorUp) => {
-      const group = svgEl("g", { "data-tip": `${label} ${fmtNum(n, 2)} ${g.unit || ""}` });
-      group.append(svgEl("circle", { cx: x(n), cy: 18, r: 10, fill: "transparent" }), svgEl("circle", { cx: x(n), cy: 18, r: 5, fill, stroke: "var(--surface)", "stroke-width": 2 }));
-      const px = x(n), anchor = px < 40 ? "start" : px > W - 40 ? "end" : "middle";
-      group.append(svgEl("text", { x: anchor === "start" ? Math.max(px - 4, 0) : anchor === "end" ? Math.min(px + 4, W) : px, y: anchorUp ? 8 : 44, "text-anchor": anchor }, `${label} ${fmtNum(n, 2)}`));
-      return group;
-    };
-    if (typeof g.before === "number") svg.append(dot(g.before, "var(--muted)", "改前", true));
-    if (typeof g.after === "number") svg.append(dot(g.after, "var(--s1)", "改后", false));
-    return svg;
-  };
-  const delta = (g) => (typeof g.before === "number" && typeof g.after === "number" && g.before ? `改后比改前 ${g.after >= g.before ? "+" : ""}${fmtNum((100 * (g.after - g.before)) / g.before, 1)}%` : null);
-  const drawGoals = () => {
-  const gw = Math.max(240, Math.floor(($("goals").clientWidth - 16) / (innerWidth > 640 ? 2 : 1)));
-  $("goals").replaceChildren();
-  put("goals", goals.length ? goals.map((g) => el("div", { class: "card" },
-    el("div", { class: "row" },
-      el("div", {},
-        el("h3", {}, g.name, " ", status(g.status || "warning", g.statusText || "")),
-        g.unit ? el("div", { class: "muted", text: `单位：${g.unit}${typeof g.target === "number" ? `；目标 ${fmtNum(g.target, 2)}` : ""}` }) : null,
-        dumbbell(g, gw),
-        typeof g.before !== "number" || typeof g.after !== "number" ? el("div", { class: "pair" }, el("span", { class: "muted", text: "改前 " }), String(g.before ?? "未知"), el("br"), el("span", { class: "muted", text: "改后 " }), String(g.after ?? "未知")) : null,
-        delta(g) ? el("div", { text: delta(g) }) : null,
-        g.method ? el("div", { class: "muted", text: `怎么测：${g.method}` }) : null),
-      el("div", {}, evidenceBlock(g.evidence), (g.links || []).length ? el("div", { class: "ev" }, g.links.flatMap((l, i) => (i ? [" · ", link(l.text, l.href)] : [link(l.text, l.href)]))) : null))))
-    : el("p", { class: "empty", text: "问题陈述没有可度量的现状；判断方法写在第 1 节。" }));
-  };
-
-  put("asks", asks.length ? el("ol", { class: "plain" }, asks.map((a) => el("li", {},
-    el("b", { text: `【${a.kind}】${a.what}` }),
-    a.why ? el("div", { class: "muted", text: a.why }) : null,
-    (a.options || []).length ? el("div", { text: `选项：${a.options.join(" / ")}` }) : null,
-    a.recommend ? el("div", { text: `推荐：${a.recommend}` }) : null)))
-    : el("p", { class: "empty", text: "这次没有要你做的事。" }));
-
-  const evidence = R.evidence || [];
-  put("evidence", evidence.length ? evidence.map((e) => el("div", { class: "card" }, el("div", { class: "row" }, el("div", {}, el("b", { text: e.claim })), evidenceBlock(e))))
-    : el("p", { class: "empty", text: "无" }));
-
-  const framework = (d) => d.framework || d.agent || "codex";
-  const frameworkName = (key) => ({ codex: "Codex", claude: "Claude", pi: "pi" }[key] || key);
-  const frameworkColor = (key) => ({ codex: "var(--s1)", claude: "var(--claude)", pi: "var(--pi)" }[key] || "var(--muted)");
-  const seatName = (key) => ({ engineering: "工程", review: "审查", research: "辅助", "spec-review": "独立审查", watch: "巡检" }[key] || key || "席位未记录");
-  const dispatchLanes = val(S && S.dispatchLanes) || [{ framework: "codex", time: S && (S.time.dispatchSlots || S.time.codexSlots) }];
-  const LANES = [
-    ...dispatchLanes.map((l) => [l.framework, frameworkName(l.framework), frameworkColor(l.framework), l.time]),
-    ...[["verification", "验证", "var(--s2)"], ["queue", "排队", "var(--s3)"], ["designLead", "设计负责人", "var(--s4)"], ["waitingUser", "等用户", "var(--s5)"]].map(([key, name, color]) => [key, name, color, S && S.time[key]]),
-  ];
-  put("lane-legend", LANES.map(([, name, c]) => el("span", { style: `--c:${c}`, text: name })));
-  const dispatchMinutes = (d) => {
-    const value = val(d.minutes);
-    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-  };
-  const longestDispatch = Math.max(1, ...dispatches.map((d) => dispatchMinutes(d) ?? 0));
-  put("dispatch-bars", dispatches.length ? dispatches.map((d) => {
-    const minutes = dispatchMinutes(d), usage = val(d.usage), category = val(d.category), exit = val(d.exitCode);
-    const input = usage && typeof usage.inputTokens === "number" ? usage.inputTokens : null;
-    const details = [
-      d.record || "记录名未记录", d.ticket ? `工单 #${d.ticket}` : "无工单号",
-      `框架：${frameworkName(framework(d))}；席位：${d.seat || "未记录"}；工作类型：${d.workType || "default"}`,
-      `模型：${d.actualModel || d.model || "未记录"}；强度：${d.actualEffort || d.effort || "未记录"}`,
-      `类别：${category ?? "未记录"}`, `开始：${fmtTime(val(d.start))}`, `结束：${fmtTime(val(d.end))}`,
-      minutes === null ? `时长未记录：${why(d.minutes)}` : `时长：${fmtMin(minutes)}`,
-      `退出码：${exit ?? "未记录"}`, input === null ? `输入未记录：${why(d.usage)}` : `输入：${fmtNum(input)} token`,
-      usage ? `缓存输入：${fmtTok(usage.cachedInputTokens)}；输出：${fmtTok(usage.outputTokens)}` : null,
-    ].filter(Boolean).join("\n");
-    const track = el("div", { class: `dispatch-track${minutes === null ? " dispatch-unknown" : ""}`, "aria-hidden": "true" });
-    if (minutes !== null) track.append(el("div", { class: "dispatch-fill", style: `width:${(100 * minutes) / longestDispatch}%` }));
-    const meta = el("div", { class: "dispatch-meta" }, `${frameworkName(framework(d))} · ${category ?? "类别未记录"}${d.seat && seatName(d.seat) !== category ? ` · ${seatName(d.seat)}` : ""}${d.workType && d.workType !== "default" ? ` · ${d.workType}` : ""}`);
-    if (exit !== null && exit !== undefined && exit !== 0) meta.append(" · ", el("span", { class: "dispatch-exit", text: `退出 ${exit}` }));
-    else if (exit === null || exit === undefined) meta.append(" · 退出码未记录");
-    meta.append(input === null ? " · 输入未记录" : ` · 输入 ${fmtTok(input)}`);
-    return el("div", { class: "dispatch-item", style: `--dispatch-color:${frameworkColor(framework(d))}`, tabindex: "0", role: "group", "aria-label": details, "data-tip": details },
-      el("div", { class: "dispatch-heading" }, el("b", { text: d.record || "记录名未记录" }), el("span", { text: minutes === null ? "时长未记录" : fmtMin(minutes) })),
-      el("div", { class: "dispatch-line" }, track, meta),
-      minutes === null ? el("div", { class: "dispatch-reason", text: `未记录：${why(d.minutes)}` }) : null);
-  }) : el("p", { class: "empty", text: "没有派发记录。" }));
-  const timeline = () => {
-    if (!S) return el("p", { class: "empty", text: "没有评分表数据。" });
-    const lanes = LANES.map(([key, name, color, field]) => ({ key, name, color, field, spans: ((val(field) || {}).spans || []).map((s) => [Date.parse(s.start), Date.parse(s.end)]) }));
-    const all = lanes.flatMap((l) => l.spans).sort((a, b) => a[0] - b[0]);
-    if (!all.length) return el("p", { class: "empty", text: "评分表里没有时段。" });
-    const GAP = 45 * 60000;
-    const segs = [];
-    for (const [a, b] of all) {
-      const last = segs[segs.length - 1];
-      if (last && a - last[1] <= GAP) last[1] = Math.max(last[1], b);
-      else segs.push([a, b]);
+    if (m === null || m === undefined || !Number.isFinite(Number(m))) return "未记录";
+    const v = Number(m);
+    if (v >= 60) {
+      const h = Math.floor(v / 60);
+      const r = Math.round(v % 60);
+      return r ? `${h}h ${r}m` : `${h}h`;
     }
-    const W = Math.max(240, $("timeline").clientWidth), LW = W < 600 ? 64 : 92, GW = 14, ROW = 26, TOP = 6, PAD = 4;
-    const active = segs.reduce((n, [a, b]) => n + (b - a), 0) || 1;
-    const usable = W - LW - GW * (segs.length - 1) - PAD;
-    const offsets = [];
-    let cursor = LW;
-    for (const [a, b] of segs) { offsets.push(cursor); cursor += ((b - a) / active) * usable + GW; }
-    const x = (t) => {
-      for (let i = 0; i < segs.length; i++) if (t <= segs[i][1] || i === segs.length - 1) return offsets[i] + ((Math.max(t, segs[i][0]) - segs[i][0]) / active) * usable;
-      return W;
-    };
-    const H = TOP + lanes.length * ROW + 24;
-    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "按资源分泳道的时间线" });
-    lanes.forEach((lane, i) => {
-      const y = TOP + i * ROW;
-      svg.append(svgEl("rect", { class: "lane", x: LW, y, width: W - LW - PAD, height: ROW - 6, rx: 3 }));
-      svg.append(svgEl("text", { x: LW - 8, y: y + 14, "text-anchor": "end" }, lane.name));
-      if (val(lane.field) === null) svg.append(svgEl("text", { x: LW + 8, y: y + 14 }, W < 600 ? "未记录" : `未记录：${why(lane.field)}`));
-      for (const [a, b] of lane.spans) {
-        const x1 = x(a), w = Math.max(x(b) - x1, 2);
-        const g = svgEl("g", { "data-tip": `${lane.name}\n${fmtClock(a)}–${fmtClock(b)}（${fmtMin((b - a) / 60000)}）` });
-        g.append(svgEl("rect", { x: x1 - 2, y, width: w + 4, height: ROW - 6, fill: "transparent" }), svgEl("rect", { x: x1, y: y + 3, width: w, height: ROW - 12, rx: 2, fill: lane.color }));
-        svg.append(g);
-      }
-    });
-    const base = TOP + lanes.length * ROW;
-    segs.forEach(([a, b], i) => {
-      if (i) {
-        const gx = offsets[i] - GW / 2;
-        svg.append(svgEl("line", { x1: gx - 2, x2: gx - 2, y1: TOP, y2: base - 6, stroke: "var(--axis)" }), svgEl("line", { x1: gx + 2, x2: gx + 2, y1: TOP, y2: base - 6, stroke: "var(--axis)" }));
-        svg.append(svgEl("g", { "data-tip": `空档 ${fmtMin((a - segs[i - 1][1]) / 60000)}` }, svgEl("rect", { x: gx - 7, y: TOP, width: 14, height: base - TOP, fill: "transparent" })));
-      }
-      const px = x(b) - x(a);
-      const step = [15, 30, 60, 120, 240, 480, 960].map((m) => m * 60000).find((s) => (s / Math.max(b - a, 1)) * px >= 70);
-      if (!step) return;
-      for (let t = Math.ceil(a / step) * step; t <= b; t += step) {
-        svg.append(svgEl("line", { class: "gridl", x1: x(t), x2: x(t), y1: base - 4, y2: base }));
-        svg.append(svgEl("text", { x: x(t), y: base + 14, "text-anchor": "middle" }, fmtClock(t)));
-      }
-    });
-    return svg;
+    return `${v.toFixed(v < 10 && v > 0 ? 1 : 0)}m`;
   };
 
-  const hbars = (rows, unitFmt, ariaLabel, W) => {
-    const max = Math.max(1, ...rows.map((r) => r.value || 0));
-    const narrow = W < 600, LW = narrow ? 98 : 150, VW = narrow ? 95 : 280, ROW = 26;
-    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${rows.length * ROW + 4}`, role: "img", "aria-label": ariaLabel });
-    rows.forEach((r, i) => {
-      const y = i * ROW;
-      svg.append(svgEl("text", { x: LW - 8, y: y + 16, "text-anchor": "end" }, r.label));
-      if (r.value === null || r.value === undefined) { svg.append(svgEl("text", { x: LW, y: y + 16 }, narrow ? "未记录" : `未记录：${r.reason || "缺数"}`)); return; }
-      const w = r.value > 0 ? Math.max(((W - LW - VW) * r.value) / max, 2) : 0;
-      const g = svgEl("g", { "data-tip": r.tip || `${r.label}：${r.text || unitFmt(r.value)}` });
-      g.append(svgEl("rect", { x: LW, y, width: W - LW - VW, height: ROW - 4, fill: "transparent" }), svgEl("rect", { x: LW, y: y + 5, width: w, height: ROW - 14, rx: 2, fill: r.color || "var(--s1)" }));
-      g.append(svgEl("text", { x: LW + w + 8, y: y + 16 }, (narrow ? r.short : r.text) || unitFmt(r.value)));
-      svg.append(g);
-    });
-    return svg;
+  const rawText = (document.querySelector('[data-slot="data"]') || {}).textContent || "{}";
+  const DATA = JSON.parse(rawText);
+  const R = DATA.report || {};
+  const S = DATA.scorecard || null;
+  const tz = R.timezone || undefined;
+
+  const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString("zh-CN", { timeZone: tz, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "未记录");
+  const fmtClock = (ms) => new Date(ms).toLocaleTimeString("zh-CN", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false });
+  const fwInfo = (fw) => FW_META[String(fw || "").toLowerCase()] || { solid: "var(--codex)", hex: "#4f46e5", label: fw || "未知框架" };
+  const issueHref = (t) => {
+    const s = String(t ?? "").replace(/^#/, "");
+    return R.repo && /^[1-9]\d*$/.test(s) ? `https://github.com/${R.repo}/issues/${s}` : null;
+  };
+  const normUsage = (u) => {
+    const x = val(u);
+    if (!x || typeof x !== "object") return null;
+    if (typeof x.freshInput === "number") {
+      return {
+        fresh: x.freshInput,
+        output: x.output ?? x.outputTokens ?? 0,
+        cached: x.cachedReplay ?? x.cachedInputTokens ?? 0,
+        input: x.input ?? x.inputTokens ?? (x.freshInput + (x.cachedReplay ?? 0)),
+        turns: typeof x.turns === "number" ? x.turns : null
+      };
+    }
+    if (typeof x.inputTokens === "number" || typeof x.input === "number") {
+      const inp = typeof x.inputTokens === "number" ? x.inputTokens : x.input;
+      const cached = typeof x.cachedInputTokens === "number" ? x.cachedInputTokens : (typeof x.cached === "number" ? x.cached : (typeof x.cachedReplay === "number" ? x.cachedReplay : 0));
+      const out = typeof x.outputTokens === "number" ? x.outputTokens : (typeof x.output === "number" ? x.output : 0);
+      return {
+        fresh: Math.max(0, inp - cached),
+        output: out,
+        cached,
+        input: inp,
+        turns: typeof x.turns === "number" ? x.turns : null
+      };
+    }
+    return null;
   };
 
+  const dispatches = val(S && S.dispatches) || [];
+  const overheadList = val(S && S.overhead) || [];
+  const overheadMap = new Map(overheadList.map((o) => [o.record, o]));
+  const batches = val(S && S.batches) || [];
   const ver = val(S && S.verification);
   const merges = val(S && S.merges);
-  const failures = S ? Object.values(S.failures || {}).map(val) : [];
-  const failureSum = failures.every((n) => typeof n === "number") ? failures.reduce((a, b) => a + b, 0) : null;
-  const overhead = (val(S && S.overhead) || []).map((o) => val(o.minutes)).filter((n) => typeof n === "number").sort((a, b) => a - b);
-  const median = overhead.length ? overhead[Math.floor(overhead.length / 2)] : null;
-  put("verify-tiles", 
-    tile(ver ? `${ver.fullCount} 次` : "未记录", "完整验证", ver ? `共 ${fmtMin(ver.fullMinutes)}` : why(S && S.verification)),
-    tile(ver ? `${ver.staticCount} 次` : "未记录", "静态检查"),
-    tile(merges ? `${merges.landCount} 次` : "未记录", "合并（land）", merges ? `完整验证失败 ${merges.fullVerificationFailures} 次` : null),
-    tile(failureSum === null ? "未知" : `${failureSum} 次`, "流程故障", "派发无汇报、land 停下、验证启动失败"),
-    tile(val(S && S.userInterventions) === null || !S ? "未知" : `${val(S.userInterventions)} 次`, "用户介入"),
-    tile(median === null ? "未知" : fmtMin(median), "开工开销（中位）", "派发到第一次改文件"),
-  );
-  if (S) {
-    const n = val(S.usage.subagentNotifications);
-    put("usage-note", n === null ? `任务通知里的子代理 token：未记录（${why(S.usage.subagentNotifications)}）。` : `任务通知报的子代理 token 合计 ${fmtTok(n)}，可和上面子代理一行互相核对。`);
-  }
 
-  const groupedUsage = val(S && S.usage.dispatches);
-  const USAGE = [
-    ...(S && S.version >= 2 ? groupedUsage ? groupedUsage.map((g) => [`${seatName(g.seat)}/${frameworkName(g.framework)}`, g.usage, frameworkColor(g.framework)]) : [["派发用量", S.usage.dispatches, "var(--muted)"]] : [["Codex 派发", S && S.usage.codexDispatch, frameworkColor("codex")], ["Codex 审查", S && S.usage.codexReview, frameworkColor("codex")]]),
-    ...[["mainSession", "主会话"], ["independentReview", "独立审查"], ["subagents", "子代理"]].map(([key, name]) => [name, S && S.usage[key], "var(--muted)"]),
-  ];
-  const drawCharts = () => {
-    drawGoals();
-    for (const slot of ["timeline", "time-bars", "usage-bars"]) $(slot).replaceChildren();
-    put("timeline", timeline());
-    const bw = Math.max(240, $("time-bars").clientWidth);
-    put("time-bars", S ? hbars(LANES.map(([, name, color, field]) => ({ label: name, color, value: (val(field) || {}).minutes ?? null, reason: why(field) })), fmtMin, "各类时间的分钟数", bw) : el("p", { class: "empty", text: "没有评分表数据。" }));
-    put("usage-bars", S ? hbars(USAGE.map(([label, field, color]) => {
-      const u = val(field);
-      return { label, color, value: u ? u.inputTokens : null, reason: why(field), short: u ? `输入 ${fmtTok(u.inputTokens)}` : null,
-        text: u ? `输入 ${fmtTok(u.inputTokens)}（缓存 ${Math.round((100 * u.cachedInputTokens) / (u.inputTokens || 1))}%）· 输出 ${fmtTok(u.outputTokens)}` : null };
-    }), fmtTok, "各来源的输入 token", bw) : el("p", { class: "empty", text: "没有评分表数据。" }));
+  const rawMissing = (S && Array.isArray(S.missing)) ? S.missing : [];
+  const findMissingReason = (prefix, fallback) => {
+    const hit = rawMissing.find((m) => m && typeof m.field === "string" && (m.field === prefix || m.field.startsWith(`${prefix}.`)));
+    return hit && hit.reason ? String(hit.reason).replace(/^未记录[：:]\s*/, "") : fallback;
   };
-  drawCharts();
-  const resize = { timer: 0, width: innerWidth };
-  addEventListener("resize", () => {
-    if (innerWidth === resize.width) return;
-    resize.width = innerWidth;
-    clearTimeout(resize.timer);
-    resize.timer = setTimeout(drawCharts, 150);
+  const cockpitMissingReason = S ? "当前评分表缺少过程汇总统计" : "未提供评分表数据";
+  const cockpitSeatsReason = S && S.cockpit ? "尚无已记录角色运行时数据" : cockpitMissingReason;
+
+  const parseSpanArray = (rawSpans, defaultDesc) => {
+    if (!Array.isArray(rawSpans)) return null;
+    const out = [];
+    for (const s of rawSpans) {
+      const a = Date.parse(s && s.start);
+      const b = Date.parse(s && s.end);
+      if (Number.isFinite(a) && Number.isFinite(b) && b >= a) {
+        out.push({ a, b, kind: "ok", desc: (s && s.desc) || defaultDesc });
+      }
+    }
+    return out;
+  };
+
+  const formatSeatTicketSummary = (tMetric) => {
+    const t = val(tMetric);
+    if (!t) return null;
+    const parts = [`一次通过 ${t.firstPass}/${t.total}`];
+    if (t.rework > 0) parts.push(`返工 ${t.rework}`);
+    if (t.redispatch > 0) parts.push(`重派 ${t.redispatch}`);
+    if (t.interrupted > 0) parts.push(`中断或分类不明 ${t.interrupted}`);
+    return parts.join(" · ");
+  };
+
+  const buildActors = () => {
+    const cockpitSeats = val(S && S.cockpit && S.cockpit.seats);
+    if (!Array.isArray(cockpitSeats) || !cockpitSeats.length) return [];
+    return cockpitSeats.map((c, idx) => {
+      const fw = c.framework || c.agent || "codex";
+      const u = normUsage(c.usage);
+      const seatKey = c.seat || c.role || "engineering";
+      const roleLabel = SEAT_LABEL[seatKey] || c.role || seatKey;
+      const medEdit = val(c.medianFirstEditMinutes);
+      const model = c.actualModel || c.model || "默认模型";
+      const effort = c.actualEffort || c.effort || "默认";
+      const isDesign = seatKey === "director" || seatKey === "design" || seatKey === "main";
+      const rawSeatSpans = c && c.spans !== undefined ? val(c.spans) : undefined;
+      const actorSpans = parseSpanArray(rawSeatSpans, isDesign ? "设计负责人（主会话）工作与验收" : `${roleLabel} 活跃时段`);
+      const ticketSummary = formatSeatTicketSummary(c.tickets);
+      const anomCount = c.anomalies && c.anomalies.length ? c.anomalies.length : 1;
+      const statusText = c.complete === false || (c.anomalies && c.anomalies.length) ? `部分记录（异常 ${anomCount}）` : "记录完整";
+      const statusParts = [ticketSummary, statusText].filter(Boolean);
+      const editText = typeof medEdit === "number"
+        ? (typeof c.runs === "number" && c.runs > 1 ? `开始改文件前 ${fmtMin(medEdit)}（中位数）` : `开始改文件前 ${fmtMin(medEdit)}`)
+        : (isDesign ? "设计负责人（主会话）" : "只读或未统计");
+      const usageReasonNote = !u && c.usage && c.usage.reason ? `用量缺失：${why(c.usage)}` : null;
+      const anomNote = c.anomalies && c.anomalies.length ? c.anomalies.map((a) => `${a.source || a.record || ""}${a.source || a.record ? ": " : ""}${a.reason || a}`).join("；") : null;
+      return {
+        id: c.id || `actor-${idx}`,
+        seat: seatKey,
+        workType: c.workType || "default",
+        role: roleLabel + (c.workType && c.workType !== "default" ? `·${c.workType}` : ""),
+        fw,
+        model,
+        effort,
+        minutes: val(c.activeMinutes),
+        runsText: isDesign
+          ? (typeof c.runs === "number" && c.runs > 1 ? `${c.runs} 段主会话` : "主会话")
+          : (typeof c.runs === "number" ? `${c.runs} 次运行` : String(c.runs || "主会话")),
+        turns: u && u.turns !== null ? u.turns : (val(c.turns) ?? null),
+        fresh: u ? u.fresh : null,
+        output: u ? u.output : null,
+        cached: u ? u.cached : null,
+        spans: actorSpans,
+        readDoc: editText,
+        pass: statusParts.join(" · "),
+        note: anomNote || usageReasonNote
+      };
+    });
+  };
+
+  const ACTORS = buildActors();
+  const findActorForDispatch = (d) => {
+    const seat = d.seat || (d.ticket ? "engineering" : "review");
+    const wt = d.workType || "default";
+    const fw = d.framework || d.agent || "codex";
+    const model = d.actualModel || d.model || "默认模型";
+    const effort = d.actualEffort || d.effort || "默认";
+    const exact = ACTORS.find((a) => a.seat === seat && (a.workType || "default") === wt && a.fw === fw && a.model === model && a.effort === effort);
+    if (exact) return exact.id;
+    const sameTuple = ACTORS.find((a) => a.seat === seat && a.fw === fw && a.model === model && a.effort === effort);
+    return sameTuple ? sameTuple.id : "";
+  };
+
+  const cockpitTotalsWrap = S && S.cockpit && S.cockpit.totals ? S.cockpit.totals : null;
+  const cockpitTotals = val(cockpitTotalsWrap);
+  const cockpitTotalsReason = cockpitTotalsWrap && cockpitTotalsWrap.reason ? why(cockpitTotalsWrap) : cockpitMissingReason;
+  const totalFresh = cockpitTotals && typeof cockpitTotals.freshInput === "number" ? cockpitTotals.freshInput : null;
+  const totalOut = cockpitTotals && typeof cockpitTotals.output === "number" ? cockpitTotals.output : null;
+  const totalCached = cockpitTotals && typeof cockpitTotals.cachedReplay === "number" ? cockpitTotals.cachedReplay : null;
+  const totalInput = cockpitTotals && typeof cockpitTotals.input === "number" ? cockpitTotals.input : (totalFresh !== null && totalCached !== null ? totalFresh + totalCached : null);
+  const totalTurns = cockpitTotals && typeof cockpitTotals.turns === "number" ? cockpitTotals.turns : null;
+  const totalRealTok = totalFresh !== null && totalOut !== null ? totalFresh + totalOut : null;
+
+  const dLeadObj = val(S && S.time && S.time.designLead);
+  const dispSlotObj = val(S && S.time && S.time.dispatchSlots);
+  const verTimeObj = val(S && S.time && S.time.verification);
+  const queueTimeObj = val(S && S.time && S.time.queue);
+  const waitUserObj = val(S && S.time && S.time.waitingUser);
+  const longPauseObj = val(S && S.time && S.time.longPause) || null;
+  const dLeadMin = dLeadObj && typeof dLeadObj.minutes === "number" ? dLeadObj.minutes : null;
+  const dispSlotMin = dispSlotObj && typeof dispSlotObj.minutes === "number" ? dispSlotObj.minutes : null;
+  const verMin = verTimeObj && typeof verTimeObj.minutes === "number" ? verTimeObj.minutes : null;
+  const queueMin = queueTimeObj && typeof queueTimeObj.minutes === "number" ? queueTimeObj.minutes : null;
+  const waitUserMin = waitUserObj && typeof waitUserObj.minutes === "number" ? waitUserObj.minutes : null;
+  const longPauseMin = longPauseObj && typeof longPauseObj.minutes === "number" ? longPauseObj.minutes : null;
+
+  const shortSeat = { director: "设计", design: "设计", main: "设计", subagent: "子代理", engineering: "工程", review: "审查", research: "调研", "spec-review": "独立审查", watch: "巡检" };
+  const compactModel = (m) => {
+    const tail = String(m || "默认").split("/").pop().replace(/^gemini-4-/, "").replace(/^claude-/, "");
+    return tail.length > 16 ? `${tail.slice(0, 15)}…` : tail;
+  };
+
+  const collectAllSpans = () => {
+    const lanes = [];
+    const designActors = ACTORS.filter((a) => a.seat === "director" || a.seat === "design" || a.seat === "main");
+    for (const da of designActors) {
+      if (Array.isArray(da.spans) && da.spans.length) {
+        lanes.push({
+          actorId: da.id,
+          label: `设计·${fwInfo(da.fw).label}·${compactModel(da.model)}(${da.effort})`,
+          fullLabel: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model} · ${da.effort}`,
+          color: "var(--design)",
+          spans: da.spans.map((s) => ({
+            ...s,
+            desc: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model}(${da.effort})`
+          }))
+        });
+      }
+    }
+    const subActors = ACTORS.filter((a) => a.seat === "subagent" && Array.isArray(a.spans) && a.spans.length);
+    for (const sa of subActors) {
+      lanes.push({
+        actorId: sa.id,
+        label: `子代理·${fwInfo(sa.fw).label}·${compactModel(sa.model)}(${sa.effort})`,
+        fullLabel: `原生子代理 · ${fwInfo(sa.fw).label} · ${sa.model} · ${sa.effort}`,
+        color: fwInfo(sa.fw).solid,
+        spans: sa.spans.map((s) => ({
+          ...s,
+          desc: `原生子代理 · ${fwInfo(sa.fw).label} · ${sa.model}(${sa.effort})`
+        }))
+      });
+    }
+    const byLane = new Map();
+    for (const d of dispatches) {
+      const st = Date.parse(val(d.start) || "");
+      const en = Date.parse(val(d.end) || "");
+      if (!Number.isFinite(st) || !Number.isFinite(en)) continue;
+      const fw = d.framework || d.agent || "codex";
+      const seat = d.seat || (d.ticket ? "engineering" : "review");
+      const wt = d.workType || "default";
+      const model = d.actualModel || d.model || "默认模型";
+      const effort = d.actualEffort || d.effort || "默认";
+      const key = `${seat}|${wt}|${fw}|${model}|${effort}`;
+      if (!byLane.has(key)) {
+        const sLbl = (shortSeat[seat] || SEAT_LABEL[seat] || seat) + (wt !== "default" ? `(${wt})` : "");
+        byLane.set(key, {
+          actorId: findActorForDispatch(d),
+          label: `${sLbl}·${fwInfo(fw).label}·${compactModel(model)}(${effort})`,
+          fullLabel: `${SEAT_LABEL[seat] || seat}${wt !== "default" ? `·${wt}` : ""} · ${fwInfo(fw).label} · ${model} · ${effort}`,
+          color: fwInfo(fw).solid,
+          spans: []
+        });
+      }
+      const u = normUsage(d.usage);
+      const exit = val(d.exitCode);
+      byLane.get(key).spans.push({
+        a: st,
+        b: Math.max(en, st + 15000),
+        kind: exit === 0 || exit === null ? "ok" : "aborted",
+        desc: `${d.record || "派发"}${d.ticket ? ` (#${d.ticket})` : ""} · ${val(d.category) || "执行"} · ${fmtMin(val(d.minutes))}${u ? ` · 首次读入 ${fmtTok(u.fresh)} / 输出 ${fmtTok(u.output)}` : ""}`
+      });
+    }
+    lanes.push(...byLane.values());
+    const vSpans = ((verTimeObj || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "ok", desc: "验证" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
+    if (vSpans.length) lanes.push({ actorId: "", label: "验证", color: "var(--verify)", spans: vSpans });
+    const wSpans = ((waitUserObj || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "wait", desc: "等你确认 (10~45m)" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
+    if (wSpans.length) lanes.push({ actorId: "", label: "等你确认", color: "var(--wait)", spans: wSpans });
+    return lanes;
+  };
+
+  const TL_LANES = collectAllSpans();
+  const allPts = TL_LANES.flatMap((l) => l.spans);
+
+  const activeWrap = S && S.cockpit && S.cockpit.activeMinutes ? S.cockpit.activeMinutes : null;
+  const unionActiveMin = activeWrap ? val(activeWrap) : null;
+  const activeReason = activeWrap ? why(activeWrap) : cockpitMissingReason;
+  const wallWrap = S && S.cockpit && S.cockpit.wallSpanMinutes ? S.cockpit.wallSpanMinutes : null;
+  const wallMin = wallWrap ? val(wallWrap) : null;
+  const wallReason = wallWrap ? why(wallWrap) : cockpitMissingReason;
+
+  const goals = R.goals || [];
+  const judgedGoals = goals.filter((g) => g.status !== "info");
+  const metGoals = judgedGoals.filter((g) => g.status === "good" || g.status === "达成").length;
+  const ticketsWrap = S && S.cockpit && S.cockpit.tickets ? S.cockpit.tickets : null;
+  const ticketStats = val(ticketsWrap);
+  const ticketsReason = ticketsWrap ? why(ticketsWrap) : (S && S.cockpit ? findMissingReason("dispatches", cockpitMissingReason) : cockpitMissingReason);
+  const ticketTotal = ticketStats && typeof ticketStats.total === "number" ? ticketStats.total : null;
+  const firstPassCount = ticketStats && typeof ticketStats.firstPass === "number" ? ticketStats.firstPass : null;
+  const reworkCount = ticketStats && typeof ticketStats.rework === "number" ? ticketStats.rework : 0;
+  const redispatchCount = ticketStats && typeof ticketStats.redispatch === "number" ? ticketStats.redispatch : 0;
+  const interruptedCount = ticketStats && typeof ticketStats.interrupted === "number" ? ticketStats.interrupted : 0;
+  const passPct = ticketTotal && ticketTotal > 0 && firstPassCount !== null ? Math.round((firstPassCount / ticketTotal) * 100) : null;
+  const mergesText = merges && typeof merges.landCount === "number" ? `${merges.landCount} 次` : `未记录（${findMissingReason("merges", "缺少验证台账")}）`;
+
+  const KPIS = [
+    {
+      v: judgedGoals.length ? `${metGoals} / ${judgedGoals.length}` : `${(R.delivered || []).length} 项`,
+      k: judgedGoals.length ? "目标达成" : "改了什么",
+      n: judgedGoals.length
+        ? `环：已达成 / 判定目标（${metGoals}/${judgedGoals.length}）${goals.length > judgedGoals.length ? ` · 另 ${goals.length - judgedGoals.length} 项不判达成` : ""}`
+        : `改了 ${(R.delivered || []).length} 项 · 未设目标分母，无比例环`,
+      pct: judgedGoals.length ? Math.round((metGoals / judgedGoals.length) * 100) : null,
+      color: "var(--good)"
+    },
+    ticketStats === null
+      ? {
+        v: "未记录",
+        k: "工程工单一次通过数",
+        n: `未记录：${ticketsReason} · 合并 ${mergesText}`,
+        pct: null,
+        color: "var(--agy)"
+      }
+      : ticketTotal === 0
+        ? {
+          v: "0 张工单",
+          k: dispatches.length ? "非工单 / 辅助派发" : "纯主会话执行（0 张工单）",
+          n: `共 ${dispatches.length} 次派发 · 合并 ${mergesText} · 工单分母为 0，无比例环`,
+          pct: null,
+          color: "var(--agy)"
+        }
+        : {
+          v: `${firstPassCount} / ${ticketTotal}`,
+          k: `工程工单一次通过 ${passPct}%${ticketsWrap && ticketsWrap.complete === false ? "（数据不完整）" : ""}`,
+          n: `环：一次通过（第一次派发退出 0，之后没有返工或重派） / 总工单（${firstPassCount}/${ticketTotal}）· 返工 ${reworkCount} · 重派 ${redispatchCount}${interruptedCount ? ` · 中断或分类不明 ${interruptedCount}` : ""} · 合并 ${mergesText}`,
+          pct: passPct,
+          color: "var(--agy)"
+        },
+    unionActiveMin === null
+      ? {
+        v: "未记录",
+        k: "工作时间（重叠只算一次）",
+        n: `未记录：${activeReason} · 日历跨度 ${wallMin !== null ? fmtMin(wallMin) : `未记录（${wallReason}）`}`,
+        pct: null,
+        color: "var(--pi)"
+      }
+      : {
+        v: fmtMin(unionActiveMin),
+        k: `工作时间（重叠只算一次）${activeWrap && activeWrap.complete === false ? "（已知部分）" : ""}`,
+        n: wallMin !== null && wallMin > 0
+          ? `日历跨度 ${fmtMin(wallMin)}${longPauseMin && longPauseMin > 0 ? `（含超过 45 分钟的停顿 ${fmtMin(longPauseMin)}）` : ""} · 环：工作时间 / 日历跨度（${fmtMin(unionActiveMin)}/${fmtMin(wallMin)}）`
+          : wallMin === 0
+            ? "日历跨度 0m · 分母为 0，无比例环"
+            : `日历跨度未记录（${wallReason}）· 分母缺失，无比例环`,
+        pct: wallMin !== null && wallMin > 0 ? Math.round((unionActiveMin / wallMin) * 100) : null,
+        color: "var(--pi)"
+      },
+    totalRealTok === null
+      ? {
+        v: "未记录",
+        k: "首次读入 + 输出（Token）",
+        n: `未记录：${cockpitTotalsReason}`,
+        pct: null,
+        color: "var(--design)"
+      }
+      : {
+        v: fmtTok(totalRealTok),
+        k: `首次读入 + 输出（Token）${cockpitTotalsWrap && cockpitTotalsWrap.complete === false ? "（已知部分）" : ""}`,
+        n: totalInput !== null && totalInput > 0
+          ? `首次读入 ${fmtTok(totalFresh)} · 输出 ${fmtTok(totalOut)} · 缓存重读 ${fmtTok(totalCached)} · 环：缓存重读 / 总输入（${fmtTok(totalCached)}/${fmtTok(totalInput)}）`
+          : `首次读入 ${fmtTok(totalFresh)} · 输出 ${fmtTok(totalOut)} · 总输入为 0，无比例环`,
+        pct: totalCached !== null && totalInput !== null && totalInput > 0 ? Math.round((totalCached / totalInput) * 100) : null,
+        color: "var(--design)"
+      }
+  ];
+
+  const SHOTS = [
+    ...(R.shots || []),
+    ...(R.shots && R.shots.length ? [] : (R.evidence || []).filter((e) => e.image).map((e, i) => ({
+      title: e.claim || `实测截图 ${i + 1}`,
+      url: e.link || `spec-${R.spec}/evidence-${i + 1}`,
+      focus: e.value || e.output || "",
+      ref: "实测取证",
+      image: e.image,
+      imageAlt: e.imageAlt || e.claim || "实测截图"
+    })))
+  ];
+
+  const TAKEAWAYS = Array.isArray(R.takeaways) ? R.takeaways.filter((t) => t && (t.title || t.body)) : [];
+
+  const state = {
+    topTab: "overview",
+    costLens: "charts",
+    filterActor: null,
+    sidebarCollapsed: false,
+    expandAll: false
+  };
+
+  document.title = `spec #${R.spec} 汇报：${R.title || ""}`;
+
+  const renderKpiRing = (pct, color) => {
+    if (pct === null || pct === undefined || !Number.isFinite(Number(pct))) return "";
+    const r = 18, c = 2 * Math.PI * r;
+    const p = Math.max(0, Math.min(100, Math.round(Number(pct))));
+    const dash = (p / 100) * c;
+    return `<svg class="kpi-ring" viewBox="0 0 46 46" aria-hidden="true">
+      <circle cx="23" cy="23" r="${r}" fill="none" stroke="var(--wash2)" stroke-width="4.5"/>
+      ${p > 0 ? `<circle cx="23" cy="23" r="${r}" fill="none" stroke="${color}" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 23 23)"/>` : ""}
+      <text x="23" y="26.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--ink)">${p}%</text>
+    </svg>`;
+  };
+
+  const renderArchFlow = () => {
+    const nodes = R.archNodes || [];
+    if (!nodes.length) return "";
+    const n = Math.min(nodes.length, 4);
+    const W = 880, pad = 10, arrowW = n > 1 ? 66 : 0;
+    const boxW = Math.floor((W - pad * 2 - arrowW * (n - 1)) / n);
+    return `<div class="arch-card">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:12px" class="muted">
+        <span><b style="color:var(--ink)">运作流程</b>（悬停看说明）</span>
+        <span>改之后怎么运转</span>
+      </div>
+      <svg class="viz" viewBox="0 0 ${W} 82" role="img" aria-label="关键机制流转图">
+        ${nodes.slice(0, n).map((nd, i) => {
+          const x = pad + i * (boxW + arrowW);
+          const stroke = i === 0 ? "var(--axis)" : i === n - 1 ? "var(--verify)" : "var(--agy)";
+          const arrow = i < n - 1 ? `
+            <line x1="${x + boxW + 4}" y1="41" x2="${x + boxW + arrowW - 10}" y2="41" stroke="var(--agy)" stroke-width="2"/>
+            <polygon points="${x + boxW + arrowW - 10},37 ${x + boxW + arrowW - 2},41 ${x + boxW + arrowW - 10},45" fill="var(--agy)"/>
+          ` : "";
+          return `<g class="arch-node" data-tip="${esc(nd.tip || nd.sub || nd.title)}">
+            <rect x="${x}" y="12" width="${boxW}" height="58" rx="10" fill="var(--surface)" stroke="${stroke}" stroke-width="1.6"/>
+            <text x="${x + boxW / 2}" y="36" text-anchor="middle" font-weight="700" fill="var(--ink)">${esc(nd.title)}</text>
+            <text x="${x + boxW / 2}" y="55" text-anchor="middle" font-size="10.5" fill="var(--muted)">${esc(nd.sub || "")}</text>
+          </g>${arrow}`;
+        }).join("")}
+      </svg>
+    </div>`;
+  };
+
+  const renderDeliveryPanel = () => {
+    const story = R.story || null;
+    const delivered = R.delivered || [];
+    const storyHtml = story && (story.before || (story.afterSteps && story.afterSteps.length)) ? `
+      <div class="story-compare">
+        <div class="story-pane before">
+          <div class="pane-kicker" style="color:var(--serious)"><span>改之前卡在哪</span></div>
+          <div style="font-size:13px;color:var(--ink2);line-height:1.65">${esc(story.before || "见下方模块说明")}</div>
+        </div>
+        <div class="story-pane after">
+          <div class="pane-kicker" style="color:var(--good)"><span>改之后怎么运转</span></div>
+          <ol class="step-pills">
+            ${(story.afterSteps || []).map((s, i) => `<li><span class="step-num">${i + 1}</span><span>${esc(s)}</span></li>`).join("")}
+          </ol>
+        </div>
+      </div>` : "";
+    const modHtml = delivered.length ? `<div class="module-grid">
+      ${delivered.map((d) => `<div class="module-card">
+        <div class="module-top">
+          <b style="font-size:13.5px">${esc(d.what)}</b>
+          <span>${(d.tickets || []).map((t) => {
+            const href = issueHref(t);
+            const txt = String(t).startsWith("#") || !/^\d+$/.test(String(t)) ? String(t) : `#${t}`;
+            return href ? `<a class="ticket-tag" href="${esc(href)}">${esc(txt)}</a>` : `<span class="ticket-tag">${esc(txt)}</span>`;
+          }).join(" ")}</span>
+        </div>
+        <div style="font-size:12.5px;color:var(--ink2)">${esc(d.meaning || "")}</div>
+      </div>`).join("")}
+    </div>` : `<div class="muted">暂无交付模块明细。</div>`;
+    return storyHtml + renderArchFlow() + modHtml;
+  };
+
+  const badgeFor = (st, txt) => {
+    const cls = st === "good" || st === "达成" ? "good" : st === "info" ? "info" : st === "critical" ? "crit" : "warn";
+    const icon = cls === "good" ? "✓" : cls === "info" ? "i" : "!";
+    return `<span class="badge ${cls}">${icon} ${esc(txt || st || "核对")}</span>`;
+  };
+
+  const renderGoalsPanel = () => {
+    const goalHtml = goals.length ? `<div class="goal-cards">
+      ${goals.map((g) => {
+        const ev = g.evidence || {};
+        const proof = g.proof || ev.output || "";
+        const unit = g.unit ? ` ${g.unit}` : "";
+        const plain = ev.value || "";
+        const links = (g.links || []).map((l) => `<a href="${esc(l.href)}">${esc(l.text)}</a>`).join(" · ");
+        return `<div class="goal-card"${proof ? "" : " style=\"grid-template-columns:1fr\""}>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:13.5px">
+              <span>${esc(g.name)}</span>
+              ${badgeFor(g.status, g.statusText || g.status)}
+            </div>
+            <div class="delta-pill">
+              <span class="muted">改前</span> <b>${esc(g.before !== undefined ? `${g.before}${unit}` : "未知")}</b>
+              <span style="color:var(--agy);font-weight:700">→</span>
+              <span class="muted">改后</span> <b style="color:var(--good)">${esc(g.after !== undefined ? `${g.after}${unit}` : "未知")}</b>
+              ${g.target !== undefined ? `<span class="muted">（目标 ${esc(`${g.target}${unit}`)}）</span>` : ""}
+            </div>
+            ${plain ? `<div style="font-size:12.5px;color:var(--ink2);margin-bottom:3px"><b>实测：</b>${esc(plain)}</div>` : ""}
+            ${g.method ? `<div class="muted">怎么测：${esc(g.method)}</div>` : ""}
+            ${links ? `<div style="margin-top:4px;font-size:12px">${links}</div>` : ""}
+          </div>
+          ${proof ? `<div>
+            <div class="muted" style="margin-bottom:3px">输出摘要：</div>
+            <pre class="proof">${esc(proof)}</pre>
+          </div>` : ""}
+        </div>`;
+      }).join("")}
+    </div>` : `<div class="muted" style="margin-bottom:12px">问题陈述未列单独量化项，判断依据见「改了什么」。</div>`;
+
+    const shotsHtml = SHOTS.length ? `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 8px;flex-wrap:wrap;gap:8px">
+        <b style="font-size:13.5px">截图（点击放大）</b>
+        <span class="muted">共 ${SHOTS.length} 张截图</span>
+      </div>
+      <div class="browser-grid">
+        ${SHOTS.map((s, idx) => `<div class="browser-frame">
+          <div class="browser-bar">
+            <span class="traffic"><i style="background:#ef4444"></i><i style="background:#f59e0b"></i><i style="background:#22c55e"></i></span>
+            <span class="url-pill">${esc(s.url || `spec-${R.spec}`)}</span>
+            <span class="muted">${esc(s.ref || "实测")}</span>
+          </div>
+          <div class="browser-canvas" data-shot="${idx}" role="button" tabindex="0" aria-label="点击放大查看 ${esc(s.title)}">
+            ${s.image ? `<img src="${esc(s.image)}" alt="${esc(s.imageAlt || s.title)}">` : (s.svg || "")}
+          </div>
+          <div class="browser-foot">
+            <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+              <b>${esc(s.title)}</b>
+              <span style="color:var(--agy);font-weight:600;font-size:11.5px">点击放大</span>
+            </div>
+            ${s.focus ? `<div class="muted" style="margin-top:3px;color:var(--ink2)">${esc(s.focus)}</div>` : ""}
+          </div>
+        </div>`).join("")}
+      </div>` : "";
+
+    const extraEv = (R.evidence || []).filter((e) => !e.image || (R.shots && R.shots.length));
+    const evHtml = extraEv.length ? `
+      <div style="font-weight:700;font-size:13.5px;margin:10px 0 8px">证据</div>
+      <div class="goal-cards" style="margin-bottom:0">
+        ${extraEv.map((e) => `<div class="goal-card">
+          <div>
+            <b style="font-size:13px">${esc(e.claim)}</b>
+            ${e.value ? `<div style="margin-top:4px;font-weight:600;color:var(--good);font-size:12.5px">${esc(e.value)}</div>` : ""}
+            ${e.link ? `<div style="margin-top:4px;font-size:12px"><a href="${esc(e.link)}">${esc(e.linkText || "查看记录")}</a></div>` : ""}
+          </div>
+          <div><pre class="proof">${esc(e.output || e.value || "已核实")}</pre></div>
+        </div>`).join("")}
+      </div>` : "";
+    return goalHtml + shotsHtml + evHtml;
+  };
+
+  const renderRisksPanel = () => {
+    const risks = R.risks || [];
+    if (!risks.length) return `<div class="muted">本轮无未决风险或遗留项。</div>`;
+    const lvlMap = { good: ["good", "✓ 已解决"], warning: ["warn", "! 留意边界"], warn: ["warn", "! 留意边界"], serious: ["warn", "! 中风险"], critical: ["crit", "✕ 高风险"] };
+    return `<div class="risk-grid">
+      ${risks.map((r) => {
+        const [cls, txt] = lvlMap[r.level] || ["warn", "! 留意"];
+        return `<div class="risk-card">
+          <div><span class="badge ${cls}">${txt}</span> <b style="font-size:13.5px">${esc(r.what)}</b></div>
+          ${r.impact ? `<div style="font-size:13px;color:var(--ink2)"><b>影响与边界：</b>${esc(r.impact)}</div>` : ""}
+          ${r.next ? `<div class="muted"><b>下一步去向：</b>${esc(r.next)}</div>` : ""}
+        </div>`;
+      }).join("")}
+    </div>`;
+  };
+
+  const buildTimeAxis = () => {
+    if (!allPts.length) return null;
+    const sorted = [...allPts].sort((x, y) => x.a - y.a);
+    const GAP_MS = 45 * 60000;
+    const segs = [];
+    for (const sp of sorted) {
+      const last = segs[segs.length - 1];
+      if (last && sp.a - last[1] <= GAP_MS) last[1] = Math.max(last[1], sp.b);
+      else segs.push([sp.a, sp.b]);
+    }
+    const activeMs = segs.reduce((s, [a, b]) => s + Math.max(1000, b - a), 0) || 1;
+    return { segs, activeMs };
+  };
+  const AXIS = buildTimeAxis();
+
+  const renderTimelineBox = () => {
+    if (!AXIS || !TL_LANES.length) {
+      return `<div class="timeline-box"><div data-slot="timeline"><div class="muted">未记录：${esc(S && S.cockpit ? "评分表暂无可视化时段记录" : cockpitMissingReason)}</div></div></div>`;
+    }
+    const W = 920, LW = 216, RP = 14, PW = W - LW - RP, rowH = 26;
+    const gapCount = AXIS.segs.length - 1;
+    const gapPx = 22;
+    const usable = Math.max(120, PW - gapCount * gapPx);
+    const offsets = [];
+    let cur = LW;
+    for (const [a, b] of AXIS.segs) {
+      offsets.push(cur);
+      cur += (Math.max(1000, b - a) / AXIS.activeMs) * usable + gapPx;
+    }
+    const xOf = (t) => {
+      for (let i = 0; i < AXIS.segs.length; i += 1) {
+        const [a, b] = AXIS.segs[i];
+        if (t <= b || i === AXIS.segs.length - 1) {
+          const clamped = Math.max(a, Math.min(b, t));
+          return offsets[i] + ((clamped - a) / AXIS.activeMs) * usable;
+        }
+        if (t < AXIS.segs[i + 1][0]) {
+          const nextA = AXIS.segs[i + 1][0];
+          return offsets[i + 1] - gapPx + ((t - b) / Math.max(1, nextA - b)) * gapPx;
+        }
+      }
+      return W - RP;
+    };
+    const topPad = gapCount ? 22 : 8;
+    const H = topPad + TL_LANES.length * rowH + 22;
+    const foldedMin = AXIS.segs.slice(1).reduce((s, [a], i) => s + (a - AXIS.segs[i][1]) / 60000, 0);
+    const longPauseSpans = parseSpanArray(longPauseObj && longPauseObj.spans, "") || [];
+    const gapItems = AXIS.segs.slice(1).map(([a], i) => {
+      const gapStart = AXIS.segs[i][1];
+      const gapM = (a - gapStart) / 60000;
+      const recordedPause = longPauseMin !== null && longPauseMin > 0 && longPauseSpans.some((lp) => lp.a < a && lp.b > gapStart);
+      return { bx: offsets[i + 1] - gapPx, gapStart, gapEnd: a, gapM, recordedPause };
+    });
+    const recordedPauseInGaps = gapItems.some((g) => g.recordedPause);
+    const gapHeaderNote = foldedMin >= 45
+      ? (recordedPauseInGaps && longPauseMin !== null && longPauseMin > 0
+        ? ` · 已省略 ${fmtMin(foldedMin)}（含超过 45 分钟的停顿 ${fmtMin(longPauseMin)}）`
+        : ` · 已省略 ${fmtMin(foldedMin)}（没有记录到活动）`)
+      : "";
+
+    return `<div class="timeline-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:12px" class="muted">
+        <span><b style="color:var(--ink)">时间线（按角色）</b>（悬停色块查看时段、工单与 Token）</span>
+        <span>日历跨度 ${wallMin !== null ? fmtMin(wallMin) : `未记录（${esc(wallReason)}）`}${gapHeaderNote}</span>
+      </div>
+      <div data-slot="timeline">
+        <svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="时间线（按角色）">
+          ${gapItems.map((g) => {
+            const tipText = g.recordedPause
+              ? `超过 45 分钟的停顿 ${fmtMin(g.gapM)}（${fmtClock(g.gapStart)}–${fmtClock(g.gapEnd)}），不计入工作时间`
+              : `没有记录到活动 ${fmtMin(g.gapM)}（${fmtClock(g.gapStart)}–${fmtClock(g.gapEnd)}），未计入工作时间`;
+            return `<g data-tip="${esc(tipText)}">
+              <text x="${(g.bx + gapPx / 2).toFixed(1)}" y="12" text-anchor="middle" font-size="9.5">省略 ${fmtMin(g.gapM)}</text>
+              <rect x="${g.bx.toFixed(1)}" y="15" width="${gapPx}" height="${H - 35}" rx="3" fill="var(--wash2)"/>
+              <line x1="${(g.bx + gapPx / 2).toFixed(1)}" y1="16" x2="${(g.bx + gapPx / 2).toFixed(1)}" y2="${H - 21}" stroke="var(--axis)" stroke-dasharray="3 3"/>
+            </g>`;
+          }).join("")}
+          ${TL_LANES.map((lane, idx) => {
+            const y = topPad + idx * rowH;
+            const dim = state.filterActor && lane.actorId && state.filterActor !== lane.actorId ? 0.22 : 1;
+            return `<g opacity="${dim}" data-lane-actor="${esc(lane.actorId || "")}">
+              <text x="${LW - 8}" y="${y + 16}" text-anchor="end" font-size="10.5">${esc(lane.label)}</text>
+              <rect x="${LW}" y="${y + 4}" width="${PW}" height="16" rx="4" fill="var(--wash)"/>
+              ${lane.spans.map((sp) => {
+                const x1 = xOf(sp.a);
+                const x2 = Math.max(x1 + 3.5, Math.min(W - RP, xOf(sp.b)));
+                const tip = `${lane.fullLabel || lane.label}\n${fmtClock(sp.a)}–${fmtClock(sp.b)}（${fmtMin((sp.b - sp.a) / 60000)}）\n${sp.desc}`;
+                if (sp.kind === "aborted") {
+                  return `<rect class="tl-span" data-tip="${esc(tip)}" x="${x1.toFixed(1)}" y="${y + 4}" width="${(x2 - x1).toFixed(1)}" height="16" rx="3" fill="none" stroke="var(--critical)" stroke-width="1.6" stroke-dasharray="3 2"/>`;
+                }
+                return `<rect class="tl-span" data-tip="${esc(tip)}" x="${x1.toFixed(1)}" y="${y + 4}" width="${(x2 - x1).toFixed(1)}" height="16" rx="3" fill="${lane.color}"/>`;
+              }).join("")}
+            </g>`;
+          }).join("")}
+          <line x1="${LW}" y1="${H - 17}" x2="${W - RP}" y2="${H - 17}" stroke="var(--axis)"/>
+          <text x="${LW}" y="${H - 4}">${fmtClock(AXIS.segs[0][0])}</text>
+          <text x="${W - RP}" y="${H - 4}" text-anchor="end">${fmtClock(AXIS.segs[AXIS.segs.length - 1][1])}</text>
+        </svg>
+      </div>
+    </div>`;
+  };
+
+  const renderDonutSvg = (segments, centerTop, centerSub, unitFn) => {
+    const valid = segments.filter((s) => typeof s.val === "number" && s.val > 0);
+    if (!valid.length) return `<div class="muted">暂无分项构成数据。</div>`;
+    const total = valid.reduce((s, x) => s + x.val, 0) || 1;
+    const r = 60, cx = 84, cy = 84, circum = 2 * Math.PI * r;
+    let offset = 0;
+    const arcs = valid.map((seg) => {
+      const len = (seg.val / total) * circum;
+      const pct = Math.round((seg.val / total) * 100);
+      const tip = `${seg.label}：${unitFn(seg.val)}（占 ${pct}%）\n${seg.desc || ""}`;
+      const arc = `<circle class="donut-slice" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${seg.color}" stroke-width="21" stroke-dasharray="${Math.max(1.5, len - 1.2).toFixed(2)} ${circum.toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})" data-tip="${esc(tip)}" data-center-val="${esc(unitFn(seg.val))}" data-center-lbl="${esc(`${seg.label} (${pct}%)`)}"/>`;
+      offset += len;
+      return arc;
+    }).join("");
+    return `<div class="donut-wrap">
+      <svg viewBox="0 0 168 168" width="148" height="148" role="img" aria-label="${esc(centerSub)}">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--wash)" stroke-width="21"/>
+        ${arcs}
+        <text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="15" font-weight="750" fill="var(--ink)" class="donut-center-v">${esc(centerTop)}</text>
+        <text x="${cx}" y="${cy + 15}" text-anchor="middle" font-size="10" fill="var(--muted)" class="donut-center-k">${esc(centerSub)}</text>
+      </svg>
+      <div class="donut-legend">
+        ${valid.map((seg) => {
+          const pct = Math.round((seg.val / total) * 100);
+          return `<div class="legend-item" data-tip="${esc(`${seg.label}：${unitFn(seg.val)}（${pct}%）— ${seg.desc || ""}`)}">
+            <span style="display:inline-flex;align-items:center;gap:6px;min-width:0"><i class="swatch" style="background:${seg.color}"></i><span>${esc(seg.label)}</span></span>
+            <b class="num" style="white-space:nowrap">${esc(unitFn(seg.val))} <span class="muted">(${pct}%)</span></b>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  };
+
+  const renderGroupedBarSvg = () => {
+    if (!ACTORS.length) return `<div class="muted">未记录：${esc(cockpitSeatsReason)}</div>`;
+    const maxMin = Math.max(...ACTORS.map((a) => a.minutes || 0), 1);
+    const maxTok = Math.max(...ACTORS.map((a) => (a.fresh || 0) + (a.output || 0)), 1);
+    const W = 600, L = 142, Rpad = 196, PW = W - L - Rpad, rowH = 52, H = 12 + ACTORS.length * rowH;
+    return `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="各角色工作时间与首次读入 + 输出分组柱状图">
+      ${ACTORS.map((a, idx) => {
+        const fw = fwInfo(a.fw);
+        const y = 6 + idx * rowH;
+        const wMin = a.minutes ? Math.max(4, (a.minutes / maxMin) * PW) : 0;
+        const wFresh = a.fresh ? Math.max(4, (a.fresh / maxTok) * PW) : 0;
+        const wOut = a.output ? Math.max(3, (a.output / maxTok) * PW) : 0;
+        const dim = state.filterActor && state.filterActor !== a.id ? "dimmed" : "";
+        const tip = `${a.role} · ${fw.label} · ${a.model} (思考:${a.effort})\n时长：${fmtMin(a.minutes)}（${a.runsText}）\n首次读入：${fmtTok(a.fresh)} · 输出：${fmtTok(a.output)}`;
+        return `<g class="bar-chart-row ${dim}" data-tip="${esc(tip)}" data-actor="${esc(a.id)}">
+          <rect class="bar-bg" x="2" y="${y - 3}" width="${W - 4}" height="${rowH - 4}" rx="7" fill="transparent"/>
+          <text x="${L - 8}" y="${y + 13}" text-anchor="end" font-weight="600" fill="var(--ink)">${esc(a.role)}</text>
+          <text x="${L - 8}" y="${y + 28}" text-anchor="end" font-size="10.5" fill="var(--muted)">${esc(`${fw.label} · ${a.effort}`)}</text>
+          <rect x="${L}" y="${y + 3}" width="${PW}" height="12" rx="6" fill="var(--wash)"/>
+          ${wMin ? `<rect x="${L}" y="${y + 3}" width="${wMin.toFixed(1)}" height="12" rx="6" fill="${fw.hex}"/>` : ""}
+          <text x="${W - 6}" y="${y + 13}" text-anchor="end" font-weight="600" fill="var(--ink)">${esc(fmtMin(a.minutes))}</text>
+          <rect x="${L}" y="${y + 20}" width="${PW}" height="12" rx="6" fill="var(--wash)"/>
+          ${wFresh ? `<rect x="${L}" y="${y + 20}" width="${wFresh.toFixed(1)}" height="12" rx="6" fill="#3b82f6" opacity="0.84"/>` : ""}
+          ${wOut ? `<rect x="${(L + Math.min(PW - wOut, wFresh)).toFixed(1)}" y="${y + 20}" width="${wOut.toFixed(1)}" height="12" rx="4" fill="#16a34a"/>` : ""}
+          <text x="${W - 6}" y="${y + 30}" text-anchor="end" font-size="10.5" fill="var(--muted)">${esc(a.fresh !== null ? `首次读入 ${fmtTok(a.fresh)} · 输出 ${fmtTok(a.output)}` : "用量未记录")}</text>
+        </g>`;
+      }).join("")}
+    </svg>`;
+  };
+
+  const renderChartsLens = () => {
+    const timeItems = [
+      { label: "设计负责人（主会话）", val: dLeadMin, missingKey: "time.designLead", color: "#d97706", desc: "主会话记录到的设计、协调与验收活跃时段" },
+      { label: "派发（工程、审查等）", val: dispSlotMin, missingKey: "time.dispatchSlots", color: "#0d9488", desc: "各被派发角色按运行记录汇总的活跃时长" },
+      { label: "验证", val: verMin, missingKey: "time.verification", color: "#7c3aed", desc: "静态检查、完整验证与本机检查执行时长" },
+      { label: "验证排队等待", val: queueMin, missingKey: "time.queue", color: "#a855f7", desc: "台账记录的排队等待实际验证开始前时段" },
+      { label: "等你确认 (10~45m)", val: waitUserMin, missingKey: "time.waitingUser", color: "#db2777", desc: "等待人工反馈与确认的间隔" },
+      { label: "超过 45 分钟的停顿", val: longPauseMin, missingKey: "time.longPause", color: "#94a3b8", desc: "明确记录到的超过 45 分钟间隔，不计入工作时间" }
+    ];
+    const maxItemMin = Math.max(1, ...timeItems.map((it) => (typeof it.val === "number" && it.val > 0 ? it.val : 0)));
+    const activeNote = activeWrap && activeWrap.complete === false && activeWrap.anomalies && activeWrap.anomalies.length
+      ? `已知部分（${activeWrap.anomalies.length} 项缺数或进行中）`
+      : (unionActiveMin !== null ? "各角色与验证合并去重" : activeReason);
+    const wallNote = wallWrap && wallWrap.complete === false && wallWrap.anomalies && wallWrap.anomalies.length
+      ? `已知部分（${wallWrap.anomalies.length} 项缺数或进行中）`
+      : (wallMin !== null ? "首个记录起至最后结束" : wallReason);
+
+    return `<div class="chart-split">
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">时间</div>
+          <div class="chart-sub">上方为去重后工作时间与日历跨度；下方各分项仅显示分钟数，分项间可重叠，不作相加和百分比</div>
+        </div>
+        <div class="time-summary">
+          <div class="time-stat" data-tip="${esc(activeWrap && activeWrap.anomalies && activeWrap.anomalies.length ? activeWrap.anomalies.map((a) => `${a.source || ""}: ${a.reason || a}`).join("\n") : "各角色有活动的时段和验证时段合在一起，重叠只算一次")}">
+            <div class="time-stat-val">${esc(unionActiveMin !== null ? fmtMin(unionActiveMin) : "未记录")}</div>
+            <div class="time-stat-lbl">工作时间（重叠只算一次）${activeWrap && activeWrap.complete === false ? "（已知部分）" : ""}</div>
+            <div class="time-stat-sub">${esc(activeNote)}</div>
+          </div>
+          <div class="time-stat" data-tip="${esc(wallWrap && wallWrap.anomalies && wallWrap.anomalies.length ? wallWrap.anomalies.map((a) => `${a.source || ""}: ${a.reason || a}`).join("\n") : "有记录的最早开始到最晚结束")}">
+            <div class="time-stat-val">${esc(wallMin !== null ? fmtMin(wallMin) : "未记录")}</div>
+            <div class="time-stat-lbl">日历跨度${wallWrap && wallWrap.complete === false ? "（已知部分）" : ""}</div>
+            <div class="time-stat-sub">${esc(wallNote)}</div>
+          </div>
+        </div>
+        <div class="time-rows">
+          ${timeItems.map((it) => {
+            const hasVal = typeof it.val === "number";
+            const reason = hasVal ? null : findMissingReason(it.missingKey, "未记录");
+            const barW = hasVal && it.val > 0 ? Math.max(3, (it.val / maxItemMin) * 100) : 0;
+            return `<div class="time-row" data-tip="${esc(`${it.label}：${hasVal ? fmtMin(it.val) : `未记录（${reason}）`}\n${it.desc}`)}">
+              <div class="time-row-head">
+                <span style="display:inline-flex;align-items:center;gap:6px;min-width:0"><i class="swatch" style="background:${it.color}"></i><span>${esc(it.label)}</span></span>
+                ${hasVal ? `<b class="num" style="white-space:nowrap">${esc(fmtMin(it.val))}</b>` : `<span class="muted" style="white-space:nowrap">未记录</span>`}
+              </div>
+              ${hasVal
+                ? (barW > 0 ? `<div class="time-bar-track"><div class="time-bar-fill" style="width:${barW.toFixed(1)}%;background:${it.color}"></div></div>` : "")
+                : `<div class="muted" style="font-size:11px">${esc(reason)}</div>`}
+            </div>`;
+          }).join("")}
+        </div>
+      </div>
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">各角色工作时间与首次读入 + 输出</div>
+          <div class="chart-sub">上条 = 角色工作时间，下条 = 首次读入 + 输出（按各自最大值缩放）；点击行按角色筛选</div>
+        </div>
+        <div style="margin:auto 0">${renderGroupedBarSvg()}</div>
+      </div>
+    </div>`;
+  };
+
+  const renderTokensLens = () => {
+    const tokSegs = totalRealTok !== null && totalCached !== null ? [
+      { label: "首次读入", val: totalFresh, color: "#2563eb", desc: "首次读入上下文的代码、文档与测试输出" },
+      { label: "输出", val: totalOut, color: "#16a34a", desc: "模型思考链与产出的代码、审查和汇报" },
+      { label: typeof totalTurns === "number" ? `缓存重读 (${totalTurns}轮)` : "缓存重读 (轮数未记录)", val: totalCached, color: "#94a3b8", desc: "每轮工具调用重发的前文历史，命中缓存大幅打折" }
+    ] : [];
+    const palette = ["#2563eb", "#0d9488", "#ea580c", "#7c3aed", "#db2777", "#4f46e5"];
+    const seatSegs = ACTORS.filter((a) => typeof a.fresh === "number" && typeof a.output === "number").map((a, i) => ({
+      label: `${a.role} (${fwInfo(a.fw).label})`,
+      val: a.fresh + a.output,
+      color: palette[i % palette.length],
+      desc: `${a.model} · 思考:${a.effort}｜首次读入 ${fmtTok(a.fresh)} + 输出 ${fmtTok(a.output)}`
+    }));
+    const missingTokSeats = ACTORS.filter((a) => a.fresh === null || a.output === null).map((a) => a.role);
+    const maxReal = Math.max(...ACTORS.map((a) => (a.fresh || 0) + (a.output || 0)), 1);
+
+    return `<div class="two-col">
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">Token 由哪三项组成</div>
+          <div class="chart-sub">比例 = 各分项 / (首次读入 + 输出 + 缓存重读)；中心显示首次读入 + 输出</div>
+        </div>
+        ${tokSegs.some((s) => s.val > 0)
+          ? renderDonutSvg(tokSegs, fmtTok(totalRealTok), "首次读入 + 输出", fmtTok)
+          : `<div class="muted">未记录：${esc(cockpitTotalsReason)}</div>`}
+      </div>
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">首次读入 + 输出按角色占比</div>
+          <div class="chart-sub">比例 = 单角色(首次读入 + 输出) / 完整记录角色的首次读入 + 输出之和</div>
+        </div>
+        ${seatSegs.some((s) => s.val > 0)
+          ? renderDonutSvg(seatSegs, fmtTok(totalRealTok), `${seatSegs.length}/${ACTORS.length} 角色有分项`, fmtTok)
+          : `<div class="muted">未记录：${esc(ACTORS.length ? "角色用量分项缺失" : cockpitSeatsReason)}</div>`}
+        ${missingTokSeats.length ? `<div class="muted" style="font-size:11.5px;margin-top:6px">以下角色用量缺失未计入环图：${esc(missingTokSeats.join("、"))}</div>` : ""}
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">各角色用量</div>
+      <div class="chart-sub">首次读入、输出、缓存重读、工单一次通过数，以及开始改文件前的时间（多次时取中位数）</div>
+      <div class="tw">
+        ${ACTORS.length ? `<table class="clean">
+          <thead>
+            <tr>
+              <th>角色（框架 · 模型 · 思考强度）</th>
+              <th>活跃时长</th>
+              <th>首次读入 + 输出</th>
+              <th>缓存重读</th>
+              <th>工单与完成情况 / 开始改文件前</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ACTORS.map((a) => {
+              const fw = fwInfo(a.fw);
+              const fPct = a.fresh ? (a.fresh / maxReal) * 100 : 0;
+              const oPct = a.output ? Math.max(2.5, (a.output / maxReal) * 100) : 0;
+              const dim = state.filterActor && state.filterActor !== a.id ? 'style="opacity:.25"' : "";
+              return `<tr ${dim}>
+                <td>
+                  <div style="font-weight:700"><span class="actor-dot" style="background:${fw.solid};margin-right:5px"></span>${esc(a.role)} <span class="effort-pill">思考:${esc(a.effort)}</span></div>
+                  <div class="model-line">${esc(`${fw.label} · ${a.model} · ${a.runsText}`)}</div>
+                </td>
+                <td class="num"><b>${esc(fmtMin(a.minutes))}</b><div class="muted">${esc(a.runsText)}</div></td>
+                <td>
+                  <div class="mini-bar">
+                    <div style="width:${fPct.toFixed(1)}%;background:${fw.solid}"></div>
+                    <div style="width:${oPct.toFixed(1)}%;background:var(--out)"></div>
+                  </div>
+                  <div class="num" style="margin-top:3px">首次读入 <b>${esc(fmtTok(a.fresh))}</b> · 输出 <b style="color:var(--good)">${esc(fmtTok(a.output))}</b></div>
+                  ${a.note ? `<div style="color:var(--warning);font-size:11px">注意：${esc(a.note)}</div>` : ""}
+                </td>
+                <td class="num"><b>${esc(fmtTok(a.cached))}</b><div class="muted">${esc(a.turns !== null ? `${a.turns} 轮工具调用` : "轮数未记录")}</div></td>
+                <td><b>${esc(a.pass)}</b><div class="muted">${esc(a.readDoc)}</div></td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>` : `<div class="muted">未记录：${esc(cockpitSeatsReason)}</div>`}
+      </div>
+    </div>`;
+  };
+
+  const renderWaterfallLens = (openAll) => {
+    const dispatchRaw = S && S.dispatches ? val(S.dispatches) : null;
+    if (!Array.isArray(dispatchRaw)) {
+      return `<div class="muted" style="padding:12px;border-radius:9px;background:var(--wash)">未记录：${esc(findMissingReason("dispatches", cockpitMissingReason))}</div>`;
+    }
+    if (!dispatches.length && !batches.length) {
+      return `<div class="muted" style="padding:12px;border-radius:9px;background:var(--wash)">本场为纯主会话执行模式（0 次外部 CLI 派发）。</div>`;
+    }
+    const notesMap = R.dispatchNotes || {};
+    const dispatchByRecord = new Map(dispatches.map((d) => [d.record, d]));
+    const maxMin = Math.max(1, ...dispatches.map((d) => Number(val(d.minutes)) || 0));
+    const foldedSet = new Set();
+    for (const b of batches) for (const rec of b.records || []) foldedSet.add(rec);
+
+    const batchHtml = batches.map((b) => {
+      const recNames = Array.isArray(b.records) ? b.records : [];
+      const anomMap = new Map(((b.anomalies) || []).map((a) => [a.record || a.source, a.reason || String(a)]));
+      const fw = fwInfo(b.framework || "codex");
+      const bu = normUsage(b.usage);
+      const totalCount = typeof b.count === "number" ? b.count : recNames.length;
+      const okCount = typeof b.successRate === "number"
+        ? Math.round(b.successRate * totalCount)
+        : null;
+      const failCount = okCount !== null ? Math.max(0, totalCount - okCount) : null;
+      const repSet = new Set((b.representatives || []).map((r) => typeof r === "string" ? r : (r && (r.record || r[0]))).filter(Boolean));
+      const detailEntries = (recNames.length ? recNames : [...repSet]).map((rec) => {
+        const d = dispatchByRecord.get(rec);
+        if (d) return { record: rec, d, isRep: repSet.has(rec), anom: anomMap.get(rec) || null };
+        const rawObj = (b.representatives || []).find((x) => x && typeof x === "object" && !Array.isArray(x) && x.record === rec);
+        return { record: rec, d: rawObj || null, isRep: repSet.has(rec), anom: anomMap.get(rec) || null };
+      });
+      return `<details class="batch-fold" ${openAll ? "open" : ""}>
+        <summary>
+          <span><b>${esc(b.prefix || "批量派发")}</b>（同前缀 &gt;10 批自动折叠：<b>${esc(okCount !== null ? okCount : "未记录")}/${esc(totalCount)}</b> 成功${failCount ? ` · <span style="color:var(--critical)">${esc(failCount)} 异常</span>` : ""}${b.complete === false ? " · 部分缺数" : ""}）</span>
+          <span class="num">${esc(fw.label)} ｜ 累计 ${esc(fmtMin(val(b.minutes)))} · ${esc(bu ? `首次读入 ${fmtTok(bu.fresh)} / 输出 ${fmtTok(bu.output)}` : "用量部分未记录")}</span>
+        </summary>
+        <div class="tw" style="margin-top:8px">
+          <table class="clean">
+            <thead><tr><th>批次记录</th><th>框架 · 模型 · 强度</th><th>时长</th><th>首次读入 + 输出</th><th>退出码与状态</th></tr></thead>
+            <tbody>
+              ${detailEntries.map(({ record, d, isRep, anom }) => {
+                const ru = d ? normUsage(d.usage) : null;
+                const exit = d ? val(d.exitCode) : null;
+                const mins = d ? val(d.minutes) : null;
+                const mText = d ? `${fwInfo(d.framework || d.agent || b.framework || "codex").label} · ${d.actualModel || d.model || "默认"} (${d.actualEffort || d.effort || "默认"})` : "—";
+                const statusTxt = anom ? `异常：${anom}` : (exit === 0 ? "✓ 成功 (0)" : (exit !== null && exit !== undefined ? `✕ 退出码 ${exit}` : "未记录"));
+                return `<tr><td><code>${esc(record)}</code>${isRep ? ' <span class="tab-badge">代表</span>' : ""}</td><td>${esc(mText)}</td><td class="num">${esc(typeof mins === "number" ? fmtMin(mins) : (d ? why(d.minutes) : "—"))}</td><td class="num">${esc(ru ? `首次读入 ${fmtTok(ru.fresh)} · 输出 ${fmtTok(ru.output)}` : (d ? why(d.usage) : "—"))}</td><td>${esc(statusTxt)}</td></tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      </details>`;
+    }).join("");
+
+    const visibleDispatches = dispatches.filter((d) => !foldedSet.has(d.record));
+    const rowsHtml = visibleDispatches.map((d) => {
+      const fw = fwInfo(d.framework || d.agent || "codex");
+      const m = val(d.minutes);
+      const u = normUsage(d.usage);
+      const exit = val(d.exitCode);
+      const ok = exit === 0 || exit === null;
+      const actorId = findActorForDispatch(d);
+      const dim = state.filterActor && actorId && state.filterActor !== actorId ? "dimmed" : "";
+      const leftPct = AXIS && val(d.start) ? Math.max(0, Math.min(92, ((Date.parse(val(d.start)) - AXIS.segs[0][0]) / Math.max(1, AXIS.segs[AXIS.segs.length - 1][1] - AXIS.segs[0][0])) * 100)) : 0;
+      const wPct = typeof m === "number" ? Math.max(4, Math.min(100 - leftPct, (m / maxMin) * 78)) : 12;
+      const ov = overheadMap.get(d.record);
+      const editM = ov ? val(ov.minutes) : null;
+      const autoStory = notesMap[d.record] || `${ok ? "✓" : "✕"} ${val(d.category) || "派发"}${d.ticket ? ` · 工单 #${d.ticket}` : ""}${typeof editM === "number" ? ` · 开始改文件前 ${fmtMin(editM)}` : ""}${exit !== null && exit !== 0 ? `（退出码 ${exit}）` : ""}`;
+      return `<div class="wf-row ${dim}">
+        <div>
+          <div style="font-weight:700">${esc(d.record || "未命名记录")}</div>
+          <div class="model-line">${esc(`${fw.label} · ${d.actualModel || d.model || "默认"} (${d.actualEffort || d.effort || "默认"})`)}</div>
+        </div>
+        <div>
+          <div class="wf-axis-track"><div class="wf-bar ${ok ? "" : "aborted"}" style="left:${leftPct.toFixed(1)}%;width:${wPct.toFixed(1)}%;background:${fw.solid}"></div></div>
+          <div class="muted" style="font-size:11px;margin-top:2px">${esc(`${fmtTime(val(d.start))} · ${val(d.category) || why(d.category)}`)}</div>
+        </div>
+        <div style="color:var(--ink2)">${esc(autoStory)}</div>
+        <div class="num" style="text-align:right">
+          <b>${esc(typeof m === "number" ? fmtMin(m) : why(d.minutes))}</b>
+          <div class="muted">${esc(u ? `首次读入 ${fmtTok(u.fresh)} · 输出 ${fmtTok(u.output)}` : why(d.usage))}</div>
+        </div>
+      </div>`;
+    }).join("");
+
+    return `<div class="wf-list">${batchHtml}${rowsHtml}</div>`;
+  };
+
+  const renderFootDetails = (openAll) => {
+    const findings = R.findings || [];
+    const notes = [
+      ...(R.notes || []).map((n) => [n.item, n.note]),
+      ...((S && S.missing) || []).map((m) => [`评分表缺项：${m.field}`, m.reason]),
+      ...((S && S.subagentAnomalies) || []).map((a, i) => [`子代理异常 #${i + 1}`, typeof a === "string" ? a : JSON.stringify(a)])
+    ];
+    const verRuns = (ver && ver.runs) || [];
+    return `<details class="fold-box" ${openAll ? "open" : ""}>
+      <summary>流程发现与口径（验证明细、口径与缺项说明）</summary>
+      <div style="margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr);gap:12px">
+        ${findings.length ? `<div style="min-width:0;overflow-wrap:anywhere"><b>流程发现</b><ul style="margin:6px 0 0;padding-left:20px">${findings.map((f) => `<li>${esc(f)}</li>`).join("")}</ul></div>` : ""}
+        ${verRuns.length ? `<div style="min-width:0"><b>验证执行台账（完整 ${ver.fullCount} 次 · 静态 ${ver.staticCount} 次）</b>
+          <div class="tw" style="margin-top:6px"><table class="clean">
+            <thead><tr><th>层级</th><th>对象</th><th>调用方</th><th>开始时间</th><th>耗时</th><th>退出码</th></tr></thead>
+            <tbody>${verRuns.map((r) => `<tr><td>${esc(r.layer === "full" ? "完整验证" : "静态检查")}</td><td>${esc(r.target && r.target.kind === "main" ? "主工作区" : `${r.target ? r.target.kind : ""} #${r.target ? r.target.number : ""}`)}</td><td><code>${esc(r.caller)}</code></td><td>${esc(fmtTime(r.start))}</td><td class="num">${esc(fmtMin(r.minutes))}</td><td class="num">${esc(r.exitCode)}</td></tr>`).join("")}</tbody>
+          </table></div></div>` : ""}
+        ${notes.length ? `<div style="min-width:0"><b>数据口径与缺项说明</b>
+          <div class="tw" style="margin-top:6px"><table class="clean">
+            <thead><tr><th>条目</th><th>说明</th></tr></thead>
+            <tbody>${notes.map(([k, v]) => `<tr><td><code>${esc(k)}</code></td><td>${esc(v)}</td></tr>`).join("")}</tbody>
+          </table></div></div>` : ""}
+      </div>
+    </details>`;
+  };
+
+  const render = () => {
+    const collapsed = state.sidebarCollapsed;
+    const all = state.expandAll;
+    const asks = R.asks || [];
+    const prText = R.pr ? `PR #${R.pr.number} · ${R.pr.state}` : "无关联 PR";
+
+    const app = document.getElementById("app");
+    app.innerHTML = `<div class="shell">
+      ${collapsed ? `<div class="expand-bar">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button type="button" class="icon-btn" id="toggle-side">展开目录 ([)</button>
+          <span class="pr-pill"><i class="pr-dot"></i>${esc(prText)}</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${ACTORS.map((a) => {
+            const fw = fwInfo(a.fw);
+            return `<button type="button" class="icon-btn ${state.filterActor === a.id ? "on" : ""}" data-actor="${esc(a.id)}"><span class="actor-dot" style="background:${fw.solid};margin-right:4px"></span>${esc(a.role)} · ${esc(fw.label)}</button>`;
+          }).join("")}
+        </div>
+      </div>` : ""}
+
+      <div class="cockpit-grid ${collapsed ? "collapsed" : ""}">
+        <aside class="cockpit-side" ${collapsed ? "hidden" : ""}>
+          <div class="side-top">
+            <span class="pr-pill"><i class="pr-dot"></i>${esc(R.pr ? `PR #${R.pr.number}` : `Spec ${R.spec}`)}</span>
+            <button type="button" class="icon-btn" id="toggle-side" title="快捷键 [ 收起或展开目录">收起目录</button>
+          </div>
+          <div>
+            <div style="font-weight:750;font-size:14px;line-height:1.38">${esc(R.title || "")}</div>
+            <div class="muted" style="margin-top:4px">${esc(R.date || "")} · Spec ${esc(R.spec)}</div>
+          </div>
+          <div>
+            <div class="side-nav-label">目录</div>
+            <div class="side-nav">
+              <button type="button" class="nav-btn ${!all && state.topTab === "overview" ? "active" : ""}" data-jump-top="overview"><span>改了什么</span><span class="nav-count">${(R.delivered || []).length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.topTab === "goals" ? "active" : ""}" data-jump-top="goals"><span>目标与证明</span><span class="nav-count">${goals.length + SHOTS.length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.topTab === "risks" ? "active" : ""}" data-jump-top="risks"><span>风险与遗留</span><span class="nav-count">${(R.risks || []).length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.costLens === "charts" ? "active" : ""}" data-jump-lens="charts"><span>时间</span><span class="nav-count">图</span></button>
+              <button type="button" class="nav-btn ${!all && state.costLens === "tokens" ? "active" : ""}" data-jump-lens="tokens"><span>Token</span><span class="nav-count">${ACTORS.length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.costLens === "waterfall" ? "active" : ""}" data-jump-lens="waterfall"><span>逐次派发</span><span class="nav-count">${dispatches.length}</span></button>
+            </div>
+          </div>
+          <div>
+            <div class="side-nav-label" style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+              <span title="点击按角色筛选">角色（框架 · 模型 · 思考强度）</span>
+              ${state.filterActor ? `<button type="button" class="icon-btn" id="clear-actor" style="padding:1px 6px;font-size:11px">重置</button>` : ""}
+            </div>
+            <div class="roster-list">
+              ${ACTORS.map((a) => {
+                const fw = fwInfo(a.fw);
+                return `<button type="button" class="roster-card ${state.filterActor === a.id ? "active" : ""}" data-actor="${esc(a.id)}">
+                  <div class="roster-row1">
+                    <span style="font-weight:700;font-size:12.5px"><span class="actor-dot" style="background:${fw.solid};margin-right:5px"></span>${esc(a.role)}</span>
+                    <span class="effort-pill">${esc(`${fw.label} · ${a.effort}`)}</span>
+                  </div>
+                  <div class="model-line">${esc(a.model)}</div>
+                </button>`;
+              }).join("")}
+            </div>
+          </div>
+        </aside>
+
+        <div>
+          <header class="hero-card" aria-label="页首">
+            <div class="hero-top">
+              <div class="top-meta">
+                <span>${esc(R.date || "")}</span><span>·</span>
+                <span>${esc(R.repo || "")}</span><span>·</span>
+                <span>Spec ${esc(R.spec)}</span>
+                <span class="pr-pill"><i class="pr-dot"></i>${esc(prText)}</span>
+              </div>
+              <div class="hero-actions">
+                <button type="button" class="icon-btn ${all ? "on" : ""}" id="expand-all-btn" data-action="expand-all" aria-pressed="${all ? "true" : "false"}">${all ? "按页签查看" : "全部展开"}</button>
+                <button type="button" class="icon-btn" id="theme-btn">深浅色切换</button>
+              </div>
+            </div>
+            <h1>${esc(R.title || "")}</h1>
+            <p class="lead">${esc(R.result || "")}</p>
+
+            <div class="ask-banner" ${asks.length ? "" : "hidden"}>
+              <div class="ask-head">要你决定的事（共 ${asks.length} 项）</div>
+              <div class="ask-grid">
+                ${asks.map((a, idx) => `<div class="ask-box">
+                  <div><b>${idx + 1}. 【${esc(a.kind || "确认")}】${esc(a.what)}</b></div>
+                  ${a.why ? `<div class="muted" style="margin:3px 0">${esc(a.why)}</div>` : ""}
+                  ${(a.options || []).length ? `<div style="font-size:12px;color:var(--ink2)">选项：${esc(a.options.join(" / "))}</div>` : ""}
+                  ${a.recommend ? `<div style="color:var(--good);font-weight:600;margin-top:2px">推荐：${esc(a.recommend)}</div>` : ""}
+                </div>`).join("")}
+              </div>
+            </div>
+
+            <div class="kpi-grid">
+              ${KPIS.map((k) => `<div class="kpi-card">
+                <div style="min-width:0">
+                  <div class="kpi-val">${esc(k.v)}</div>
+                  <div class="kpi-lbl">${esc(k.k)}</div>
+                  <div class="kpi-sub">${esc(k.n)}</div>
+                </div>
+                ${renderKpiRing(k.pct, k.color)}
+              </div>`).join("")}
+            </div>
+          </header>
+
+          <section class="deck" id="deck-top">
+            <div class="deck-head">
+              <div class="deck-title"><span>交付</span></div>
+              <div class="seg-tabs" role="tablist" aria-label="交付视图切换">
+                <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="${all || state.topTab === "overview" ? "true" : "false"}" class="seg-tab ${!all && state.topTab === "overview" ? "active" : ""}" data-top="overview">
+                  <span>改了什么</span><span class="tab-badge">${(R.delivered || []).length}</span>
+                </button>
+                <button type="button" role="tab" id="tab-goals" aria-controls="panel-goals" aria-selected="${all || state.topTab === "goals" ? "true" : "false"}" class="seg-tab ${!all && state.topTab === "goals" ? "active" : ""}" data-top="goals">
+                  <span>目标与证明</span><span class="tab-badge">${SHOTS.length ? `${SHOTS.length}图` : goals.length}</span>
+                </button>
+                <button type="button" role="tab" id="tab-risks" aria-controls="panel-risks" aria-selected="${all || state.topTab === "risks" ? "true" : "false"}" class="seg-tab ${!all && state.topTab === "risks" ? "active" : ""}" data-top="risks">
+                  <span>风险与遗留</span><span class="tab-badge">${(R.risks || []).length}</span>
+                </button>
+              </div>
+            </div>
+            <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" class="tabpanel" ${all || state.topTab === "overview" ? "" : "hidden"}>${renderDeliveryPanel()}</div>
+            <div role="tabpanel" id="panel-goals" aria-labelledby="tab-goals" class="tabpanel" ${all || state.topTab === "goals" ? "" : "hidden"}>${renderGoalsPanel()}</div>
+            <div role="tabpanel" id="panel-risks" aria-labelledby="tab-risks" class="tabpanel" ${all || state.topTab === "risks" ? "" : "hidden"}>${renderRisksPanel()}</div>
+          </section>
+
+          <section class="deck" id="deck-cost">
+            <div class="deck-head">
+              <div class="deck-title"><span>代价与时间</span><span class="muted">过程数据全部来自评分表</span></div>
+              <div class="seg-tabs" role="tablist" aria-label="代价与时间视图切换">
+                <button type="button" role="tab" id="tab-charts" aria-controls="panel-charts" aria-selected="${all || state.costLens === "charts" ? "true" : "false"}" class="seg-tab ${!all && state.costLens === "charts" ? "active" : ""}" data-lens="charts">
+                  <span>时间</span>
+                </button>
+                <button type="button" role="tab" id="tab-tokens" aria-controls="panel-tokens" aria-selected="${all || state.costLens === "tokens" ? "true" : "false"}" class="seg-tab ${!all && state.costLens === "tokens" ? "active" : ""}" data-lens="tokens">
+                  <span>Token</span><span class="tab-badge">${ACTORS.length}</span>
+                </button>
+                <button type="button" role="tab" id="tab-waterfall" aria-controls="panel-waterfall" aria-selected="${all || state.costLens === "waterfall" ? "true" : "false"}" class="seg-tab ${!all && state.costLens === "waterfall" ? "active" : ""}" data-lens="waterfall">
+                  <span>逐次派发</span><span class="tab-badge">${dispatches.length}</span>
+                </button>
+              </div>
+            </div>
+
+            ${TAKEAWAYS.length ? `<div class="takeaway-strip">
+              ${TAKEAWAYS.map((t) => `<div class="takeaway-card"><b>${esc(t.title)}</b>${esc(t.body)}</div>`).join("")}
+            </div>` : ""}
+
+            ${renderTimelineBox()}
+
+            <div role="tabpanel" id="panel-charts" aria-labelledby="tab-charts" class="tabpanel" ${all || state.costLens === "charts" ? "" : "hidden"}>${renderChartsLens()}</div>
+            <div role="tabpanel" id="panel-tokens" aria-labelledby="tab-tokens" class="tabpanel" ${all || state.costLens === "tokens" ? "" : "hidden"}>${renderTokensLens()}</div>
+            <div role="tabpanel" id="panel-waterfall" aria-labelledby="tab-waterfall" class="tabpanel" ${all || state.costLens === "waterfall" ? "" : "hidden"}>${renderWaterfallLens(all)}</div>
+          </section>
+
+          ${renderFootDetails(all)}
+
+          <footer>过程数据来自评分表（<code>tickets.ts scorecard ${esc(R.spec)}</code>），截点 ${esc(fmtTime(S && S.cutoffAt))}，采集 ${esc(fmtTime(S && S.collectedAt))}。目标、证据、要你决定的事与风险由设计负责人核定填写。</footer>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const tipEl = document.getElementById("floating-tip");
+  document.addEventListener("mouseover", (ev) => {
+    const holder = ev.target && ev.target.closest ? ev.target.closest("[data-tip]") : null;
+    if (!holder) { tipEl.hidden = true; return; }
+    tipEl.textContent = holder.getAttribute("data-tip") || "";
+    tipEl.hidden = false;
+    if (holder.classList.contains("donut-slice")) {
+      const svg = holder.closest("svg");
+      const v = svg && svg.querySelector(".donut-center-v");
+      const k = svg && svg.querySelector(".donut-center-k");
+      if (v && holder.dataset.centerVal) v.textContent = holder.dataset.centerVal;
+      if (k && holder.dataset.centerLbl) k.textContent = holder.dataset.centerLbl;
+    }
+  });
+  document.addEventListener("mousemove", (ev) => {
+    if (tipEl.hidden) return;
+    const x = Math.min(window.innerWidth - 320, ev.clientX + 14);
+    const y = Math.min(window.innerHeight - 96, ev.clientY + 14);
+    tipEl.style.left = `${Math.max(8, x)}px`;
+    tipEl.style.top = `${Math.max(8, y)}px`;
+  });
+  document.addEventListener("mouseout", (ev) => {
+    const holder = ev.target && ev.target.closest ? ev.target.closest("[data-tip]") : null;
+    if (holder && (!ev.relatedTarget || !holder.contains(ev.relatedTarget))) tipEl.hidden = true;
   });
 
-  const table = (head, rows) => el("div", { class: "tw" }, el("table", {}, el("thead", {}, el("tr", {}, head.map(([t, num]) => el("th", { class: num ? "num" : null, text: t })))),
-    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el("td", { class: head[i][1] ? "num" : null }, c)))))));
-  put("dispatch-table", dispatches.length ? table([["记录"], ["工单"], ["席位 / 类型"], ["框架 / 模型 / 强度"], ["类别"], ["开始"], ["分钟", 1], ["退出码", 1], ["输入", 1], ["输出", 1]],
-    dispatches.map((d) => { const u = val(d.usage); return [d.record || "", d.ticket ? issue(d.ticket) : "", `${d.seat || "未记录"} / ${d.workType || "default"}`, `${frameworkName(framework(d))} / ${d.actualModel || d.model || "未记录"} / ${d.actualEffort || d.effort || "未记录"}`, val(d.category) ?? "未知", fmtTime(val(d.start)), fmtNum(val(d.minutes), 1), String(val(d.exitCode) ?? "未知"), fmtTok(u && u.inputTokens), fmtTok(u && u.outputTokens)]; }))
-    : el("p", { class: "empty", text: "无" }));
-  const runs = (ver && ver.runs) || [];
-  put("verify-table", runs.length ? table([["层"], ["对象"], ["调用方"], ["开始"], ["排队", 1], ["运行", 1], ["退出码", 1]],
-    runs.map((r) => [r.layer === "full" ? "完整" : "静态", r.target.kind === "main" ? "主工作区" : `${r.target.kind === "pr" ? "PR" : "工单"} #${r.target.number}`, r.caller, fmtTime(r.start), fmtNum(r.queuedMinutes, 1), fmtNum(r.minutes, 1), String(r.exitCode)]))
-    : el("p", { class: "empty", text: "无" }));
+  document.addEventListener("click", (ev) => {
+    const raw = ev.target;
+    if (!raw || !raw.closest) return;
+    if (raw.id === "clear-actor") {
+      state.filterActor = null;
+      render();
+      return;
+    }
+    const target = raw.closest("button, [data-shot], .bar-chart-row");
+    if (!target) return;
+    if (target.id === "toggle-side") {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      render();
+      return;
+    }
+    if (target.getAttribute("data-action") === "expand-all") {
+      state.expandAll = !state.expandAll;
+      render();
+      return;
+    }
+    if (target.id === "theme-btn") {
+      const darkNow = document.documentElement.getAttribute("data-theme") === "dark" ||
+        (!document.documentElement.hasAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-theme", darkNow ? "light" : "dark");
+      return;
+    }
+    if (target.hasAttribute("data-top")) {
+      state.expandAll = false;
+      state.topTab = target.getAttribute("data-top") || "overview";
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-lens")) {
+      state.expandAll = false;
+      state.costLens = target.getAttribute("data-lens") || "charts";
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-jump-top")) {
+      state.expandAll = false;
+      state.topTab = target.getAttribute("data-jump-top") || "overview";
+      render();
+      const deck = document.getElementById("deck-top");
+      if (deck) deck.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    if (target.hasAttribute("data-jump-lens")) {
+      state.expandAll = false;
+      state.costLens = target.getAttribute("data-jump-lens") || "charts";
+      render();
+      const deck = document.getElementById("deck-cost");
+      if (deck) deck.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    if (target.hasAttribute("data-actor")) {
+      const id = target.getAttribute("data-actor") || null;
+      state.filterActor = state.filterActor === id ? null : id;
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-shot")) {
+      const shot = SHOTS[Number(target.getAttribute("data-shot"))];
+      if (!shot) return;
+      const lb = document.getElementById("lightbox");
+      document.getElementById("lightbox-body").innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap">
+          <div><b>${esc(shot.title)}</b> <span class="muted">· ${esc(shot.url || "")}</span></div>
+          <button type="button" class="icon-btn" id="close-lightbox">关闭 (Esc)</button>
+        </div>
+        ${shot.focus ? `<div class="muted" style="margin-bottom:10px;color:var(--ink2)">${esc(shot.focus)}</div>` : ""}
+        ${shot.image ? `<img src="${esc(shot.image)}" alt="${esc(shot.imageAlt || shot.title)}">` : (shot.svg || "")}
+      `;
+      lb.hidden = false;
+    }
+  });
 
-  const risks = R.risks || [];
-  const LEVEL = { critical: "高", serious: "中", warning: "低", good: "已处理" };
-  put("risks", risks.length ? risks.map((r) => el("div", { class: "card" },
-    el("h3", {}, status(r.level || "warning", LEVEL[r.level] || ""), " ", r.what),
-    r.impact ? el("div", { text: `影响：${r.impact}` }) : null,
-    r.next ? el("div", { class: "muted", text: `去向：${r.next}` }) : null))
-    : el("p", { class: "empty", text: "无" }));
+  document.getElementById("lightbox").addEventListener("click", (ev) => {
+    if (ev.target.id === "lightbox" || ev.target.id === "close-lightbox") {
+      document.getElementById("lightbox").hidden = true;
+    }
+  });
 
-  put("findings", el("h3", { text: "流程发现" }), (R.findings || []).length ? el("ul", { class: "plain" }, R.findings.map((f) => el("li", { text: f }))) : el("p", { class: "empty", text: "无" }));
-  const notes = [...(R.notes || []).map((n) => [n.item, n.note]), ...((S && S.missing) || []).map((m) => [`评分表缺数：${m.field}`, m.reason])];
-  put("notes", el("h3", { text: "数据口径与缺项" }), notes.length ? table([["项"], ["说明"]], notes) : el("p", { class: "empty", text: "无" }));
-  $("footer").textContent = S ? `过程数据来自评分表（tickets.ts scorecard ${R.spec}），截点 ${fmtTime(S.cutoffAt)}，采集 ${fmtTime(S.collectedAt)}。目标、证据、决定和风险由设计负责人填写。` : "没有评分表数据。";
-}
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") { document.getElementById("lightbox").hidden = true; return; }
+    if (ev.target && ev.target.matches && ev.target.matches("input, textarea, [contenteditable]")) return;
+    if (ev.key === "[") { state.sidebarCollapsed = !state.sidebarCollapsed; render(); }
+  });
+
+  render();
+})();
 </script>
 </body>
 </html>

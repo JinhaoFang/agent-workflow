@@ -8,7 +8,7 @@
 `run-spec` 和 `setup-run-spec` 从 `JinhaoFang/agent-workflow` 的版本 tag 安装，不进 git。升级时把命令里 `#` 后面的版本换成新 tag 再运行：
 
 ```bash
-npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
+npx skills add JinhaoFang/agent-workflow#workflow-v6 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
 ```
 
 `-a claude-code` 总要带（脚本路径以它为准），主会话或席位用 Codex、pi、agy 的保留 `-a codex`，只用 Claude Code 可去掉；派发层对执行者屏蔽这两个技能。更新完运行自检 `node .claude/skills/run-spec/scripts/tickets.ts doctor`，再提交 `skills-lock.json` 里变了的两项哈希（`land` 要求工作区干净）。

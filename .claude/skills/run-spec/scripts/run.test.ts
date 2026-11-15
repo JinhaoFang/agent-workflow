@@ -149,7 +149,7 @@ test("run associates exact auxiliary names, avoids orphan collisions, and scorec
     assert.deepEqual(bindings.records.map((row: { name: string }) => row.name), ["probe-2", "probe-3"]);
     assert.equal(f.calls("agents.jsonl")[0].cwd, f.tree);
     assert.match(f.calls("agents.jsonl")[0].prompt, /读取 git 状态/);
-    assert.match(f.calls("agents.jsonl")[0].prompt, /只读/);
+    assert.match(f.calls("agents.jsonl")[0].prompt, /不写 GitHub，可以读 issue 和 PR/);
     const card = f.run(["scorecard", "22", "--dry-run"]);
     assert.equal(card.status, 0, card.stderr);
     const parsed = JSON.parse(card.stdout);

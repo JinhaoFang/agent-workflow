@@ -116,7 +116,7 @@ export const claude: Adapter = {
   permissions: {
     "read-only": {
       args: ["--permission-mode", "plan", "--tools", "Read,Glob,Grep,Bash,Skill"],
-      loss: "plan 与工具裁剪依赖 Claude 的只读命令判断，保留 git diff 等 Bash 读取；没有操作系统只读沙箱，不开放写文件、退出 plan 或子代理工具",
+      loss: "plan 与工具裁剪依赖 Claude 的只读命令判断，保留 git diff 等 Bash 读取，但无头 --permission-prompts none 下未放行 gh 等需审批命令，实测无法读 GitHub issue/PR；没有操作系统只读沙箱，不开放写文件、退出 plan 或子代理工具",
     },
     "workspace-write": {
       args: ["--permission-mode", "acceptEdits"],

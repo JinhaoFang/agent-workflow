@@ -262,6 +262,7 @@ test("seat doctor reports default, user pi profiles, repository overrides and re
     assert.match(defaultResult.stdout, /用户席位配置：.*文件不存在/);
     assert.match(defaultResult.stdout, /engineering.default：框架：codex/);
     assert.doesNotMatch(defaultResult.stdout, /提示：权限映射损失：.*codex\//);
+    assert.match(defaultResult.stdout, /提示：权限映射损失：.*claude\/read-only.*无法读 GitHub/);
     capture("doctor-default.log", defaultResult);
     mkdirSync(userDirectory, { recursive: true });
     writeFileSync(join(f.bin, "pi"), `#!${process.execPath}\nconsole.log("pi fixture");\n`, { mode: 0o755 });

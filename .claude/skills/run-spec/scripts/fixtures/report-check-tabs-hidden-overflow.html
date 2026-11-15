@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- 隐藏页签窄屏溢出样本：默认页签不溢出，第二个隐藏 tabpanel 含 620 像素宽块；只有窄屏检查应失败。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>隐藏页签窄屏溢出样本</title>
+<style>
+:root { color-scheme: light dark; }
+body { margin: 0; font: 16px/1.6 system-ui, sans-serif; }
+main { max-width: 1080px; margin: auto; padding: 16px; }
+[data-slot="timeline"] { height: 40px; background: #3987e5; }
+.wide-box { width: 620px; height: 48px; background: #d95926; color: white; }
+</style>
+</head>
+<body><main>
+<h1>隐藏页签溢出</h1>
+<div data-slot="timeline" aria-label="时间线"></div>
+<div role="tablist" aria-label="页签">
+  <button type="button" role="tab" aria-selected="true" data-target="tab-a">默认页签</button>
+  <button type="button" role="tab" aria-selected="false" data-target="tab-b">隐藏宽表页签</button>
+</div>
+<section id="tab-a" role="tabpanel"><p>默认页签在 360 像素下正常换行。</p></section>
+<section id="tab-b" role="tabpanel" hidden><div class="wide-box">未包裹宽表撑破 360 像素视口</div></section>
+<details><summary>说明</summary><p>折叠项正常。</p></details>
+<script>
+(() => {
+  "use strict";
+  for (const tab of document.querySelectorAll('[role="tab"]')) {
+    tab.addEventListener("click", () => {
+      const target = tab.dataset.target;
+      for (const item of document.querySelectorAll('[role="tab"]')) item.setAttribute("aria-selected", String(item === tab));
+      for (const panel of document.querySelectorAll('[role="tabpanel"]')) panel.hidden = panel.id !== target;
+    });
+  }
+})();
+</script>
+</main></body>
+</html>
