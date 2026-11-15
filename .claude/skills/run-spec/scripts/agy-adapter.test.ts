@@ -160,7 +160,10 @@ test("agy CLI 传数组与 NDJSON，隔离两项技能并关联会话", () => {
     assert.ok(settings.permissions.deny.includes("write_file(*)"));
     const message = JSON.parse(command.stdin);
     assert.equal(message.event, "user");
-    assert.match(message.message.content, /只读权限/);
+    assert.match(message.message.content, /只读权限：/);
+    assert.match(message.message.content, /&&/);
+    assert.match(message.message.content, /被拒一次/);
+    assert.match(message.message.content, /denied_actions/);
     assert.ok(message.message.content.includes("禁止读取两项流程技能的 SKILL.md 或调用 run-spec、setup-run-spec 技能。"));
     assert.ok(message.message.content.includes(task));
     assert.ok(!command.args.some((arg: string) => arg.includes(task)));
@@ -300,6 +303,7 @@ for (const permission of ["read-only", "workspace-write", "full"]) test(`agy CLI
     const message = JSON.parse(command.stdin).message.content;
     assert.ok(message.includes("禁止读取两项流程技能的 SKILL.md 或调用 run-spec、setup-run-spec 技能。"));
     assert.equal(message.includes("只读权限："), permission === "read-only");
+    assert.equal(message.includes("denied_actions"), permission === "read-only");
     const evidence = process.env.RUN_SPEC_TEST_EVIDENCE;
     if (evidence) {
       mkdirSync(evidence, { recursive: true });
@@ -319,7 +323,21 @@ for (const permission of ["read-only", "workspace-write", "full"]) test(`agy CLI
         assert.ok(allows(`git ${subcommand}`), subcommand);
         assert.ok(allows(`git ${subcommand} HEAD`), subcommand);
         assert.ok(allows(`git.exe ${subcommand} HEAD`), subcommand);
+        assert.ok(allows(`git -C /root/project/agent-workflow ${subcommand}`), subcommand);
+        assert.ok(allows(`git -C "/tmp/dir with space/repo" ${subcommand} HEAD`), subcommand);
+        assert.ok(allows(`git -C '/tmp/dir with space/repo' ${subcommand} HEAD`), subcommand);
+        assert.ok(allows(`git --no-pager -C /repo ${subcommand}`), subcommand);
       }
+      for (const commandLine of [
+        "git -C/root/repo status",
+        "git -C /tmp/my\\ dir/repo diff HEAD",
+        "git.exe -C C:/repo status",
+        "git.exe -C \"C:\\My Repo\" diff HEAD",
+        "git -P -C /repo show HEAD:README.md",
+        "git -C /repo --no-optional-locks status",
+        "git --git-dir=/repo/.git --work-tree=/repo diff --stat",
+        "git --git-dir /repo/.git --work-tree /repo log -n 5 --oneline",
+      ]) assert.ok(allows(commandLine), commandLine);
       for (const resource of ["issue", "pr"]) for (const action of ["view", "list", "diff", "status"]) assert.ok(allows(`gh ${resource} ${action} 53`));
       assert.ok(allows("gh api --method GET repos/fixture/repo"));
       for (const utility of ["rg", "grep", "find", "ls", "pwd", "cat", "head", "tail", "wc", "stat", "jq"]) {
@@ -327,7 +345,34 @@ for (const permission of ["read-only", "workspace-write", "full"]) test(`agy CLI
         assert.ok(allows(`${utility} README.md`), utility);
         assert.ok(allows(`${utility}.exe README.md`), utility);
       }
-      for (const line of ["git add README.md", "git status-evil", "gh issue create", "gh api --method POST repos/fixture/repo", "grepper", "cat README.md; touch file", "git diff | tee file", "ls && rm file", "pwd > file"]) assert.ok(!allows(line), line);
+      for (const line of [
+        "git add README.md",
+        "git status-evil",
+        "git -C /repo",
+        "git -C /repo add README.md",
+        "git -C /repo commit -m test",
+        "git -C /repo status-evil",
+        "git -c core.pager=evil diff",
+        "git -C /repo -c alias.s=!rm status",
+        "git --exec-path=/evil status",
+        "git -C \"/repo;rm\" status",
+        "git -C /repo status && ls",
+        "git -C /repo status\nrm -rf /",
+        "git status\nrm -rf /",
+        "git\nstatus",
+        "git show `id`",
+        "gh issue create",
+        "gh api --method POST repos/fixture/repo",
+        "gh issue view 70 --jq \".a | .b\"",
+        "rg \"a|b\" README.md",
+        "cat $HOME",
+        "grepper",
+        "pwd\nid",
+        "cat README.md; touch file",
+        "git diff | tee file",
+        "ls && rm file",
+        "pwd > file",
+      ]) assert.ok(!allows(line), line);
     }
   } finally { f.cleanup(); }
 });

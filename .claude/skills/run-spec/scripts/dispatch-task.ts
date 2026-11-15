@@ -26,7 +26,7 @@ pi 按 RPC 清单显式排除两项技能，关闭扩展和 MCP；只读保留 b
 agy 使用 --input-format stream-json 从 stdin 读 NDJSON 用户消息，--output-format stream-json 输出事件；模型与强度传 --model/--effort。
 agy 在当前检出内用短命 skills.json 排除两项技能，并用零配额 /skills 验证，保留其余技能且不改共享 .agents。
 agy 三档均拒绝两项技能在 .agents/skills、.claude/skills 的相对及仓库根路径读取，Deny > Ask > Allow，拒绝读取也拒绝同路径写入；Windows 规则路径去盘符并转正斜杠。
-agy 只读拒绝直接写工具、MCP 和浏览器执行，用跨平台 command(regex:...) 放行所列 git、gh 只读子命令及读取工具，附只读任务约束；正则不校验全部参数，没有操作系统只读沙箱，不使用 --mode plan。
+agy 只读拒绝直接写工具、MCP 和浏览器执行，用跨平台 command(regex:...) 放行所列 git（支持 -C <路径> 等安全前置选项，拒绝 -c）、gh 只读子命令及读取工具并提示拒批形态与单次拒批中止风险；正则不校验全部参数，没有操作系统只读沙箱，不使用 --mode plan。
 agy 无头可写档为 --mode accept-edits，显式允许仓库根 read_file/write_file 和 command(*) 以运行测试、静态检查与 git add/commit，拒绝 MCP 和浏览器执行。
 agy 只读与可写均为 allowNonWorkspaceAccess:false；shell、命令参数与子进程没有操作系统工作区边界。
 agy 普通工具执行错误（非权限拦截的 step_type:tool + state:ERROR）按工具结束记录供模型自行处理，不计为模型失败；命中权限拒绝规则的工具错误（permission check failed / Permission denied for <工具>(...) / Matches user-configured deny rule）与 result.denied_actions 一律报「agy 权限拒绝」并判失败。

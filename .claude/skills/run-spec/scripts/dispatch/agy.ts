@@ -5,6 +5,7 @@
  * 只读采用非破坏命令允许列表和写工具拒绝规则，没有操作系统只读沙箱。
  * 中途瞬时 API 错误若经后续 DONE 回复步恢复且终态带非空响应，只记过程并判成功。
  * 普通工具错误按工具结束记录供模型自行处理；命中权限拒绝规则的工具错误与 denied_actions 一律判失败。
+ * TODO(design): 评估只读提示词对管道/正则竖线及多命令限制的表述是否过于保守，以及 --git-dir/--work-tree/--no-optional-locks 等前置选项白名单范围。
  */
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -21,11 +22,16 @@ const skillDeny = (root = "") => blocked.flatMap(name => [".agents", ".claude"].
   return [`read_file(${path})`, ...(root ? [`read_file(${permissionPath(`${root}/${path}`)})`] : [])];
 }));
 const isolationSettings = { permissions: { allow: [] as string[], deny: skillDeny() } };
-const commandArguments = "(?:\\s+[^;&|<>\\r\\n`$]*)?";
+const forbiddenChars = ";&|<>\\r\\n`$";
+const safePathChar = `[^\\s\\\\"'${forbiddenChars}]`;
+const unquotedPath = `(?:${safePathChar}|\\\\(?:[ \\t]|${safePathChar}))+`;
+const pathArgument = `(?:"[^"${forbiddenChars}]+"|'[^'${forbiddenChars}]+'|${unquotedPath})`;
+const gitPreOption = `(?:--no-pager|-P|--no-optional-locks|-C[ \\t]*${pathArgument}|--(?:git-dir|work-tree)(?:=|[ \\t]+)${pathArgument})`;
+const commandArguments = `(?:[ \\t]+[^${forbiddenChars}]*)?`;
 const readOnlyCommands = [
-  "git(?:\\.exe)? (?:diff|status|show|log|merge-base|rev-parse|branch|ls-files|blame|cat-file)",
-  "gh(?:\\.exe)? (?:issue|pr) (?:view|list|diff|status)",
-  "gh(?:\\.exe)? api --method GET",
+  `git(?:\\.exe)?(?:[ \\t]+${gitPreOption})*[ \\t]+(?:diff|status|show|log|merge-base|rev-parse|branch|ls-files|blame|cat-file)`,
+  "gh(?:\\.exe)?[ \\t]+(?:issue|pr)[ \\t]+(?:view|list|diff|status)",
+  "gh(?:\\.exe)?[ \\t]+api[ \\t]+--method[ \\t]+GET",
   "(?:rg|grep|find|ls|pwd|cat|head|tail|wc|stat|jq)(?:\\.exe)?",
 ].map(pattern => `command(regex:^${pattern}${commandArguments}$)`);
 const permissionSettings = (readOnly: boolean) => ({
@@ -152,13 +158,13 @@ export const agy: Adapter = {
       if (settings.effort !== null) args.push("--effort", settings.effort);
       args.push("--input-format", "stream-json", "--output-format", "stream-json");
       const instruction = `\n\n任务仓库根目录：${root}。当前目录仅用于技能隔离；所有仓库读取、git 命令和编辑均使用上述根目录的绝对路径。禁止读取两项流程技能的 SKILL.md 或调用 run-spec、setup-run-spec 技能。`;
-      const readOnly = settings.permission === "read-only" ? "\n只读权限：只允许读取和非破坏命令；禁止写文件、改配置、提交、派发子代理或执行会生成缓存和报告的测试。没有操作系统只读沙箱，shell、子进程和网络仍须遵守此约束。" : "";
+      const readOnly = settings.permission === "read-only" ? "\n只读权限：只允许读取和单条白名单非破坏命令；禁止写文件、改配置、提交、派发子代理或执行会生成缓存和报告的测试。没有操作系统只读沙箱，shell、子进程和网络仍须遵守此约束。每次只能执行单条命令，优先用内置只读文件工具（如 read_file），仅白名单单条命令（如 git -C <仓库绝对路径> diff/status/show/log/merge-base/rev-parse/branch/ls-files/blame/cat-file 等）会自动批准。禁止任何组合或特殊写法：连接符与多命令（;、&、&&、||、换行、cd ... && ...）、管道（|，包括正则或参数引号内的 |）、重定向（>、>>、<、<<）、命令或变量替换（`、$、$()）及未放行选项或命令（如 git -c、git add、write_file）。无头只读模式下命令只要被拒一次就会立刻中止回合（denied_actions）并判失败，切勿合并命令或试探语法。" : "";
       return { executable: process.execPath, args: [join(import.meta.dirname, "agy-launch.ts"), directory, launcher.executable, ...args], stdin: JSON.stringify({ event: "user", message: { content: prompt + instruction + readOnly } }) + "\n" };
     } catch (error) { rmSync(directory, { recursive: true, force: true }); throw error; }
   },
   isolationArgs: () => ["--settings", JSON.stringify(isolationSettings)],
   permissions: {
-    "read-only": { args: ["--mode", "accept-edits", "--settings", JSON.stringify(permissionSettings(true))], loss: "agy 没有操作系统只读沙箱；拒绝写文件工具、MCP 和浏览器执行，以跨平台命令正则自动批准所列审查与调研命令并附只读任务约束。正则限制命令前缀及整行匹配时的 shell 连接符，不验证全部参数；find、git、jq 等参数、子进程、原生子代理/工作流、网络下载和 CLI 缓存/会话仍可能写文件；allowNonWorkspaceAccess:false 不是系统边界。" },
+    "read-only": { args: ["--mode", "accept-edits", "--settings", JSON.stringify(permissionSettings(true))], loss: "agy 没有操作系统只读沙箱；拒绝写文件工具、MCP 和浏览器执行，以跨平台命令正则自动批准所列审查与调研命令（含 git -C/--git-dir/--work-tree/--no-pager/-P/--no-optional-locks 等安全前置选项，拒绝 -c 等配置注入）并附只读任务约束与拒批说明。正则限制命令前缀、前置选项及整行匹配时的 shell 连接符/换行，不验证全部参数；find、git、jq 等参数、子进程、原生子代理/工作流、网络下载和 CLI 缓存/会话仍可能写文件；allowNonWorkspaceAccess:false 不是系统边界。" },
     "workspace-write": { args: ["--mode", "accept-edits", "--settings", JSON.stringify(permissionSettings(false))], loss: "agy 无头可写档显式放行仓库根 read_file、write_file 与 command(*)，以执行测试、静态检查和 git add/commit；拒绝 MCP 和浏览器执行。allowNonWorkspaceAccess:false 没有操作系统工作区边界，shell 和子进程仍可写工作区外。" },
     full: { args: ["--dangerously-skip-permissions", "--settings", JSON.stringify(isolationSettings)], loss: "agy 跳过权限确认，没有操作系统沙箱；技能排除及显式拒绝规则仍保留。" },
   },
