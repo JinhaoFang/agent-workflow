@@ -55,7 +55,7 @@ Claude 使用 `claude -p --output-format stream-json --verbose`，任务经 stdi
 
 | Claude 权限 | 参数 | 损失 |
 |---|---|---|
-| `read-only` | `--permission-mode plan --tools Read,Glob,Grep,Bash,Skill`，设置 `useAutoModeDuringPlan:false` | 保留只读 Bash（如固定点到 HEAD 的 `git diff`）；依赖框架的命令判断，没有操作系统只读沙箱，不开放写文件、退出 plan 或子代理工具 |
+| `read-only` | `--permission-mode plan --tools Read,Glob,Grep,Bash,Skill`，设置 `useAutoModeDuringPlan:false` | 保留只读 Bash（如固定点到 HEAD 的 `git diff`），无头 `--permission-prompts none` 下未放行 `gh` 等需审批命令，实测无法读 GitHub issue/PR；依赖框架的命令判断，没有操作系统只读沙箱，不开放写文件、退出 plan 或子代理工具 |
 | `workspace-write` | `--permission-mode acceptEdits` | 自动批准文件编辑；其他操作仍可能拒绝，没有仅限工作区的操作系统沙箱 |
 | `full` | `--permission-mode bypassPermissions` | 跳过权限确认，没有操作系统沙箱；宿主或托管策略仍可限制 |
 

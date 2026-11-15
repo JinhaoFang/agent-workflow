@@ -55,7 +55,7 @@ const run = async (values: Values, _numbers: number[], args: string[]): Promise<
   const dryRun = Boolean(values["dry-run"] || process.env.CODEX_DRY_RUN);
   if (spec !== undefined) registerRecordBindings(root, spec, tickets, names, true);
   for (const setting of settings) adapterFor(setting.agent);
-  const prompt = [task, Object.keys(overrides).length ? `本次派发参数覆盖：${JSON.stringify(overrides)}` : "", settings.some(setting => setting.permission === "read-only") ? "本次任务只读：不改文件、不提交、不操作 GitHub。" : ""].filter(Boolean).join("\n\n");
+  const prompt = [task, Object.keys(overrides).length ? `本次派发参数覆盖：${JSON.stringify(overrides)}` : "", settings.some(setting => setting.permission === "read-only") ? "本次任务只读：不改文件、不提交、不写 GitHub，可以读 issue 和 PR。" : ""].filter(Boolean).join("\n\n");
   const directory = join(root, ".codex-runs");
   let manifest = "";
   let batch = { version: 1, seat, spec: spec ?? null, prefix, records: names };
@@ -111,7 +111,7 @@ review 带数字 --spec 时默认名 review-<S>，字符串时默认名 review-s
 gh-<数字>、review-<数字> 及其连字符后缀保留给对应数字工单/spec，跨数字 spec 归属冲突继续拒绝。
 其余默认取可用的任务文件名或 task-<时间>。重名为批次前缀追加 -2、-3。
 多项记录名为 <前缀>-<序号>-<框架>，同名 <前缀>.batch.json 保存清单；review --record <前缀> 合计该清单。
-只读席位在提示中要求不改文件、不提交、不操作 GitHub；权限实际限制和损失见 doctor。
+只读席位在提示中要求不改文件、不提交、不写 GitHub，可以读 issue 和 PR；权限实际限制和损失见 doctor。
 --dry-run 仅打印实际设置、记录名、关联计划和提示，不启动模型、不写文件或关联、不写 GitHub。
 帮助退出 0，任务未通过退出 1，参数或运行出错退出 2。`,
 };

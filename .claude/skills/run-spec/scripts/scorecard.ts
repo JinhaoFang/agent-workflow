@@ -282,11 +282,12 @@ const summarizeTickets = (dispatches: DispatchTicketItem[], zeroDispatch: boolea
     interrupted: Set<number>;
     dispatches: number;
     reworkDispatches: number;
+    anomalies: CockpitAnomaly[];
   }>();
   const ensureSeat = (key: string) => {
     let entry = seatStats.get(key);
     if (!entry) {
-      entry = { tickets: new Set(), firstPass: 0, rework: new Set(), redispatch: new Set(), interrupted: new Set(), dispatches: 0, reworkDispatches: 0 };
+      entry = { tickets: new Set(), firstPass: 0, rework: new Set(), redispatch: new Set(), interrupted: new Set(), dispatches: 0, reworkDispatches: 0, anomalies: [] };
       seatStats.set(key, entry);
     }
     return entry;
@@ -314,8 +315,8 @@ const summarizeTickets = (dispatches: DispatchTicketItem[], zeroDispatch: boolea
     const runs = [...rawRuns].sort((left, right) => compareTicketRuns(ticket, left, right));
     const [first, ...rest] = runs;
     const hasRework = runs.some((run) => run.category.value === "返工");
-    const hasInterrupted = runs.some((run) => run.exitCode.value === null || run.end.value === null);
-    const isFirstPass = first.exitCode.value === 0 && rest.length === 0 && first.category.value !== "返工";
+    const hasInterrupted = runs.some((run) => run.exitCode.value === null || run.end.value === null || run.category.value === null);
+    const isFirstPass = first.exitCode.value === 0 && first.end.value !== null && rest.length === 0 && first.category.value === "首次";
     dispatchCount += runs.length;
     if (isFirstPass) {
       firstPass++;
@@ -335,11 +336,17 @@ const summarizeTickets = (dispatches: DispatchTicketItem[], zeroDispatch: boolea
       } else if (!hasRework && run !== first) {
         seatEntry.redispatch.add(ticket);
       }
-      if (run.exitCode.value === null || run.end.value === null) {
+      const missingInterrupt = run.exitCode.value === null || run.end.value === null;
+      const missingCategory = run.category.value === null;
+      if (missingInterrupt || missingCategory) {
         seatEntry.interrupted.add(ticket);
-        anomalies.push({ source: run.record, reason: run.exitCode.reason ?? run.end.reason ?? "派发中断或起止不完整" });
-      } else if (run.category.value === null) {
-        anomalies.push({ source: run.record, reason: run.category.reason ?? "现有记录不足以区分返工和续做" });
+        const reasons = [
+          missingInterrupt ? (run.exitCode.reason ?? run.end.reason ?? "派发中断或起止不完整") : null,
+          missingCategory ? (run.category.reason ?? "现有记录不足以区分返工和续做") : null,
+        ].filter((value): value is string => value !== null);
+        const anomaly = { source: run.record, reason: reasons.join("；") };
+        anomalies.push(anomaly);
+        seatEntry.anomalies.push(anomaly);
       }
     }
   }
@@ -542,7 +549,13 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
   for (const item of dispatches) {
     const interval = span(item.start.value, item.end.value);
     const badExit = item.exitCode.value !== 0;
-    const anomalyReason = item.usage.value === null ? item.usage.reason : badExit ? `派发退出码 ${item.exitCode.value ?? "未记录"}` : null;
+    const unknownCategory = item.ticket !== null && item.category.value === null;
+    const runReasons = [
+      item.usage.value === null ? item.usage.reason : null,
+      badExit ? `派发退出码 ${item.exitCode.value ?? "未记录"}` : null,
+      unknownCategory ? (item.category.reason ?? "现有记录不足以区分返工和续做") : null,
+    ].filter((value): value is string => value !== null);
+    const anomalyReason = runReasons.length ? runReasons.join("；") : null;
     cockpitRuns.push({
       source: item.record, role: item.identity.role, seat: item.seat, agent: item.identity.agent, framework: item.framework,
       configuredModel: item.model, actualModel: item.actualModel, configuredEffort: item.effort, actualEffort: item.actualEffort,
@@ -625,7 +638,7 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       : null;
     const firstEdits = group.map((run) => run.firstEditMinutes).filter((item): item is number => item !== null);
     const ticketEntry = seatTickets.get(seatTupleKey(first));
-    const seatTicketMetric: Metric<CockpitTicketStats> = ticketEntry
+    const seatTicketMetric = ticketEntry
       ? {
         value: {
           total: ticketEntry.tickets.size,
@@ -636,13 +649,17 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
           dispatches: ticketEntry.dispatches,
           reworkDispatches: ticketEntry.reworkDispatches,
         },
-        reason: null,
+        reason: null as string | null,
+        complete: ticketEntry.anomalies.length === 0,
+        anomalies: ticketEntry.anomalies,
       }
       : {
-        value: null,
-        reason: first.seat === "engineering"
+        value: null as CockpitTicketStats | null,
+        reason: (first.seat === "engineering"
           ? "此工程席位仅包含非工单派发（ticket=null），无工单通过统计"
-          : "非工程工单派发席位不统计工单一次通过率",
+          : "非工程工单派发席位不统计工单一次通过率") as string | null,
+        complete: true,
+        anomalies: [] as CockpitAnomaly[],
       };
     return {
       role,
@@ -685,14 +702,23 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
   if (checks === null) {
     spanAnomalies.push({ source: "verification", reason: verificationReason });
   }
+  for (const run of cockpitRuns) {
+    if (run.seat === "spec-review" && run.durationMinutes !== null && run.spans === null) {
+      spanAnomalies.push({
+        source: run.source,
+        reason: `派发前审查仅记录时长（${Number(run.durationMinutes.toFixed(1))} 分钟），缺少起止时段，未并入工作时间与日历跨度`,
+      });
+    }
+  }
   const seatSpans = cockpitSeats.flatMap((seat) => seat.spans);
   const verificationSpans = (checks ?? []).map((row) => ({ start: row.start, end: row.end }));
   const workSpans = [...seatSpans, ...verificationSpans];
-  const activeKnown = workSpans.length > 0 || main.hasMain || zeroDispatch || checks !== null;
+  const activeKnown = workSpans.length > 0 || main.hasMain;
   const activeMerged = workSpans.length > 0 ? lane(workSpans) : null;
+  const spanReasonText = [...new Set(spanAnomalies.map((item) => item.reason))].join("；");
   const activeMinutes = {
     value: activeMerged ? activeMerged.minutes : activeKnown ? 0 : null,
-    reason: activeKnown ? null : (spanAnomalies[0]?.reason ?? "未记录：缺少带有有效起止时间的席位、主会话或验证记录"),
+    reason: activeKnown ? null : (spanReasonText || "未记录：缺少带有有效起止时间的席位、主会话或验证记录"),
     complete: activeKnown && spanAnomalies.length === 0,
     anomalies: spanAnomalies,
   };
@@ -707,7 +733,7 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     : mainWindowSpan ? minutes(mainWindowSpan) : null;
   const wallSpanMinutes = {
     value: wallSpanValue,
-    reason: wallSpanValue !== null ? null : (spanAnomalies[0]?.reason ?? "未记录：缺少起止时间完整的时段记录"),
+    reason: wallSpanValue !== null ? null : (spanReasonText || "未记录：缺少起止时间完整的时段记录"),
     complete: wallSpanValue !== null && spanAnomalies.length === 0,
     anomalies: spanAnomalies,
   };
@@ -873,8 +899,8 @@ subagentNotifications 读取给定会话任务通知的 subagent_tokens 总数�
 inputTokens 包含缓存输入；Claude 包含 cache_read 和 cache_creation，pi 包含 cacheRead 和 cacheWrite；cachedInputTokens 只计缓存重读，outputTokens 为输出。
 主会话或子代理任一关联用量不完整时对应汇总为 null；派发组累计有效记录并列异常，不完整的审查/子代理不推成 0。
 cockpit：保持 version:2 既有字段不变，顶层新增 {totals,activeMinutes,wallSpanMinutes,tickets,seats} 供汇报页面消费；三项 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
-cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三项 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.activeMinutes 为全部角色已记录 spans 与验证时段 spans 并集（lane）的工作时间（重叠只算一次）总分钟数（排除 waitingUser、longPause 与排队；无任何有效时段或主会话/零派发依据时为 null，缺部分时段或台账时保留已知部分并置 complete=false）；cockpit.wallSpanMinutes 为角色、验证、排队、等你确认及超过 45 分钟的停顿完整时段的最大结束减最小开始分钟数（仅单事件无间隔主会话为 0，缺完整起止为 null）；cockpit.tickets 汇总去重工程工单数 total、一次通过数 firstPass（严格要求该工单首条派发退出 0 且之后没有返工或重派）、返工工单数 rework（含 category="返工" 派发的工单数）、仅重派工单数 redispatch（派发超过 1 次且不含返工）、含中断/歧义派发工单数 interrupted、工单派发总次数 dispatches 与返工派发次数 reworkDispatches（未知分类跟进派发不猜返工，置 complete=false 并记入 anomalies）；零派发但有有效主会话时各项计 0，缺全部派发来源时为 null。
-cockpit.seats 按角色（role/seat · agent/framework · actualModel??model · actualEffort??effort）聚合，逐项给角色字段、runs、spans（合并后的有序无重叠区间数组 [{start,end}]，无区间记录为 []）、activeMinutes（工作时间并集或累计有效活跃分钟）、medianFirstEditMinutes（可写角色开始改文件前耗时中位数，只读角色或无数据为 null）、tickets（{value,reason}：该角色关联工单的上述分项，其中 firstPass 只计全局一次通过且唯一派发落在此角色的工单；无工单派发的角色为 null 并写明原因）、usage、complete 与 anomalies。
+cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三项 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.activeMinutes 为全部角色已记录 spans 与验证时段 spans 并集（lane）的工作时间（重叠只算一次）总分钟数（排除 waitingUser、longPause 与排队；仅存在空/他分支验证台账而不含有效时段或主会话/零派发依据时仍为 null，缺部分时段或台账时保留已知部分并置 complete=false；派发前独立审查 review-spec-* 仅有总时长、缺少起止时段时无法并入，置 complete=false 并写入 anomalies 与为空时的 reason）；cockpit.wallSpanMinutes 为角色、验证、排队、等你确认及超过 45 分钟的停顿完整时段的最大结束减最小开始分钟数（仅单事件无间隔主会话为 0，缺完整起止为 null）；cockpit.tickets 汇总去重工程工单数 total、一次通过数 firstPass（严格要求该工单首条派发退出 0、起止完整、category="首次" 且之后没有返工或重派）、返工工单数 rework（含 category="返工" 派发的工单数）、仅重派工单数 redispatch（派发超过 1 次且不含返工）、含中断/歧义派发工单数 interrupted（包含缺退出码/结束时间与 category=null 的歧义派发）、工单派发总次数 dispatches 与返工派发次数 reworkDispatches（未知分类跟进派发不猜返工，计入 interrupted、置 complete=false 并记入 anomalies）；零派发但有有效主会话时各项计 0，缺全部派发来源时为 null。
+cockpit.seats 按角色（role/seat · agent/framework · actualModel??model · actualEffort??effort）聚合，逐项给角色字段、runs、spans（合并后的有序无重叠区间数组 [{start,end}]，无区间记录为 []）、activeMinutes（工作时间并集或累计有效活跃分钟）、medianFirstEditMinutes（可写角色开始改文件前耗时中位数，只读角色或无数据为 null）、tickets（{value,reason,complete,anomalies}：该角色关联工单的上述分项，按与全局一致的口径统计 interrupted/firstPass/complete/anomalies，其中 firstPass 只计全局一次通过且唯一派发落在此角色的工单，未知分类同时计入该角色 anomalies 与 complete；无工单派发的角色为 null 并写明原因，complete=true、anomalies=[]）、usage、complete 与 anomalies。
 cleanup 要求已发布评分表覆盖当前全部显式关联集合，不能只比较时间戳；不扩大原有删除范围。
 cleanup 新记录检查复用台账及派发归属，比较结构化时间及派发文件修改时间（也捕获补写汇报）；不因其他 spec 的记录变更而拦截。
 数字 spec 查询直接子工单；字符串 spec 只含字母、数字、连字符，跳过 GitHub，读取本地台账、绑定与当前分支最近 30 条提交，不能 --post。
