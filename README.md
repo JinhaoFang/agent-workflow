@@ -39,7 +39,7 @@ v3.1 及以前的版本发布在 `JinhaoFang/video-studio`，同名 tag 两边�
 
 1. **重装**：在目标仓库根目录运行上面的 `#workflow-v6` 安装命令（主会话或席位用 Codex、pi、agy 的保留 `-a codex`），跑 `doctor`，全部通过后提交 `skills-lock.json` 里变了的两项。
 2. **想用 agy（可选）**：在个人 `~/.config/agent-workflow/seats.json` 里把工程、审查或调研席位配成 agy，写法见 `setup-run-spec` 的 `seats.md`，跑 `doctor` 核对。派发前审查和巡检两个席位不能配 agy。
-3. **评分表**：同一个会话跨了几个 spec 时，用 `scorecard` 的时间窗参数切开；交互式 agy 会话的记录里没有模型名时可以手工补上。参数见 `scorecard --help`。
+3. **评分表**：同一个会话跨了几个 spec 时，用 `scorecard` 的时间窗参数切开；agy 会话的记录里没有思考强度，用 `--main-effort` 补上。参数见 `scorecard --help`。
 4. **汇报**：新汇报用新版 `report-template.html`，按 `report.md` 填；已有的旧汇报是独立快照，不用重做，`report-check` 照旧能查。
 
 ## 从 v4 升级到 v5

@@ -20,7 +20,7 @@
 | 方法层怎么改 | 放方法和思路，不放写死的规范；问题先记成观察，经过分析和评估再决定加不加、用什么形式；"汇报给人"由用户打分（用户 10-31） | `AGENTS.md`「怎么改方法层」，评估见 `docs/reports/workflow-v3-1-evaluation.html` |
 | 方法层的组织 | 判断集中写成五条思路，技能正文的步骤和机制指回思路（spec #2） | `.claude/skills/run-spec/principles.md` |
 | 测试分层 | 只改文档的工单只跑静态检查；Codex 开发时只跑相关测试和静态检查，完整验证在 `land` 时跑一次；spec 收尾再跑一次全套（用户 10-31） | 思路 5；来由见 `docs/research/run-spec-migration.md` 第 96 条 |
-| 汇报 | 按六点排：做了什么和效果、目标与证明、要你做的、证据、代价与时间、风险与遗留；过程数据只用评分表（用户 10-31）；v4 模板读完约 5 分钟（用户 10-31）；v6 改为左侧可收起的目录加右侧页签，比较时间和用量用图，Token 拆成首次读入、输出、缓存重读三项，角色写明框架、模型和思考强度，页面上的数全部来自评分表；`report-check` 逐个切换页签检查（用户 11-14，spec #51）。页签和悬停细节留不留，以用户按六点打分为准（#68） | `.claude/skills/run-spec/report.md`、`.claude/skills/run-spec/report-template.html` |
+| 汇报 | 按六点排：做了什么和效果、目标与证明、要你做的、证据、代价与时间、风险与遗留；过程数据只用评分表（用户 10-31）；v4 模板读完约 5 分钟（用户 10-31）；v6 改为左侧可收起的目录加右侧页签，比较时间和用量用图，Token 拆成首次读入、输出、缓存重读三项，角色写明框架、模型和思考强度，页面上的数全部来自评分表；`report-check` 逐个切换页签检查（用户 11-14，spec #51）。用户按六点打分通过，页签和悬停细节保留（用户 11-15，#68） | `.claude/skills/run-spec/report.md`、`.claude/skills/run-spec/report-template.html` |
 | 切换顺序 | video-studio → design-system → PathJX 依次改为从本仓库安装，每步合并前问用户；PathJX 产品线那台机器由用户重装（用户 10-31） | `README.md`「从 v3.1 升级到 v4」 |
 | CI | GitHub Actions 的设定不动；私有仓库启动不了，用本机 CI 代替（用户 10-31） | `docs/agents/run-spec.md` |
 | 派发前独立审查 | 是否启动由用户选择，不按任务或 spec 类型自动作为开工门槛（用户 11-05） | `run-spec` 第 2 步、角色模板 |
