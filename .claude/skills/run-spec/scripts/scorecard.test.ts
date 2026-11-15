@@ -124,7 +124,10 @@ const comments = JSON.parse(fs.readFileSync(file, 'utf8'));
 if (args[0] === 'repo') process.stdout.write(JSON.stringify({nameWithOwner:'fixture/repo'}));
 else if (args[0] === 'pr' && args[1] === 'view') process.stdout.write(JSON.stringify({headRefName:'spec/2-test'}));
 else if (args[0] === 'api' && args[2] === 'GET') {
- if (args[3].endsWith('/sub_issues')) process.stdout.write(JSON.stringify([[{number:5}]]));
+ if (args[3].endsWith('/sub_issues')) {
+  const sub = path.join(home, 'sub-issues.json');
+  process.stdout.write(JSON.stringify([fs.existsSync(sub) ? JSON.parse(fs.readFileSync(sub, 'utf8')) : [{number:5}]]));
+ }
  else if (args[3].endsWith('/parent')) process.stdout.write(JSON.stringify({number:2}));
  else if (args[3].endsWith('/comments')) process.stdout.write(JSON.stringify([comments]));
  else process.exit(91);
@@ -248,8 +251,10 @@ const expected = (collectedAt: string, claude: string) => {
   const identity = (seat: string, framework = "codex") => ({ role: seat, seat, agent: framework, framework, model: null, actualModel: null, effort: null, actualEffort: null });
   const spans = (...bounds: [number, number][]) => ({ spans: bounds.map(([a, b]) => ({ start: at(a), end: at(b) })), minutes: bounds.reduce((sum, [a, b]) => sum + b - a, 0) });
   const dispatch = (record: string, ticket: number | null, category: string, start: number, end: number, usage: ReturnType<typeof tokens>) => ({ record, ticket, seat: ticket ? "engineering" : "review", workType: "default", framework: "codex", identity: identity(ticket ? "engineering" : "review"), model: null, effort: null, permission: null, actualModel: null, actualEffort: null, category: value(category), start: value(at(start)), end: value(at(end)), minutes: value(end - start), exitCode: value(0), usage: value(usage) });
-  const cockpitSeat = (role: string, framework: string, seatSpans: { start: string; end: string }[], activeMinutes: number | null, medianFirstEditMinutes: number | null, freshInput: number, output: number, cachedReplay: number, turns: number | null) => ({
+  const nonTicketReason = "非工程工单派发席位不统计工单一次通过率";
+  const cockpitSeat = (role: string, framework: string, seatSpans: { start: string; end: string }[], activeMinutes: number | null, medianFirstEditMinutes: number | null, freshInput: number, output: number, cachedReplay: number, turns: number | null, seatTickets: { total: number; firstPass: number; rework: number; redispatch: number; interrupted: number; dispatches: number; reworkDispatches: number } | null = null) => ({
     ...identity(role, framework), runs: 1, spans: seatSpans, activeMinutes, medianFirstEditMinutes,
+    tickets: seatTickets ? value(seatTickets) : value(null, nonTicketReason),
     usage: value({ freshInput, output, cachedReplay, input: freshInput + cachedReplay, turns }),
     complete: true, anomalies: [],
   });
@@ -267,9 +272,12 @@ const expected = (collectedAt: string, claude: string) => {
     usage: { dispatches: value([{ seat: "engineering", framework: "codex", identities: [identity("engineering")], anomalies: [], complete: true, usage: value(tokens(1000, 800, 50)) }, { seat: "review", framework: "codex", identities: [identity("review")], anomalies: [], complete: true, usage: value(tokens(200, 100, 20)) }]), mainSession: value(tokens(150, 20, 10)), independentReview: value(tokens(10, 2, 4)), subagents: value(tokens(26, 12, 6)), subagentNotifications: value(99) },
     cockpit: {
       totals: { value: { freshInput: 452, output: 90, cachedReplay: 934, input: 1386, turns: null }, reason: null, complete: true, anomalies: [] },
+      activeMinutes: { value: 26, reason: null, complete: true, anomalies: [] },
+      wallSpanMinutes: { value: 50, reason: null, complete: true, anomalies: [] },
+      tickets: { value: { total: 1, firstPass: 1, rework: 0, redispatch: 0, interrupted: 0, dispatches: 1, reworkDispatches: 0 }, reason: null, complete: true, anomalies: [] },
       seats: [
         cockpitSeat("design", "claude", [{ start: at(0), end: at(21) }, { start: at(45), end: at(50) }], 26, null, 130, 10, 20, 2),
-        cockpitSeat("engineering", "codex", [{ start: at(0), end: at(20) }], 20, 4, 200, 50, 800, 2),
+        cockpitSeat("engineering", "codex", [{ start: at(0), end: at(20) }], 20, 4, 200, 50, 800, 2, { total: 1, firstPass: 1, rework: 0, redispatch: 0, interrupted: 0, dispatches: 1, reworkDispatches: 0 }),
         cockpitSeat("review", "codex", [{ start: at(5), end: at(15) }], 10, null, 100, 20, 100, null),
         cockpitSeat("spec-review", "claude", [], null, null, 8, 4, 2, null),
         cockpitSeat("subagent", "claude", [], null, null, 4, 4, 2, 0),
@@ -1636,5 +1644,168 @@ test("多 --session 不同四元组主会话各自保留 mainSessions 与 cockpi
     const help = f.run(["scorecard", "--help"]);
     assert.equal(help.status, 0, help.stderr);
     assert.match(help.stdout, /cockpit\.seats[\s\S]*spans/);
+    assert.match(help.stdout, /cockpit\.activeMinutes/);
+    assert.match(help.stdout, /cockpit\.wallSpanMinutes/);
+    assert.match(help.stdout, /cockpit\.tickets/);
+  } finally { f.cleanup(); }
+});
+
+test("cockpit 净干活、日历跨度与工单一次通过/返工口径：重派、返工、跨席位交接与未知分类", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    f.write(join(f.temporary, "sub-issues.json"), JSON.stringify([5, 6, 7, 8, 9].map((number) => ({ number }))));
+    const main = agyFile(f, "tickets-main");
+    f.lines(main, [
+      agyUser(0, 0),
+      agyStep(8, 1, { model: "gemini-4-carbon-high", effort: "high", input_tokens: 100, cache_read_tokens: 20, output_tokens: 10 }),
+      agyStep(12, 2, { model: "gemini-4-carbon-high", effort: "high", input_tokens: 200, cache_read_tokens: 50, output_tokens: 20 }),
+      agyUser(32, 3),
+      agyStep(40, 4, { model: "gemini-4-carbon-high", effort: "high", input_tokens: 200, cache_read_tokens: 100, output_tokens: 20 }),
+      agyUser(100, 5),
+      agyStep(110, 6, { model: "gemini-4-carbon-high", effort: "high", input_tokens: 200, cache_read_tokens: 100, output_tokens: 20 }),
+    ]);
+    f.lines(join(f.records, "verification.jsonl"), [
+      { ...f.ledger[1], branch: "spec/2", startedAt: moment(115), finishedAt: moment(120), queuedMinutes: 0, verification: { startedAt: moment(115), finishedAt: moment(120), exitCode: 0 } },
+    ]);
+    const writeEng = (name: string, fw: string, model: string, start: number, end: number, exit: number, extra: Record<string, unknown> = {}) => {
+      f.write(join(f.records, `${name}.json`), JSON.stringify({
+        v: 1, framework: fw, seat: "engineering", permission: "workspace-write",
+        actualModel: model, actualEffort: "high", success: exit === 0,
+        usage: { input: 100, cached: 40, output: 10 }, started: moment(start), at: moment(end), exit, ...extra,
+      }));
+    };
+    writeEng("gh-5", "codex", "gpt-5.4", 2, 10, 0);
+    writeEng("gh-6", "codex", "gpt-5.4", 11, 15, 0);
+    const gh6Follow = agyFile(f, "gh-6-follow");
+    f.lines(gh6Follow, [
+      { source: "USER_EXPLICIT", type: "USER_INPUT", step_index: 0, created_at: moment(16), content: "这是原地续做：补充边界测试" },
+      agyStep(18, 1, { model: "gemini-4-carbon-high", effort: "high" }),
+    ]);
+    writeEng("gh-6-2", "agy", "gemini-4-carbon-high", 16, 20, 0, { conversationId: "gh-6-follow" });
+    writeEng("gh-7", "agy", "gemini-4-carbon-high", 22, 26, 0);
+    const gh7Rework = agyFile(f, "gh-7-rework");
+    f.lines(gh7Rework, [
+      { source: "USER_EXPLICIT", type: "USER_INPUT", step_index: 0, created_at: moment(27), content: "前导说明\n这是返工派发：修 review 意见" },
+      agyStep(29, 1, { model: "gemini-4-carbon-high", effort: "high" }),
+    ]);
+    writeEng("gh-7-2", "agy", "gemini-4-carbon-high", 27, 30, 0, { conversationId: "gh-7-rework" });
+    writeEng("gh-8", "codex", "gpt-5.4", 33, 35, 1);
+    const gh8PiDir = join(f.records, "gh-8-2.pi-sessions");
+    mkdirSync(gh8PiDir, { recursive: true });
+    f.lines(join(gh8PiDir, "session.jsonl"), [
+      { type: "session", id: "pi-rework", timestamp: moment(36) },
+      { type: "message", id: "u1", timestamp: moment(36), message: { role: "user", content: [{ type: "text", text: "这是返工派发：修复失败用例" }] } },
+    ]);
+    writeEng("gh-8-2", "pi", "glm-5", 36, 42, 0);
+    writeEng("gh-9", "codex", "gpt-5.4", 43, 45, 1);
+    writeEng("gh-9-2", "codex", "gpt-5.4", 46, 50, 0);
+
+    const res = f.run(["scorecard", "2", "--session", main]);
+    assert.equal(res.status, 0, res.stderr);
+    const card = JSON.parse(res.stdout);
+    assert.equal(card.cockpit.activeMinutes.value, 57);
+    assert.equal(card.cockpit.activeMinutes.complete, true);
+    assert.equal(card.cockpit.wallSpanMinutes.value, 120);
+    assert.equal(card.cockpit.wallSpanMinutes.complete, true);
+    assert.equal(card.dispatches.value.find((d: { record: string }) => d.record === "gh-6-2").category.value, "续做");
+    assert.equal(card.dispatches.value.find((d: { record: string }) => d.record === "gh-7-2").category.value, "返工");
+    assert.equal(card.dispatches.value.find((d: { record: string }) => d.record === "gh-8-2").category.value, "返工");
+    assert.equal(card.dispatches.value.find((d: { record: string }) => d.record === "gh-9-2").category.value, null);
+    assert.deepEqual(card.cockpit.tickets.value, {
+      total: 5,
+      firstPass: 1,
+      rework: 2,
+      redispatch: 2,
+      interrupted: 0,
+      dispatches: 9,
+      reworkDispatches: 2,
+    });
+    assert.equal(card.cockpit.tickets.complete, false);
+    assert.deepEqual(card.cockpit.tickets.anomalies.map((a: { source: string }) => a.source), ["gh-9-2"]);
+    const codexSeat = card.cockpit.seats.find((s: { framework: string; role: string }) => s.role === "engineering" && s.framework === "codex");
+    const agySeat = card.cockpit.seats.find((s: { framework: string; role: string }) => s.role === "engineering" && s.framework === "agy");
+    const piSeat = card.cockpit.seats.find((s: { framework: string; role: string }) => s.role === "engineering" && s.framework === "pi");
+    assert.deepEqual(codexSeat.tickets.value, {
+      total: 4,
+      firstPass: 1,
+      rework: 0,
+      redispatch: 1,
+      interrupted: 0,
+      dispatches: 5,
+      reworkDispatches: 0,
+    });
+    assert.deepEqual(agySeat.tickets.value, {
+      total: 2,
+      firstPass: 0,
+      rework: 1,
+      redispatch: 1,
+      interrupted: 0,
+      dispatches: 3,
+      reworkDispatches: 1,
+    });
+    assert.deepEqual(piSeat.tickets.value, {
+      total: 1,
+      firstPass: 0,
+      rework: 1,
+      redispatch: 0,
+      interrupted: 0,
+      dispatches: 1,
+      reworkDispatches: 1,
+    });
+  } finally { f.cleanup(); }
+});
+
+test("cockpit 边界场景：中断派发、零派发与全缺失均按实返回并写原因", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    f.write(join(f.records, "gh-5.progress.log"), "=== gh-5 开始：2026/10/31 00:00:00 ===\n执行中突然中断\n");
+    const interruptedCard = JSON.parse(f.run(["scorecard", "2"]).stdout);
+    assert.equal(interruptedCard.cockpit.activeMinutes.value, null);
+    assert.match(interruptedCard.cockpit.activeMinutes.reason, /缺失|不完整|结束|未提供/);
+    assert.equal(interruptedCard.cockpit.wallSpanMinutes.value, null);
+    assert.deepEqual(interruptedCard.cockpit.tickets.value, {
+      total: 1,
+      firstPass: 0,
+      rework: 0,
+      redispatch: 0,
+      interrupted: 1,
+      dispatches: 1,
+      reworkDispatches: 0,
+    });
+    assert.equal(interruptedCard.cockpit.tickets.complete, false);
+    assert.equal(interruptedCard.cockpit.tickets.anomalies[0].source, "gh-5");
+
+    clearSources(f);
+    const missingCard = JSON.parse(f.run(["scorecard", "2"]).stdout);
+    assert.equal(missingCard.cockpit.activeMinutes.value, null);
+    assert.match(missingCard.cockpit.activeMinutes.reason, /未提供|缺少/);
+    assert.equal(missingCard.cockpit.wallSpanMinutes.value, null);
+    assert.equal(missingCard.cockpit.tickets.value, null);
+    assert.match(missingCard.cockpit.tickets.reason, /缺少本 spec 派发记录/);
+
+    const main = agyFile(f, "zero-main");
+    f.lines(main, [agyUser(0, 0)]);
+    f.lines(join(f.records, "verification.jsonl"), []);
+    const zeroOneEvent = JSON.parse(f.run(["scorecard", "2", "--session", main]).stdout);
+    assert.equal(zeroOneEvent.cockpit.activeMinutes.value, 0);
+    assert.equal(zeroOneEvent.cockpit.wallSpanMinutes.value, 0);
+    assert.equal(zeroOneEvent.cockpit.activeMinutes.complete, true);
+    assert.deepEqual(zeroOneEvent.cockpit.tickets, {
+      value: { total: 0, firstPass: 0, rework: 0, redispatch: 0, interrupted: 0, dispatches: 0, reworkDispatches: 0 },
+      reason: null,
+      complete: true,
+      anomalies: [],
+    });
+
+    f.lines(main, [
+      agyUser(0, 0),
+      agyStep(6, 1, { model: "gemini-4-carbon-high", effort: "high", input_tokens: 100, cache_read_tokens: 20, output_tokens: 10 }),
+    ]);
+    const zeroMultiEvent = JSON.parse(f.run(["scorecard", "2", "--session", main]).stdout);
+    assert.equal(zeroMultiEvent.cockpit.activeMinutes.value, 6);
+    assert.equal(zeroMultiEvent.cockpit.wallSpanMinutes.value, 6);
+    assert.equal(zeroMultiEvent.cockpit.tickets.value.total, 0);
   } finally { f.cleanup(); }
 });

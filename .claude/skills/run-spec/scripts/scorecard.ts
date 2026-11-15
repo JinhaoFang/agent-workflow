@@ -3,8 +3,9 @@
  * JSONL，--out 写文件，--post 用稳定标记创建或更新折叠评论。cleanup 共用归属
  * 和截点检查；只有显式 --no-scorecard 才绕过。所有缺数以 value:null 和中文
  * reason 表示，missing 汇总字段路径。保留 version:2 既有字段不变，主会话明细
- * 补充活跃时段 spans，并新增顶层 cockpit 预计算全局与完整四元组席位（cockpit.seats
- * 含合并有序区间 spans）的三段式 Token、工具轮数与耗时指标。
+ * 补充活跃时段 spans，并在顶层 cockpit 预计算全局与完整四元组席位（cockpit.seats
+ * 含合并有序区间 spans）的三段式 Token、工具轮数、耗时、净干活并集 activeMinutes、
+ * 日历跨度 wallSpanMinutes 与全局/席位工单一次通过及返工统计 tickets。
  * 数据口径和兼容约定完整写在 --help。Claude 用户输入排除压缩摘要，优先认 origin.kind，并关联 AskUserQuestion 问答。
  */
 import { attribution, codexSessionMetrics, firstWrite, mainSessions, sessionPath, sessionSettings, type SessionOptions } from "./scorecard-sessions.ts";
@@ -19,6 +20,15 @@ type Metric<T> = { value: T | null; reason: string | null };
 type Missing = { field: string; reason: string };
 type CockpitUsage = { freshInput: number; output: number; cachedReplay: number; input: number; turns: number | null };
 type CockpitAnomaly = { source: string; reason: string };
+type CockpitTicketStats = {
+  total: number;
+  firstPass: number;
+  rework: number;
+  redispatch: number;
+  interrupted: number;
+  dispatches: number;
+  reworkDispatches: number;
+};
 type CockpitRun = {
   source: string;
   role: string;
@@ -216,6 +226,135 @@ const firstEdit = (session: CodexSession): { at: string; input: number | null } 
 };
 
 
+const userText = (value: unknown): string => typeof value === "string"
+  ? value
+  : Array.isArray(value)
+    ? value.map((part) => typeof part === "string" ? part : part?.text ?? "").join("\n")
+    : "";
+
+const seatTupleKey = (row: {
+  seat: string;
+  framework: string;
+  actualModel?: string | null;
+  configuredModel?: string | null;
+  model?: string | null;
+  actualEffort?: string | null;
+  configuredEffort?: string | null;
+  effort?: string | null;
+}): string => JSON.stringify([
+  row.seat,
+  row.framework,
+  row.actualModel ?? row.configuredModel ?? row.model ?? null,
+  row.actualEffort ?? row.configuredEffort ?? row.effort ?? null,
+]);
+
+type DispatchTicketItem = {
+  record: string;
+  ticket: number | null;
+  seat: string;
+  framework: string;
+  model: string | null;
+  actualModel: string | null;
+  effort: string | null;
+  actualEffort: string | null;
+  category: Metric<string>;
+  start: Metric<string>;
+  end: Metric<string>;
+  exitCode: Metric<number>;
+};
+
+const compareTicketRuns = (ticket: number, left: DispatchTicketItem, right: DispatchTicketItem): number => {
+  if (left.start.value && right.start.value && left.start.value !== right.start.value) {
+    return left.start.value.localeCompare(right.start.value);
+  }
+  const leftBase = left.record === `gh-${ticket}` ? 0 : 1;
+  const rightBase = right.record === `gh-${ticket}` ? 0 : 1;
+  if (leftBase !== rightBase) return leftBase - rightBase;
+  return left.record.localeCompare(right.record, "en", { numeric: true });
+};
+
+const summarizeTickets = (dispatches: DispatchTicketItem[], zeroDispatch: boolean) => {
+  const seatStats = new Map<string, {
+    tickets: Set<number>;
+    firstPass: number;
+    rework: Set<number>;
+    redispatch: Set<number>;
+    interrupted: Set<number>;
+    dispatches: number;
+    reworkDispatches: number;
+  }>();
+  const ensureSeat = (key: string) => {
+    let entry = seatStats.get(key);
+    if (!entry) {
+      entry = { tickets: new Set(), firstPass: 0, rework: new Set(), redispatch: new Set(), interrupted: new Set(), dispatches: 0, reworkDispatches: 0 };
+      seatStats.set(key, entry);
+    }
+    return entry;
+  };
+  const hasTicketSource = dispatches.length > 0 || zeroDispatch;
+  if (!hasTicketSource) {
+    return {
+      globalTickets: { value: null as CockpitTicketStats | null, reason: "未记录：缺少本 spec 派发记录", complete: false, anomalies: [] as CockpitAnomaly[] },
+      seatTickets: seatStats,
+    };
+  }
+  const byTicket = new Map<number, DispatchTicketItem[]>();
+  for (const item of dispatches) {
+    if (item.ticket === null) continue;
+    byTicket.set(item.ticket, [...(byTicket.get(item.ticket) ?? []), item]);
+  }
+  let firstPass = 0;
+  let rework = 0;
+  let redispatch = 0;
+  let interrupted = 0;
+  let dispatchCount = 0;
+  let reworkDispatches = 0;
+  const anomalies: CockpitAnomaly[] = [];
+  for (const [ticket, rawRuns] of byTicket) {
+    const runs = [...rawRuns].sort((left, right) => compareTicketRuns(ticket, left, right));
+    const [first, ...rest] = runs;
+    const hasRework = runs.some((run) => run.category.value === "返工");
+    const hasInterrupted = runs.some((run) => run.exitCode.value === null || run.end.value === null);
+    const isFirstPass = first.exitCode.value === 0 && rest.length === 0 && first.category.value !== "返工";
+    dispatchCount += runs.length;
+    if (isFirstPass) {
+      firstPass++;
+      ensureSeat(seatTupleKey(first)).firstPass++;
+    }
+    if (hasRework) rework++;
+    else if (rest.length > 0) redispatch++;
+    if (hasInterrupted) interrupted++;
+    for (const run of runs) {
+      const seatEntry = ensureSeat(seatTupleKey(run));
+      seatEntry.tickets.add(ticket);
+      seatEntry.dispatches++;
+      if (run.category.value === "返工") {
+        reworkDispatches++;
+        seatEntry.reworkDispatches++;
+        seatEntry.rework.add(ticket);
+      } else if (!hasRework && run !== first) {
+        seatEntry.redispatch.add(ticket);
+      }
+      if (run.exitCode.value === null || run.end.value === null) {
+        seatEntry.interrupted.add(ticket);
+        anomalies.push({ source: run.record, reason: run.exitCode.reason ?? run.end.reason ?? "派发中断或起止不完整" });
+      } else if (run.category.value === null) {
+        anomalies.push({ source: run.record, reason: run.category.reason ?? "现有记录不足以区分返工和续做" });
+      }
+    }
+  }
+  return {
+    globalTickets: {
+      value: { total: byTicket.size, firstPass, rework, redispatch, interrupted, dispatches: dispatchCount, reworkDispatches },
+      reason: null,
+      complete: anomalies.length === 0,
+      anomalies,
+    },
+    seatTickets: seatStats,
+  };
+};
+
+
 const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: string[], bindings: ReturnType<typeof registerRecordBindings>, options: SessionOptions = {}) => {
   const missing: Missing[] = [];
   const metric = <T>(field: string, value: T | null, reason: string): Metric<T> => {
@@ -283,14 +422,6 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       (ids.length === 1 ? ids[0] === session.id : session.cwd === expected && item.start && timestamp(session.events[0].timestamp) === item.start));
     const linked = candidates.length === 1 ? candidates.map(loadSession) : [];
     for (const session of linked) selected.set(session.id, session);
-    const prompts = linked.flatMap((session) => session.events.filter((event) => event.type === "response_item" && event.payload?.role === "user")
-      .flatMap((event) => event.payload.content ?? []).map((part: Json) => part.text ?? "")).join("\n");
-    const category = item.kind === "review" || typeof spec === "string" && seat === "review" ? "审查" : item.kind === "auxiliary" ? "辅助" : /这是原地续做：|--resume 原地续做/.test(prompts) ? "续做" : /这是返工派发：/.test(prompts) ? "返工" : item.name === `gh-${item.ticket}` ? "首次" : null;
-    const usages = linked.map((session) => sessionTokens(session, window));
-    const normalized = summary || "usage" in metadata;
-    const tokens = normalized ? codexTokens(metadata.usage ? { input_tokens: metadata.usage.input, cached_input_tokens: metadata.usage.cached, output_tokens: metadata.usage.output } : undefined) : linked.length && usages.every((value) => value !== null) ? sumTokens(usages as Tokens[]) : null;
-    const interval = span(item.start, item.end);
-    const readOnly = metadata.permission === "read-only" || ["review", "research", "spec-review", "watch"].includes(seat);
     const savedRows: Json[] = [];
     if (framework === "pi") {
       for (const file of new Set([...item.files.values()].map((file) => join(dirname(file), `${item.name}.pi-sessions`)))) {
@@ -299,6 +430,19 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     }
     const transcript = metadata.sessionPath ?? metadata.transcriptPath ?? metadata.sessionId ?? metadata.conversationId;
     const transcriptRows = framework === "agy" && typeof transcript === "string" && existsSync(sessionPath(transcript)) ? jsonLines(read(sessionPath(transcript))) : [];
+    const promptParts = item.ambiguity ? [] : [
+      ...linked.flatMap((session) => session.events.filter((event) => event.type === "response_item" && event.payload?.role === "user").map((event) => userText(event.payload.content))),
+      ...transcriptRows.filter((row) => row.type === "USER_INPUT").map((row) => userText(row.content)),
+      ...savedRows.filter((row) => row.type === "message" && row.message?.role === "user").map((row) => userText(row.message?.content)),
+      ...item.raw.filter((row) => row.type === "user" && !row.isCompactSummary && !row.isVisibleInTranscriptOnly).map((row) => userText(row.message?.content ?? row.content)),
+    ];
+    const prompts = promptParts.join("\n");
+    const category = item.kind === "review" || typeof spec === "string" && seat === "review" ? "审查" : item.kind === "auxiliary" ? "辅助" : /这是原地续做：|--resume 原地续做/.test(prompts) ? "续做" : /这是返工派发：/.test(prompts) ? "返工" : item.name === `gh-${item.ticket}` ? "首次" : null;
+    const usages = linked.map((session) => sessionTokens(session, window));
+    const normalized = summary || "usage" in metadata;
+    const tokens = normalized ? codexTokens(metadata.usage ? { input_tokens: metadata.usage.input, cached_input_tokens: metadata.usage.cached, output_tokens: metadata.usage.output } : undefined) : linked.length && usages.every((value) => value !== null) ? sumTokens(usages as Tokens[]) : null;
+    const interval = span(item.start, item.end);
+    const readOnly = metadata.permission === "read-only" || ["review", "research", "spec-review", "watch"].includes(seat);
     const writeRows = savedRows.length ? [...savedRows] : transcriptRows.length ? [...transcriptRows] : [...item.raw];
     const unified = read(item.files.get(".events.jsonl") ?? "");
     const unifiedRows = item.ambiguity ? [] : jsonLines(unified.slice(0, unified.lastIndexOf("\n") + 1));
@@ -445,12 +589,11 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     });
   });
   for (const failure of main.childFailures) globalExtraAnomalies.push({ source: "subagent", reason: failure });
+  const { globalTickets, seatTickets } = summarizeTickets(dispatches, zeroDispatch);
   const roleOrder: Record<string, number> = { design: 0, engineering: 1, review: 2, "spec-review": 3, research: 4, watch: 5, subagent: 6 };
   const seatGroups = new Map<string, CockpitRun[]>();
   for (const run of cockpitRuns) {
-    const resolvedModel = run.actualModel ?? run.configuredModel ?? null;
-    const resolvedEffort = run.actualEffort ?? run.configuredEffort ?? null;
-    const key = JSON.stringify([run.seat, run.framework, resolvedModel, resolvedEffort]);
+    const key = seatTupleKey(run);
     seatGroups.set(key, [...(seatGroups.get(key) ?? []), run]);
   }
   const cockpitSeats = [...seatGroups.values()].sort((leftGroup, rightGroup) => {
@@ -481,6 +624,26 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       ? (mergedLane?.minutes ?? 0) + durations.reduce((sum, value) => sum + value, 0)
       : null;
     const firstEdits = group.map((run) => run.firstEditMinutes).filter((item): item is number => item !== null);
+    const ticketEntry = seatTickets.get(seatTupleKey(first));
+    const seatTicketMetric: Metric<CockpitTicketStats> = ticketEntry
+      ? {
+        value: {
+          total: ticketEntry.tickets.size,
+          firstPass: ticketEntry.firstPass,
+          rework: ticketEntry.rework.size,
+          redispatch: ticketEntry.redispatch.size,
+          interrupted: ticketEntry.interrupted.size,
+          dispatches: ticketEntry.dispatches,
+          reworkDispatches: ticketEntry.reworkDispatches,
+        },
+        reason: null,
+      }
+      : {
+        value: null,
+        reason: first.seat === "engineering"
+          ? "此工程席位仅包含非工单派发（ticket=null），无工单通过统计"
+          : "非工程工单派发席位不统计工单一次通过率",
+      };
     return {
       role,
       seat: first.seat,
@@ -494,6 +657,7 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       spans: mergedLane ? mergedLane.spans : [],
       activeMinutes,
       medianFirstEditMinutes: median(firstEdits),
+      tickets: seatTicketMetric,
       usage: summed ? { value: toCockpitUsage(summed, turns), reason: null } : { value: null, reason: first.usageReason ?? "此四元组席位没有完整用量的有效记录" },
       complete: valid.length === group.length && anomalies.length === 0,
       anomalies,
@@ -505,6 +669,48 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
   const totalCockpitTurns = validCockpitRuns.length > 0 && validCockpitRuns.every((run) => run.turns !== null)
     ? validCockpitRuns.reduce((sum, run) => sum + run.turns!, 0)
     : null;
+  const spanAnomalies: CockpitAnomaly[] = [];
+  if (!main.hasMain && main.sessions.length === 0) {
+    spanAnomalies.push({ source: "mainSession", reason: main.reason });
+  }
+  for (const item of main.sessions) {
+    const itemSpans = (item.spans as Span[] | null | undefined) ?? main.sessionMetrics.get(item.session)?.spans ?? null;
+    if (!itemSpans) spanAnomalies.push({ source: item.session, reason: main.reason });
+  }
+  for (const item of dispatches) {
+    if (!span(item.start.value, item.end.value)) {
+      spanAnomalies.push({ source: item.record, reason: item.minutes.reason ?? item.end.reason ?? "派发起止不完整" });
+    }
+  }
+  if (checks === null) {
+    spanAnomalies.push({ source: "verification", reason: verificationReason });
+  }
+  const seatSpans = cockpitSeats.flatMap((seat) => seat.spans);
+  const verificationSpans = (checks ?? []).map((row) => ({ start: row.start, end: row.end }));
+  const workSpans = [...seatSpans, ...verificationSpans];
+  const activeKnown = workSpans.length > 0 || main.hasMain || zeroDispatch || checks !== null;
+  const activeMerged = workSpans.length > 0 ? lane(workSpans) : null;
+  const activeMinutes = {
+    value: activeMerged ? activeMerged.minutes : activeKnown ? 0 : null,
+    reason: activeKnown ? null : (spanAnomalies[0]?.reason ?? "未记录：缺少带有有效起止时间的席位、主会话或验证记录"),
+    complete: activeKnown && spanAnomalies.length === 0,
+    anomalies: spanAnomalies,
+  };
+  const timelineSpans = [
+    ...workSpans,
+    ...(queueLane ?? []),
+    ...(main.hasMain ? [...main.waiting.spans, ...main.longPause.spans] : []),
+  ];
+  const mainWindowSpan = main.hasMain ? span(main.startedAt, main.cutoffAt) : null;
+  const wallSpanValue = timelineSpans.length > 0
+    ? (Math.max(...timelineSpans.map((item) => Date.parse(item.end))) - Math.min(...timelineSpans.map((item) => Date.parse(item.start)))) / 60000
+    : mainWindowSpan ? minutes(mainWindowSpan) : null;
+  const wallSpanMinutes = {
+    value: wallSpanValue,
+    reason: wallSpanValue !== null ? null : (spanAnomalies[0]?.reason ?? "未记录：缺少起止时间完整的时段记录"),
+    complete: wallSpanValue !== null && spanAnomalies.length === 0,
+    anomalies: spanAnomalies,
+  };
   const cockpit = {
     totals: {
       value: totalCockpitTokens ? toCockpitUsage(totalCockpitTokens, totalCockpitTurns) : null,
@@ -512,6 +718,9 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       complete: validCockpitRuns.length > 0 && validCockpitRuns.length === cockpitRuns.length && cockpitAnomalies.length === 0,
       anomalies: cockpitAnomalies,
     },
+    activeMinutes,
+    wallSpanMinutes,
+    tickets: globalTickets,
     seats: cockpitSeats,
   };
   return { version: 2, spec, startedAt: window.startedAt ?? main.startedAt, mainFrameworks: main.frameworks, mainSessions: main.sessions,
@@ -624,7 +833,7 @@ fullCount/fullMinutes 只汇总 full，staticCount 只汇总 static；缺台账�
 merges：landCount 计全部 land 调用；fullVerificationFailures 只计 caller=land 的 full 验证非零退出；verify、pr-check 不计入该项。
 stops 按 land 的 step 分 rebaseConflict、installFailure、verificationFailure、pushFailure、other。
 dispatches：每次给工单、席位 seat、工作类型 workType、框架 framework、配置 model/effort、permission、实际 actualModel/actualEffort，以及类别、起止、分钟、退出码、用量；起止优先生命周期，旧记录退到进度头尾或 raw._at。
-类别：显式辅助名为辅助（ticket=null），review 名及字符串 spec 的 review 席位为审查；会话初始指令明确“这是原地续做”为续做、“这是返工派发”为返工；基础 gh-<号> 为首次；其余 null。
+类别：显式辅助名为辅助（ticket=null），review 名及字符串 spec 的 review 席位为审查；从已关联 Codex 会话、agy transcript USER_INPUT、pi 保存会话或原始日志用户消息读取初始指令，明确“这是原地续做”为续做、“这是返工派发”为返工；基础 gh-<号> 为首次；其余 null。
 time：dispatchSlots=全部派发运行；dispatchLanes 按 framework 分泳道；verification=实际验证；queue=全部原始调用验证开始前 queuedMinutes 那一段，包装调用排队保留。
 --session 自动识别 Claude、Codex、pi、agy JSONL；agy 也接受会话 ID 或会话目录，根目录用 AGY_BRAIN_DIR 覆盖（默认 ~/.gemini/antigravity-cli/brain）。
 agy 只认 USER_EXPLICIT/USER_INPUT 人工输入、MODEL/PLANNER_RESPONSE 模型步骤和 GENERIC 工具结果；invoke_subagent 之后的工具返回 conversationId 关联同 brain 子会话，去重且不计入主会话用量。
@@ -663,8 +872,9 @@ subagentNotifications 读取给定会话任务通知的 subagent_tokens 总数�
 这是只有总 token 的另一种来源，可能与子代理会话重叠，不与 subagents 相加，不能拆分的输入/输出不估算。
 inputTokens 包含缓存输入；Claude 包含 cache_read 和 cache_creation，pi 包含 cacheRead 和 cacheWrite；cachedInputTokens 只计缓存读取，outputTokens 为输出。
 主会话或子代理任一关联用量不完整时对应汇总为 null；派发组累计有效记录并列异常，不完整的审查/子代理不推成 0。
-cockpit：保持 version:2 既有字段不变，顶层新增 {totals,seats} 供 V6 驾驶舱消费；三段式 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
-cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三段式 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.seats 按完整四元组（role/seat·agent/framework·actualModel??model·actualEffort??effort）聚合，逐项给四元组字段、runs、spans（合并后的有序无重叠区间数组 [{start,end}]，无区间记录为 []）、activeMinutes（并集或累计有效活跃分钟）、medianFirstEditMinutes（可写席位首次编辑分钟中位数，只读席位或无数据为 null）、usage、complete 与 anomalies。
+cockpit：保持 version:2 既有字段不变，顶层新增 {totals,activeMinutes,wallSpanMinutes,tickets,seats} 供 V6 驾驶舱消费；三段式 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
+cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三段式 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.activeMinutes 为全部席位已记录 spans 与验证执行 spans 并集（lane）的总分钟数（排除 waitingUser、longPause 与排队；无任何有效时段或主会话/零派发依据时为 null，缺部分时段或台账时保留已知部分并置 complete=false）；cockpit.wallSpanMinutes 为席位、验证、排队、等待用户及长停工完整时段的最大结束减最小开始分钟数（仅单事件无间隔主会话为 0，缺完整起止为 null）；cockpit.tickets 汇总去重工程工单数 total、一次通过数 firstPass（严格要求该工单首条派发退出 0 且之后没有返工或重派）、返工工单数 rework（含 category="返工" 派发的工单数）、仅重派工单数 redispatch（派发超过 1 次且不含返工）、含中断/歧义派发工单数 interrupted、工单派发总次数 dispatches 与返工派发次数 reworkDispatches（未知分类跟进派发不猜返工，置 complete=false 并记入 anomalies）；零派发但有有效主会话时各项计 0，缺全部派发来源时为 null。
+cockpit.seats 按完整四元组（role/seat·agent/framework·actualModel??model·actualEffort??effort）聚合，逐项给四元组字段、runs、spans（合并后的有序无重叠区间数组 [{start,end}]，无区间记录为 []）、activeMinutes（并集或累计有效活跃分钟）、medianFirstEditMinutes（可写席位首次编辑分钟中位数，只读席位或无数据为 null）、tickets（{value,reason}：该席位关联工单的上述分项，其中 firstPass 只计全局一次通过且唯一派发落在此席位的工单；无工单派发的席位为 null 并写明原因）、usage、complete 与 anomalies。
 cleanup 要求已发布评分表覆盖当前全部显式关联集合，不能只比较时间戳；不扩大原有删除范围。
 cleanup 新记录检查复用台账及派发归属，比较结构化时间及派发文件修改时间（也捕获补写汇报）；不因其他 spec 的记录变更而拦截。
 数字 spec 查询直接子工单；字符串 spec 只含字母、数字、连字符，跳过 GitHub，读取本地台账、绑定与当前分支最近 30 条提交，不能 --post。

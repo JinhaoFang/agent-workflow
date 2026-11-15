@@ -418,7 +418,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 </div>
 <script type="application/json" data-slot="data">
 
-{"report":{"spec":51,"title":"示例汇报（替换 data-slot=\"data\" 生成正式汇报）","date":"2026-11-15","timezone":"Asia/Shanghai","repo":"JinhaoFang/agent-workflow","pr":{"number":61,"state":"示例模板"},"result":"这是 V6 交互式驾驶舱模板内置的离线示例数据。生成正式汇报时，用设计负责人填写的 report 与 tickets.ts scorecard --out 输出替换 data-slot=\"data\" 的 JSON。","story":{"before":"旧版单列长卷对比耗时与 Token 需要反复上下滚动，“新增 Token”等术语容易把多轮工具自动重读历史缓存误解为真实消耗。","afterSteps":["粘性左栏提供 6 视图直达与四元组筛选，支持快捷键 [ 收起。","右侧成果验收台与代价图表台各设三个零滚动切换页签，也可一键切换全展开长卷。","评分表原生输出三段式 Token（首次新读材料 / 思考与写出 / 多轮历史缓存重读+轮数）与四元组对比表。"]},"archNodes":[{"title":"1. scorecard 采集","sub":"cockpit 三段式聚合","tip":"自动汇总主会话、原生子代理与各席位派发的耗时和 Token。"},{"title":"2. V6 驾驶舱渲染","sub":"双工作台 · SVG 图表 · 灯箱","tip":"单文件零外部依赖，严格模式 IIFE 零全局名。"},{"title":"3. report-check 门禁","sub":"页签遍历 · 360px 全展开","tip":"无头 Chromium 遍历点击页签并展开隐藏面板检测窄屏溢出。"}],"delivered":[{"what":"双栏可收起与双工作台零滚动驾驶舱","tickets":[55,56],"meaning":"一屏内切换核验机制、目标、截图画廊与多维代价图表。"},{"what":"多页签与窄屏全展开自动检查","tickets":[55],"meaning":"桌面点击遍历页签，手机 360px 展开全部面板与折叠项防溢出。"}],"goals":[{"name":"必读七份说明文档总字节数","unit":"字节","before":51096,"after":51035,"target":51096,"status":"good","statusText":"净减 61 字节","method":"wc -c 统计七份必读文件总和。","evidence":{"output":"51,035 <= 51,096 字节"}}],"shots":[{"title":"V6 双栏驾驶舱布局示意","url":"report-template.html#deck-cost","focus":"左栏四元组筛选与右侧 SVG 环形图、分组柱状图双栏联动（点击可放大灯箱）。","ref":"示例缩略图","image":"data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20640%20340%22%3E%0A%20%20%20%20%3Crect%20width%3D%22640%22%20height%3D%22340%22%20rx%3D%2212%22%20fill%3D%22%23f6f7f9%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2218%22%20y%3D%2218%22%20width%3D%22142%22%20height%3D%22304%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2234%22%20width%3D%2290%22%20height%3D%2214%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2264%22%20width%3D%22118%22%20height%3D%2226%22%20rx%3D%226%22%20fill%3D%22%23eff6ff%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2298%22%20width%3D%22118%22%20height%3D%2226%22%20rx%3D%226%22%20fill%3D%22%23f3f4f6%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%22150%22%20width%3D%22118%22%20height%3D%2252%22%20rx%3D%228%22%20fill%3D%22%23fafbfc%22%20stroke%3D%22%23e5e7eb%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%22210%22%20width%3D%22118%22%20height%3D%2252%22%20rx%3D%228%22%20fill%3D%22%23fafbfc%22%20stroke%3D%22%23e5e7eb%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22176%22%20y%3D%2218%22%20width%3D%22446%22%20height%3D%2296%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22290%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%2315803d%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22400%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%232563eb%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22510%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%230d9488%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22176%22%20y%3D%22128%22%20width%3D%22446%22%20height%3D%22194%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22268%22%20cy%3D%22226%22%20r%3D%2254%22%20fill%3D%22none%22%20stroke%3D%22%232563eb%22%20stroke-width%3D%2218%22%20stroke-dasharray%3D%22210%20340%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22268%22%20cy%3D%22226%22%20r%3D%2254%22%20fill%3D%22none%22%20stroke%3D%22%230d9488%22%20stroke-width%3D%2218%22%20stroke-dasharray%3D%2290%20340%22%20stroke-dashoffset%3D%22-214%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22168%22%20width%3D%22224%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22192%22%20width%3D%22180%22%20height%3D%2212%22%20rx%3D%224%22%20fill%3D%22%2360a5fa%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22226%22%20width%3D%22142%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%230d9488%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22250%22%20width%3D%22112%22%20height%3D%2212%22%20rx%3D%224%22%20fill%3D%22%235eead4%22%2F%3E%0A%20%20%3C%2Fsvg%3E","imageAlt":"V6 驾驶舱结构示意"}],"asks":[],"evidence":[{"claim":"report-check 四项门禁全过","value":"exit=0, scrollWidth=360","output":"控制台 0 报错 · 全局名新增 0 · 时间线不滚动 · 手机 360px 全展开不溢出"}],"risks":[{"level":"good","what":"旧版评分表自动降级兼容","impact":"缺少 cockpit 字段时由模板客户端按一致口径回退聚合。","next":"无需重跑历史已归档汇报。"}],"findings":["示例发现：正式汇报中填写本 spec 执行过程发现的真实问题与处理去向。"],"notes":[{"item":"示例说明","note":"正式交付前必须整体替换示例 JSON 并运行 tickets.ts report-check。"}],"dispatchNotes":{"gh-55":"✓ 首次通过 · 评分表三段式聚合与 report-check 多页签巡检","gh-59":"✓ 首次通过 · 收窄 agy 自举路径拒绝粒度"}},"scorecard":{"version":2,"spec":51,"startedAt":"2026-11-15T01:00:00.000Z","cutoffAt":"2026-11-15T02:30:00.000Z","collectedAt":"2026-11-15T02:31:00.000Z","mainFrameworks":["agy"],"mainSessions":[{"framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","minutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}]}],"dispatches":{"value":[{"record":"gh-59","ticket":59,"seat":"engineering","workType":"default","framework":"pi","actualModel":"openai/gpt-6.1-sol","actualEffort":"xhigh","start":{"value":"2026-11-15T01:12:00.000Z","reason":null},"end":{"value":"2026-11-15T01:18:00.000Z","reason":null},"minutes":{"value":6,"reason":null},"exitCode":{"value":0,"reason":null},"category":{"value":"首次","reason":null},"usage":{"value":{"inputTokens":680000,"cachedInputTokens":620000,"outputTokens":14000},"reason":null}},{"record":"gh-55","ticket":55,"seat":"engineering","workType":"default","framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","start":{"value":"2026-11-15T01:25:00.000Z","reason":null},"end":{"value":"2026-11-15T02:05:00.000Z","reason":null},"minutes":{"value":40,"reason":null},"exitCode":{"value":0,"reason":null},"category":{"value":"首次","reason":null},"usage":{"value":{"inputTokens":4200000,"cachedInputTokens":3880000,"outputTokens":68000},"reason":null}}],"reason":null},"overhead":{"value":[{"record":"gh-59","minutes":{"value":1.6,"reason":null}},{"record":"gh-55","minutes":{"value":8.4,"reason":null}}],"reason":null},"batches":{"value":[],"reason":null},"time":{"designLead":{"value":{"minutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}]},"reason":null},"dispatchSlots":{"value":{"minutes":46},"reason":null},"verification":{"value":{"minutes":3.5,"spans":[{"start":"2026-11-15T02:06:00.000Z","end":"2026-11-15T02:09:30.000Z"}]},"reason":null},"waitingUser":{"value":{"minutes":0,"spans":[]},"reason":null},"longPause":{"value":{"minutes":0,"spans":[]},"reason":null}},"verification":{"value":{"fullCount":2,"staticCount":1,"totalMinutes":3.5,"runs":[{"layer":"full","target":{"kind":"ticket","number":55},"caller":"land","start":"2026-11-15T02:06:00.000Z","queuedMinutes":0,"minutes":1.8,"exitCode":0}]},"reason":null},"usage":{},"cockpit":{"totals":{"value":{"freshInput":620000,"output":118000,"cachedReplay":7400000,"input":8020000,"turns":92},"reason":null,"complete":true,"anomalies":[]},"seats":[{"role":"design","seat":"design","agent":"agy","framework":"agy","model":"gemini-4-carbon-high","actualModel":"gemini-4-carbon-high","effort":"high","actualEffort":"high","runs":1,"activeMinutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}],"medianFirstEditMinutes":null,"usage":{"value":{"freshInput":240000,"output":36000,"cachedReplay":2900000,"input":3140000,"turns":28},"reason":null},"complete":true,"anomalies":[]},{"role":"工程负责人","seat":"engineering","agent":"agy","framework":"agy","model":"gemini-4-carbon-high","actualModel":"gemini-4-carbon-high","effort":"high","actualEffort":"high","runs":1,"activeMinutes":40,"spans":[{"start":"2026-11-15T01:25:00.000Z","end":"2026-11-15T02:05:00.000Z"}],"medianFirstEditMinutes":8.4,"usage":{"value":{"freshInput":320000,"output":68000,"cachedReplay":3880000,"input":4200000,"turns":48},"reason":null},"complete":true,"anomalies":[]},{"role":"工程负责人","seat":"engineering","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh","runs":1,"activeMinutes":6,"spans":[{"start":"2026-11-15T01:12:00.000Z","end":"2026-11-15T01:18:00.000Z"}],"medianFirstEditMinutes":1.6,"usage":{"value":{"freshInput":60000,"output":14000,"cachedReplay":620000,"input":680000,"turns":16},"reason":null},"complete":true,"anomalies":[]}]},"missing":[]}}
+{"report":{"spec":51,"title":"示例汇报（替换 data-slot=\"data\" 生成正式汇报）","date":"2026-11-15","timezone":"Asia/Shanghai","repo":"JinhaoFang/agent-workflow","pr":{"number":64,"state":"示例模板"},"result":"这是 V6 交互式驾驶舱模板内置的离线示例数据（覆盖 cockpit.activeMinutes、wallSpanMinutes、tickets 与席位 tickets 新字段）。生成正式汇报时，用设计负责人填写的 report 与 tickets.ts scorecard --out 输出整体替换 data-slot=\"data\" 的 JSON。","story":{"before":"旧版模板在缺少 cockpit 时会自行拼接区间、从文件名猜返工并对指标环形图夹逼托底；若只传旧版 JSON 也容易与评分表口径打架。","afterSteps":["scorecard cockpit 统一预计算净干活并集 activeMinutes、日历跨度 wallSpanMinutes 以及全局和分席位工单一次通过/返工统计。","模板删掉全部跨记录汇总、名字猜返工、数值夹逼与写死结论，缺数直接展示「未记录」与 scorecard reason，比例环显式写明「是什么比什么」。","takeaways 改为可选结构化传入，为空时不渲染 .takeaway-strip。"]},"archNodes":[{"title":"1. scorecard 单一口径","sub":"净干活 · 跨度 · 一次通过","tip":"scorecard 统一产出 activeMinutes、wallSpanMinutes 与全局/席位 tickets。"},{"title":"2. V6 驾驶舱纯渲染","sub":"零跨记录汇总 · 显式口诀","tip":"模板只做格式转换、排序与 SVG 布局，不猜数不夹逼。"},{"title":"3. report-check 门禁","sub":"页签遍历 · 360px 全展开","tip":"无头 Chromium 遍历点击页签并展开隐藏面板检测窄屏溢出。"}],"takeaways":[{"title":"⏱ 耗时与并发结构（示例）","body":"净干活 1h 10m（设计 22.5m · 派发 44m · 验证 3.5m），日历跨度 1h 22m，占日历跨度 86%。"},{"title":"🎫 工单一次通过口径（示例）","body":"共 2 张工程工单：1 张一次通过，1 张存在返工派发（示例演示 gh-55-2 返工计数，来自 scorecard.cockpit.tickets）。"},{"title":"🧮 缓存重读占比（示例）","body":"真实干活 Token 73.8 万（新读 62 万 + 写出 11.8 万），缓存重读 740 万 / 总输入 802 万（92%）。"}],"delivered":[{"what":"scorecard cockpit 唯一数据源扩展","tickets":[65],"meaning":"一次通过数、返工数、净干活并集与日历跨度由 scorecard.ts 唯一给出。"},{"what":"report-template.html 去重算与透明比例环","tickets":[65],"meaning":"删除跨记录汇总与兜底假环，每张卡和环图写清分子分母与缺失原因。"}],"goals":[{"name":"必读七份说明文档总字节数（示例）","unit":"字节","before":51096,"after":51035,"target":51096,"status":"good","statusText":"净减 61 字节","method":"wc -c 统计七份必读文件总和。","evidence":{"output":"51,035 <= 51,096 字节"}}],"shots":[{"title":"V6 双栏驾驶舱布局示意","url":"report-template.html#deck-cost","focus":"左栏四元组筛选与右侧 SVG 环形图、分组柱状图双栏联动（点击可放大灯箱）。","ref":"示例缩略图","image":"data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20640%20340%22%3E%0A%20%20%20%20%3Crect%20width%3D%22640%22%20height%3D%22340%22%20rx%3D%2212%22%20fill%3D%22%23f6f7f9%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2218%22%20y%3D%2218%22%20width%3D%22142%22%20height%3D%22304%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2234%22%20width%3D%2290%22%20height%3D%2214%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2264%22%20width%3D%22118%22%20height%3D%2226%22%20rx%3D%226%22%20fill%3D%22%23eff6ff%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%2298%22%20width%3D%22118%22%20height%3D%2226%22%20rx%3D%226%22%20fill%3D%22%23f3f4f6%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%22150%22%20width%3D%22118%22%20height%3D%2252%22%20rx%3D%228%22%20fill%3D%22%23fafbfc%22%20stroke%3D%22%23e5e7eb%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2230%22%20y%3D%22210%22%20width%3D%22118%22%20height%3D%2252%22%20rx%3D%228%22%20fill%3D%22%23fafbfc%22%20stroke%3D%22%23e5e7eb%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22176%22%20y%3D%2218%22%20width%3D%22446%22%20height%3D%2296%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22290%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%2315803d%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22400%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%232563eb%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22510%22%20cy%3D%2266%22%20r%3D%2220%22%20fill%3D%22none%22%20stroke%3D%22%230d9488%22%20stroke-width%3D%225%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22176%22%20y%3D%22128%22%20width%3D%22446%22%20height%3D%22194%22%20rx%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23dde1e7%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22268%22%20cy%3D%22226%22%20r%3D%2254%22%20fill%3D%22none%22%20stroke%3D%22%232563eb%22%20stroke-width%3D%2218%22%20stroke-dasharray%3D%22210%20340%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22268%22%20cy%3D%22226%22%20r%3D%2254%22%20fill%3D%22none%22%20stroke%3D%22%230d9488%22%20stroke-width%3D%2218%22%20stroke-dasharray%3D%2290%20340%22%20stroke-dashoffset%3D%22-214%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22168%22%20width%3D%22224%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22192%22%20width%3D%22180%22%20height%3D%2212%22%20rx%3D%224%22%20fill%3D%22%2360a5fa%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22226%22%20width%3D%22142%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%230d9488%22%20opacity%3D%220.85%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22364%22%20y%3D%22250%22%20width%3D%22112%22%20height%3D%2212%22%20rx%3D%224%22%20fill%3D%22%235eead4%22%2F%3E%0A%20%20%3C%2Fsvg%3E","imageAlt":"V6 驾驶舱结构示意"}],"asks":[],"evidence":[{"claim":"report-check 四项门禁全过","value":"exit=0, scrollWidth=360","output":"控制台 0 报错 · 全局名新增 0 · 时间线不滚动 · 手机 360px 全展开不溢出"}],"risks":[{"level":"good","what":"缺少 cockpit 预计算矩阵时显式提示「未记录」","impact":"模板不再回退做跨记录均值或并集推算；旧版评分表会明确标出「未记录」与缺少字段原因。","next":"如需完整驾驶舱视图，用新版 tickets.ts scorecard 重新采集。"}],"findings":["示例发现：正式汇报中填写本 spec 执行过程发现的真实问题与处理去向。"],"notes":[{"item":"示例说明","note":"正式交付前必须整体替换示例 JSON 并运行 tickets.ts report-check。"}],"dispatchNotes":{"gh-59":"✓ 示例首次通过 · 按新工单口径验证","gh-55":"✕ 示例首派非零退出 · 后续触发 gh-55-2 返工","gh-55-2":"✓ 示例返工通过 · 纳入工单返工统计"}},"scorecard":{"version":2,"spec":51,"startedAt":"2026-11-15T01:00:00.000Z","cutoffAt":"2026-11-15T02:30:00.000Z","collectedAt":"2026-11-15T02:31:00.000Z","mainFrameworks":["agy"],"mainSessions":[{"framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","minutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}]}],"merges":{"value":{"landCount":2,"fullVerificationFailures":0,"stops":{"rebaseConflict":0,"installFailure":0,"verificationFailure":0,"pushFailure":0,"other":0}},"reason":null},"dispatches":{"value":[{"record":"gh-59","ticket":59,"seat":"engineering","workType":"default","framework":"pi","actualModel":"openai/gpt-6.1-sol","actualEffort":"xhigh","start":{"value":"2026-11-15T01:12:00.000Z","reason":null},"end":{"value":"2026-11-15T01:18:00.000Z","reason":null},"minutes":{"value":6,"reason":null},"exitCode":{"value":0,"reason":null},"category":{"value":"首次","reason":null},"usage":{"value":{"inputTokens":680000,"cachedInputTokens":620000,"outputTokens":14000},"reason":null}},{"record":"gh-55","ticket":55,"seat":"engineering","workType":"default","framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","start":{"value":"2026-11-15T01:25:00.000Z","reason":null},"end":{"value":"2026-11-15T01:50:00.000Z","reason":null},"minutes":{"value":25,"reason":null},"exitCode":{"value":1,"reason":null},"category":{"value":"首次","reason":null},"usage":{"value":{"inputTokens":2600000,"cachedInputTokens":2400000,"outputTokens":42000},"reason":null}},{"record":"gh-55-2","ticket":55,"seat":"engineering","workType":"default","framework":"agy","actualModel":"gemini-4-carbon-high","actualEffort":"high","start":{"value":"2026-11-15T01:52:00.000Z","reason":null},"end":{"value":"2026-11-15T02:05:00.000Z","reason":null},"minutes":{"value":13,"reason":null},"exitCode":{"value":0,"reason":null},"category":{"value":"返工","reason":null},"usage":{"value":{"inputTokens":1600000,"cachedInputTokens":1480000,"outputTokens":26000},"reason":null}}],"reason":null},"overhead":{"value":[{"record":"gh-59","minutes":{"value":1.6,"reason":null}},{"record":"gh-55","minutes":{"value":8.4,"reason":null}},{"record":"gh-55-2","minutes":{"value":3.2,"reason":null}}],"reason":null},"batches":{"value":[],"reason":null},"time":{"designLead":{"value":{"minutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}]},"reason":null},"dispatchSlots":{"value":{"minutes":44},"reason":null},"verification":{"value":{"minutes":3.5,"spans":[{"start":"2026-11-15T02:06:00.000Z","end":"2026-11-15T02:09:30.000Z"}]},"reason":null},"queue":{"value":{"minutes":0,"spans":[]},"reason":null},"waitingUser":{"value":{"minutes":0,"spans":[]},"reason":null},"longPause":{"value":{"minutes":0,"spans":[]},"reason":null}},"verification":{"value":{"fullCount":2,"staticCount":1,"totalMinutes":3.5,"runs":[{"layer":"full","target":{"kind":"ticket","number":55},"caller":"land","start":"2026-11-15T02:06:00.000Z","queuedMinutes":0,"minutes":1.8,"exitCode":0}]},"reason":null},"usage":{},"cockpit":{"totals":{"value":{"freshInput":620000,"output":118000,"cachedReplay":7400000,"input":8020000,"turns":92},"reason":null,"complete":true,"anomalies":[]},"activeMinutes":{"value":70,"reason":null,"complete":true,"anomalies":[]},"wallSpanMinutes":{"value":81.5,"reason":null,"complete":true,"anomalies":[]},"tickets":{"value":{"total":2,"firstPass":1,"rework":1,"redispatch":0,"interrupted":0,"dispatches":3,"reworkDispatches":1},"reason":null,"complete":true,"anomalies":[]},"seats":[{"role":"design","seat":"design","agent":"agy","framework":"agy","model":"gemini-4-carbon-high","actualModel":"gemini-4-carbon-high","effort":"high","actualEffort":"high","runs":1,"activeMinutes":22.5,"spans":[{"start":"2026-11-15T01:00:00.000Z","end":"2026-11-15T01:11:00.000Z"},{"start":"2026-11-15T02:10:00.000Z","end":"2026-11-15T02:21:30.000Z"}],"medianFirstEditMinutes":null,"tickets":{"value":null,"reason":"非工程工单派发席位不统计工单一次通过率"},"usage":{"value":{"freshInput":240000,"output":36000,"cachedReplay":2900000,"input":3140000,"turns":28},"reason":null},"complete":true,"anomalies":[]},{"role":"工程负责人","seat":"engineering","agent":"agy","framework":"agy","model":"gemini-4-carbon-high","actualModel":"gemini-4-carbon-high","effort":"high","actualEffort":"high","runs":2,"activeMinutes":38,"spans":[{"start":"2026-11-15T01:25:00.000Z","end":"2026-11-15T01:50:00.000Z"},{"start":"2026-11-15T01:52:00.000Z","end":"2026-11-15T02:05:00.000Z"}],"medianFirstEditMinutes":5.8,"tickets":{"value":{"total":1,"firstPass":0,"rework":1,"redispatch":0,"interrupted":0,"dispatches":2,"reworkDispatches":1},"reason":null},"usage":{"value":{"freshInput":320000,"output":68000,"cachedReplay":3880000,"input":4200000,"turns":48},"reason":null},"complete":true,"anomalies":[]},{"role":"工程负责人","seat":"engineering","agent":"pi","framework":"pi","model":"openai/gpt-6.1-sol","actualModel":"openai/gpt-6.1-sol","effort":"xhigh","actualEffort":"xhigh","runs":1,"activeMinutes":6,"spans":[{"start":"2026-11-15T01:12:00.000Z","end":"2026-11-15T01:18:00.000Z"}],"medianFirstEditMinutes":1.6,"tickets":{"value":{"total":1,"firstPass":1,"rework":0,"redispatch":0,"interrupted":0,"dispatches":1,"reworkDispatches":0},"reason":null},"usage":{"value":{"freshInput":60000,"output":14000,"cachedReplay":620000,"input":680000,"turns":16},"reason":null},"complete":true,"anomalies":[]}]},"missing":[]}}
 
 </script>
 <script>
@@ -512,6 +512,14 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
   const ver = val(S && S.verification);
   const merges = val(S && S.merges);
 
+  const rawMissing = (S && Array.isArray(S.missing)) ? S.missing : [];
+  const findMissingReason = (prefix, fallback) => {
+    const hit = rawMissing.find((m) => m && typeof m.field === "string" && (m.field === prefix || m.field.startsWith(`${prefix}.`)));
+    return hit && hit.reason ? String(hit.reason).replace(/^未记录[：:]\s*/, "") : fallback;
+  };
+  const cockpitMissingReason = S ? "当前评分表缺少 cockpit 预计算矩阵" : "未提供 scorecard 数据";
+  const cockpitSeatsReason = S && S.cockpit ? "尚无已记录席位运行时数据" : cockpitMissingReason;
+
   const parseSpanArray = (rawSpans, defaultDesc) => {
     if (!Array.isArray(rawSpans)) return null;
     const out = [];
@@ -525,276 +533,59 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     return out;
   };
 
-  const mergeIntervals = (items, defaultDesc) => {
-    const sorted = [...items].sort((x, y) => x.a - y.a || x.b - y.b);
-    const merged = [];
-    for (const it of sorted) {
-      const last = merged[merged.length - 1];
-      if (last && it.a <= last.b) {
-        if (it.b > last.b) last.b = it.b;
-      } else {
-        merged.push({ a: it.a, b: it.b, kind: it.kind || "ok", desc: it.desc || defaultDesc });
-      }
-    }
-    return merged;
+  const formatSeatTicketSummary = (tMetric) => {
+    const t = val(tMetric);
+    if (!t) return null;
+    const parts = [`一次通过 ${t.firstPass}/${t.total}`];
+    if (t.rework > 0) parts.push(`返工 ${t.rework}`);
+    if (t.redispatch > 0) parts.push(`重派 ${t.redispatch}`);
+    if (t.interrupted > 0) parts.push(`中断 ${t.interrupted}`);
+    return parts.join(" · ");
   };
-
-  const intervalsMinutes = (items) => items.reduce((acc, it) => acc + (it.b - it.a) / 60000, 0);
-
-  const subtractIntervals = (base, known) => {
-    if (!known.length) return base;
-    const cuts = mergeIntervals(known, "");
-    let cur = base.map((x) => ({ ...x }));
-    for (const cut of cuts) {
-      const next = [];
-      for (const seg of cur) {
-        if (cut.b <= seg.a || cut.a >= seg.b) {
-          next.push(seg);
-        } else {
-          if (cut.a > seg.a) next.push({ ...seg, b: cut.a });
-          if (cut.b < seg.b) next.push({ ...seg, a: cut.b });
-        }
-      }
-      cur = next;
-    }
-    return cur.filter((seg) => seg.b > seg.a);
-  };
-
-  const rawLeadSpans = parseSpanArray((val(S && S.time && S.time.designLead) || {}).spans, "主会话统筹、定稿与验收");
 
   const buildActors = () => {
-    const mainSess = (S && S.mainSessions) || [];
     const cockpitSeats = val(S && S.cockpit && S.cockpit.seats);
-    if (Array.isArray(cockpitSeats) && cockpitSeats.length) {
-      return cockpitSeats.map((c, idx) => {
-        const fw = c.framework || c.agent || "codex";
-        const u = normUsage(c.usage);
-        const seatKey = c.seat || c.role || "engineering";
-        const roleLabel = SEAT_LABEL[seatKey] || c.roleLabel || c.role || seatKey;
-        const medEdit = val(c.medianFirstEditMinutes);
-        const model = c.actualModel || c.model || "默认模型";
-        const effort = c.actualEffort || c.effort || "默认";
-        const isDesign = seatKey === "director" || seatKey === "design" || seatKey === "main";
-        const rawSeatSpans = c && c.spans !== undefined ? val(c.spans) : undefined;
-        let actorSpans = parseSpanArray(rawSeatSpans, isDesign ? "主会话统筹、定稿与验收" : `${roleLabel} 活跃时段`);
-        if (actorSpans !== null) {
-          actorSpans = mergeIntervals(actorSpans, isDesign ? "主会话统筹、定稿与验收" : `${roleLabel} 活跃时段`);
-        } else if (isDesign && mainSess.length) {
-          const matched = mainSess.filter((ms) => {
-            const mFw = ms.framework || ms.agent || "";
-            const mModel = ms.actualModel || ms.model || "默认模型";
-            const mEffort = ms.actualEffort || ms.effort || "默认";
-            return mFw === fw && mModel === model && mEffort === effort;
-          });
-          const parsedMatched = matched.map((ms) =>
-            parseSpanArray(ms && ms.spans !== undefined ? val(ms.spans) : undefined, "主会话统筹、定稿与验收")
-          );
-          if (matched.length > 0 && parsedMatched.every((x) => x !== null)) {
-            actorSpans = mergeIntervals(parsedMatched.flat(), "主会话统筹、定稿与验收");
-          }
-        }
-        return {
-          id: c.id || `actor-${idx}`,
-          seat: seatKey,
-          workType: c.workType || "default",
-          role: roleLabel + (c.workType && c.workType !== "default" ? `·${c.workType}` : ""),
-          fw,
-          model,
-          effort,
-          minutes: val(c.activeMinutes ?? c.minutes),
-          runsText: isDesign
-            ? (typeof c.runs === "number" && c.runs > 1 ? `${c.runs} 段主会话` : "主会话")
-            : (typeof c.runs === "number" ? `${c.runs} 次运行` : String(c.runs || "主会话")),
-          turns: u && u.turns !== null ? u.turns : (val(c.turns) ?? null),
-          fresh: u ? u.fresh : null,
-          output: u ? u.output : null,
-          cached: u ? u.cached : null,
-          spans: actorSpans,
-          readDoc: typeof medEdit === "number" ? `首次改码中位 ${fmtMin(medEdit)}` : (isDesign ? "主会话统筹" : "只读或未计"),
-          pass: c.complete === false || (c.anomalies && c.anomalies.length) ? `部分记录（异常 ${c.anomalies ? c.anomalies.length : 1}）` : "记录完整",
-          note: c.anomalies && c.anomalies.length ? c.anomalies.map((a) => `${a.source || a.record || ""}${a.source || a.record ? ": " : ""}${a.reason || a}`).join("；") : null
-        };
-      });
-    }
-
-    const list = [];
-    const mainU = normUsage(S && S.usage && S.usage.mainSession);
-    const dMin = (val(S && S.time && S.time.designLead) || {}).minutes ?? null;
-    if (mainSess.length) {
-      const mGroups = new Map();
-      for (const ms of mainSess) {
-        const fw = ms.framework || ms.agent || (S && S.mainFrameworks && S.mainFrameworks[0]) || "claude";
-        const model = ms.actualModel || ms.model || "主会话模型";
-        const effort = ms.actualEffort || ms.effort || "默认";
-        const key = `${fw}|${model}|${effort}`;
-        if (!mGroups.has(key)) mGroups.set(key, { fw, model, effort, items: [] });
-        mGroups.get(key).items.push(ms);
-      }
-      let mIdx = 0;
-      for (const mg of mGroups.values()) {
-        mIdx += 1;
-        let fresh = 0, out = 0, cached = 0, hasTok = false, turns = 0, hasTurns = false, missingTurns = false;
-        const parsedSpans = [];
-        let allHaveSpans = true;
-        for (const ms of mg.items) {
-          const mu = normUsage(ms.usage);
-          if (mu) {
-            fresh += mu.fresh; out += mu.output; cached += mu.cached; hasTok = true;
-            if (mu.turns !== null) { turns += mu.turns; hasTurns = true; }
-            else { missingTurns = true; }
-          } else if (mGroups.size > 1) {
-            missingTurns = true;
-          }
-          const sp = parseSpanArray(ms && ms.spans !== undefined ? val(ms.spans) : undefined, "主会话统筹、定稿与验收");
-          if (sp === null) allHaveSpans = false;
-          else parsedSpans.push(...sp);
-        }
-        const mergedSpans = allHaveSpans ? mergeIntervals(parsedSpans, "主会话统筹、定稿与验收") : null;
-        let grpMin = null;
-        let grpSpans = mergedSpans;
-        if (mergedSpans !== null) {
-          grpMin = intervalsMinutes(mergedSpans);
-        } else if (mGroups.size === 1) {
-          grpMin = dMin !== null ? dMin : (mg.items.length === 1 && typeof mg.items[0].minutes === "number" ? mg.items[0].minutes : null);
-          grpSpans = rawLeadSpans;
-        } else if (mg.items.length === 1 && typeof mg.items[0].minutes === "number") {
-          grpMin = mg.items[0].minutes;
-        }
-        const useMainU = !hasTok && mGroups.size === 1 ? mainU : null;
-        list.push({
-          id: mGroups.size === 1 ? "seat-design" : `seat-design-${mIdx}`,
-          seat: "design",
-          role: "设计负责人",
-          fw: mg.fw,
-          model: mg.model,
-          effort: mg.effort,
-          minutes: grpMin,
-          runsText: mg.items.length > 1 ? `${mg.items.length} 段主会话` : "主会话",
-          turns: hasTok ? (hasTurns && !missingTurns ? turns : null) : (useMainU ? useMainU.turns : null),
-          fresh: hasTok ? fresh : (useMainU ? useMainU.fresh : null),
-          output: hasTok ? out : (useMainU ? useMainU.output : null),
-          cached: hasTok ? cached : (useMainU ? useMainU.cached : null),
-          spans: grpSpans,
-          readDoc: "Spec 定稿与验收",
-          pass: "统筹全局",
-          note: null
-        });
-      }
-    } else if (mainU || dMin !== null) {
-      const fw = (S && S.mainFrameworks && S.mainFrameworks[0]) || "claude";
-      list.push({
-        id: "seat-design",
-        seat: "design",
-        role: "设计负责人",
+    if (!Array.isArray(cockpitSeats) || !cockpitSeats.length) return [];
+    return cockpitSeats.map((c, idx) => {
+      const fw = c.framework || c.agent || "codex";
+      const u = normUsage(c.usage);
+      const seatKey = c.seat || c.role || "engineering";
+      const roleLabel = SEAT_LABEL[seatKey] || c.roleLabel || c.role || seatKey;
+      const medEdit = val(c.medianFirstEditMinutes);
+      const model = c.actualModel || c.model || "默认模型";
+      const effort = c.actualEffort || c.effort || "默认";
+      const isDesign = seatKey === "director" || seatKey === "design" || seatKey === "main";
+      const rawSeatSpans = c && c.spans !== undefined ? val(c.spans) : undefined;
+      const actorSpans = parseSpanArray(rawSeatSpans, isDesign ? "主会话统筹、定稿与验收" : `${roleLabel} 活跃时段`);
+      const ticketSummary = formatSeatTicketSummary(c.tickets);
+      const anomCount = c.anomalies && c.anomalies.length ? c.anomalies.length : 1;
+      const statusText = c.complete === false || (c.anomalies && c.anomalies.length) ? `部分记录（异常 ${anomCount}）` : "记录完整";
+      const statusParts = [ticketSummary, statusText].filter(Boolean);
+      const editText = typeof medEdit === "number" ? `首次改码中位 ${fmtMin(medEdit)}` : (isDesign ? "主会话统筹" : "只读或未计");
+      const usageReasonNote = !u && c.usage && c.usage.reason ? `用量缺失：${why(c.usage)}` : null;
+      const anomNote = c.anomalies && c.anomalies.length ? c.anomalies.map((a) => `${a.source || a.record || ""}${a.source || a.record ? ": " : ""}${a.reason || a}`).join("；") : null;
+      return {
+        id: c.id || `actor-${idx}`,
+        seat: seatKey,
+        workType: c.workType || "default",
+        role: roleLabel + (c.workType && c.workType !== "default" ? `·${c.workType}` : ""),
         fw,
-        model: "主会话模型",
-        effort: "默认",
-        minutes: dMin,
-        runsText: "主会话",
-        turns: mainU ? mainU.turns : null,
-        fresh: mainU ? mainU.fresh : null,
-        output: mainU ? mainU.output : null,
-        cached: mainU ? mainU.cached : null,
-        spans: rawLeadSpans,
-        readDoc: "Spec 定稿与验收",
-        pass: "统筹全局",
-        note: null
-      });
-    }
-    const subU = normUsage(S && S.usage && S.usage.subagents);
-    const subs = (S && S.subagents) || [];
-    if (subs.length || subU) {
-      const s0 = subs[0] || {};
-      const parsedSubSpans = subs.map((x) => parseSpanArray(x && x.spans !== undefined ? val(x.spans) : undefined, "原生子代理活跃时段"));
-      const allSubHaveSpans = subs.length > 0 && parsedSubSpans.every((x) => x !== null);
-      const mergedSubSpans = allSubHaveSpans ? mergeIntervals(parsedSubSpans.flat(), "原生子代理活跃时段") : null;
-      const subMin = mergedSubSpans !== null
-        ? intervalsMinutes(mergedSubSpans)
-        : (subs.length === 1 && typeof subs[0].minutes === "number" ? subs[0].minutes : null);
-      list.push({
-        id: "seat-subagent",
-        seat: "subagent",
-        role: "原生子代理",
-        fw: s0.framework || s0.agent || (S && S.mainFrameworks && S.mainFrameworks[0]) || "claude",
-        model: s0.actualModel || s0.model || "子代理模型",
-        effort: s0.actualEffort || s0.effort || "默认",
-        minutes: subMin,
-        runsText: `${subs.length || 1} 次子代理`,
-        turns: subU ? subU.turns : null,
-        fresh: subU ? subU.fresh : null,
-        output: subU ? subU.output : null,
-        cached: subU ? subU.cached : null,
-        spans: mergedSubSpans,
-        readDoc: "只读探索/辅助",
-        pass: "自动拆账",
-        note: null
-      });
-    }
-    const groups = new Map();
-    for (const d of dispatches) {
-      const seat = d.seat || (d.ticket ? "engineering" : "review");
-      const fw = d.framework || d.agent || "codex";
-      const model = d.actualModel || d.model || "默认模型";
-      const effort = d.actualEffort || d.effort || "默认";
-      const key = `${seat}|${d.workType || "default"}|${fw}|${model}|${effort}`;
-      if (!groups.has(key)) {
-        groups.set(key, { seat, workType: d.workType || "default", fw, model, effort, items: [] });
-      }
-      groups.get(key).items.push(d);
-    }
-    let idx = 0;
-    for (const g of groups.values()) {
-      idx += 1;
-      let fresh = 0, out = 0, cached = 0, hasTok = false, durFallback = 0, hasDurFallback = false, turns = 0, hasTurns = false, missingTurns = false, okCount = 0, reworkCount = 0;
-      const editMins = [];
-      const dispIntervals = [];
-      for (const d of g.items) {
-        const st = Date.parse(val(d.start) || "");
-        const en = Date.parse(val(d.end) || "");
-        if (Number.isFinite(st) && Number.isFinite(en) && en >= st) {
-          dispIntervals.push({ a: st, b: en, kind: "ok", desc: "" });
-        } else {
-          const m = val(d.minutes);
-          if (typeof m === "number") { durFallback += m; hasDurFallback = true; }
-        }
-        const u = normUsage(d.usage);
-        if (u) {
-          fresh += u.fresh; out += u.output; cached += u.cached; hasTok = true;
-          if (u.turns !== null) { turns += u.turns; hasTurns = true; }
-          else { missingTurns = true; }
-        }
-        if (val(d.exitCode) === 0) okCount += 1;
-        if (val(d.category) === "返工") reworkCount += 1;
-        const ov = overheadMap.get(d.record);
-        const em = ov ? val(ov.minutes) : null;
-        if (typeof em === "number") editMins.push(em);
-      }
-      const mergedDisp = dispIntervals.length ? mergeIntervals(dispIntervals, "") : [];
-      const hasMin = mergedDisp.length > 0 || hasDurFallback;
-      const minSum = (mergedDisp.length ? intervalsMinutes(mergedDisp) : 0) + durFallback;
-      editMins.sort((a, b) => a - b);
-      const mid = editMins.length >> 1;
-      const medEdit = !editMins.length ? null : editMins.length % 2 ? editMins[mid] : (editMins[mid - 1] + editMins[mid]) / 2;
-      list.push({
-        id: `seat-${idx}`,
-        seat: g.seat,
-        workType: g.workType || "default",
-        role: (SEAT_LABEL[g.seat] || g.seat) + (g.workType !== "default" ? `·${g.workType}` : ""),
-        fw: g.fw,
-        model: g.model,
-        effort: g.effort,
-        minutes: hasMin ? minSum : null,
-        runsText: `${g.items.length} 次派发`,
-        turns: hasTurns && !missingTurns ? turns : null,
-        fresh: hasTok ? fresh : null,
-        output: hasTok ? out : null,
-        cached: hasTok ? cached : null,
-        readDoc: medEdit !== null ? `首次改码中位 ${fmtMin(medEdit)}` : "只读或不计",
-        pass: reworkCount ? `完成 ${okCount}/${g.items.length}（含返工 ${reworkCount}）` : `通过 ${okCount}/${g.items.length}`,
-        note: null
-      });
-    }
-    return list;
+        model,
+        effort,
+        minutes: val(c.activeMinutes ?? c.minutes),
+        runsText: isDesign
+          ? (typeof c.runs === "number" && c.runs > 1 ? `${c.runs} 段主会话` : "主会话")
+          : (typeof c.runs === "number" ? `${c.runs} 次运行` : String(c.runs || "主会话")),
+        turns: u && u.turns !== null ? u.turns : (val(c.turns) ?? null),
+        fresh: u ? u.fresh : null,
+        output: u ? u.output : null,
+        cached: u ? u.cached : null,
+        spans: actorSpans,
+        readDoc: editText,
+        pass: statusParts.join(" · "),
+        note: anomNote || usageReasonNote
+      };
+    });
   };
 
   const ACTORS = buildActors();
@@ -810,30 +601,28 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     return sameTuple ? sameTuple.id : "";
   };
 
-  const hasCockpitTotals = Boolean(S && S.cockpit && S.cockpit.totals);
-  const cockpitTotals = val(S && S.cockpit && S.cockpit.totals);
-  const sumKnown = (arr, key) => {
-    const nums = arr.map((x) => x[key]).filter((v) => typeof v === "number");
-    return nums.length ? nums.reduce((a, b) => a + b, 0) : null;
-  };
-  const sumAllKnown = (arr, key) => {
-    if (!arr.length || arr.some((x) => typeof x[key] !== "number")) return null;
-    return arr.reduce((a, x) => a + x[key], 0);
-  };
-  const totalFresh = hasCockpitTotals ? (cockpitTotals && typeof val(cockpitTotals.freshInput) === "number" ? val(cockpitTotals.freshInput) : null) : sumKnown(ACTORS, "fresh");
-  const totalOut = hasCockpitTotals ? (cockpitTotals && typeof val(cockpitTotals.output) === "number" ? val(cockpitTotals.output) : null) : sumKnown(ACTORS, "output");
-  const totalCached = hasCockpitTotals ? (cockpitTotals && typeof val(cockpitTotals.cachedReplay) === "number" ? val(cockpitTotals.cachedReplay) : null) : sumKnown(ACTORS, "cached");
-  const totalTurns = hasCockpitTotals
-    ? (cockpitTotals && typeof val(cockpitTotals.turns) === "number" ? val(cockpitTotals.turns) : null)
-    : sumAllKnown(ACTORS, "turns");
-  const totalRealTok = totalFresh !== null || totalOut !== null ? (totalFresh || 0) + (totalOut || 0) : null;
+  const cockpitTotalsWrap = S && S.cockpit && S.cockpit.totals ? S.cockpit.totals : null;
+  const cockpitTotals = val(cockpitTotalsWrap);
+  const cockpitTotalsReason = cockpitTotalsWrap && cockpitTotalsWrap.reason ? why(cockpitTotalsWrap) : cockpitMissingReason;
+  const totalFresh = cockpitTotals && typeof cockpitTotals.freshInput === "number" ? cockpitTotals.freshInput : null;
+  const totalOut = cockpitTotals && typeof cockpitTotals.output === "number" ? cockpitTotals.output : null;
+  const totalCached = cockpitTotals && typeof cockpitTotals.cachedReplay === "number" ? cockpitTotals.cachedReplay : null;
+  const totalInput = cockpitTotals && typeof cockpitTotals.input === "number" ? cockpitTotals.input : (totalFresh !== null && totalCached !== null ? totalFresh + totalCached : null);
+  const totalTurns = cockpitTotals && typeof cockpitTotals.turns === "number" ? cockpitTotals.turns : null;
+  const totalRealTok = totalFresh !== null && totalOut !== null ? totalFresh + totalOut : null;
 
-  const dLeadMin = (val(S && S.time && S.time.designLead) || {}).minutes ?? 0;
-  const dispSlotMin = (val(S && S.time && (S.time.dispatchSlots || S.time.codexSlots)) || {}).minutes ?? 0;
-  const verSlotMin = ((val(S && S.time && S.time.verification) || {}).minutes ?? 0) + ((val(S && S.time && S.time.queue) || {}).minutes ?? 0);
-  const waitUserMin = (val(S && S.time && S.time.waitingUser) || {}).minutes ?? 0;
+  const dLeadObj = val(S && S.time && S.time.designLead);
+  const dispSlotObj = val(S && S.time && S.time.dispatchSlots);
+  const verTimeObj = val(S && S.time && S.time.verification);
+  const queueTimeObj = val(S && S.time && S.time.queue);
+  const waitUserObj = val(S && S.time && S.time.waitingUser);
   const longPauseObj = val(S && S.time && S.time.longPause) || null;
-  const longPauseMin = longPauseObj && typeof longPauseObj.minutes === "number" ? longPauseObj.minutes : 0;
+  const dLeadMin = dLeadObj && typeof dLeadObj.minutes === "number" ? dLeadObj.minutes : null;
+  const dispSlotMin = dispSlotObj && typeof dispSlotObj.minutes === "number" ? dispSlotObj.minutes : null;
+  const verMin = verTimeObj && typeof verTimeObj.minutes === "number" ? verTimeObj.minutes : null;
+  const queueMin = queueTimeObj && typeof queueTimeObj.minutes === "number" ? queueTimeObj.minutes : null;
+  const waitUserMin = waitUserObj && typeof waitUserObj.minutes === "number" ? waitUserObj.minutes : null;
+  const longPauseMin = longPauseObj && typeof longPauseObj.minutes === "number" ? longPauseObj.minutes : null;
 
   const shortSeat = { director: "设计", design: "设计", main: "设计", subagent: "子代理", engineering: "工程", review: "审查", research: "调研", "spec-review": "独审", watch: "巡检" };
   const compactModel = (m) => {
@@ -843,55 +632,19 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 
   const collectAllSpans = () => {
     const lanes = [];
-    const dSpans = rawLeadSpans || [];
     const designActors = ACTORS.filter((a) => a.seat === "director" || a.seat === "design" || a.seat === "main");
-    if (!designActors.length) {
-      if (dSpans.length) {
+    for (const da of designActors) {
+      if (Array.isArray(da.spans) && da.spans.length) {
         lanes.push({
-          actorId: "",
-          label: "设计负责人",
-          fullLabel: "设计负责人",
+          actorId: da.id,
+          label: `设计·${fwInfo(da.fw).label}·${compactModel(da.model)}(${da.effort})`,
+          fullLabel: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model} · ${da.effort}`,
           color: "var(--design)",
-          spans: dSpans
+          spans: da.spans.map((s) => ({
+            ...s,
+            desc: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model}(${da.effort})`
+          }))
         });
-      }
-    } else {
-      let hasUnattributedDesign = false;
-      const knownDesignIntervals = [];
-      for (const da of designActors) {
-        let sp = null;
-        if (Array.isArray(da.spans)) {
-          sp = da.spans;
-          knownDesignIntervals.push(...sp);
-        } else if (designActors.length === 1) {
-          sp = dSpans;
-        } else {
-          hasUnattributedDesign = true;
-        }
-        if (sp && sp.length) {
-          lanes.push({
-            actorId: da.id,
-            label: `设计·${fwInfo(da.fw).label}·${compactModel(da.model)}(${da.effort})`,
-            fullLabel: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model} · ${da.effort}`,
-            color: "var(--design)",
-            spans: sp.map((s) => ({
-              ...s,
-              desc: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model}(${da.effort})`
-            }))
-          });
-        }
-      }
-      if (hasUnattributedDesign && dSpans.length) {
-        const remaining = subtractIntervals(dSpans, knownDesignIntervals);
-        if (remaining.length) {
-          lanes.push({
-            actorId: "",
-            label: "设计负责人(未拆分会话)",
-            fullLabel: "设计负责人（旧版评分表未记录分会话时段）",
-            color: "var(--design)",
-            spans: remaining
-          });
-        }
       }
     }
     const subActors = ACTORS.filter((a) => a.seat === "subagent" && Array.isArray(a.spans) && a.spans.length);
@@ -937,77 +690,107 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
         desc: `${d.record || "派发"}${d.ticket ? ` (#${d.ticket})` : ""} · ${val(d.category) || "执行"} · ${fmtMin(val(d.minutes))}${u ? ` · 新读 ${fmtTok(u.fresh)} / 写 ${fmtTok(u.output)}` : ""}`
       });
     }
-    if (!byLane.size) {
-      for (const l of val(S && S.dispatchLanes) || []) {
-        const sp = ((val(l.time) || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "ok", desc: `${fwInfo(l.framework).label} 派发时段` })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
-        if (sp.length) lanes.push({ actorId: "", label: `派发 · ${fwInfo(l.framework).label}`, color: fwInfo(l.framework).solid, spans: sp });
-      }
-    } else {
-      lanes.push(...byLane.values());
-    }
-    const vSpans = ((val(S && S.time && S.time.verification) || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "ok", desc: "验证与门禁检查" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
+    lanes.push(...byLane.values());
+    const vSpans = ((verTimeObj || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "ok", desc: "验证与门禁检查" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
     if (vSpans.length) lanes.push({ actorId: "", label: "验证门禁", color: "var(--verify)", spans: vSpans });
-    const wSpans = ((val(S && S.time && S.time.waitingUser) || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "wait", desc: "等用户确认 (10~45m)" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
+    const wSpans = ((waitUserObj || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "wait", desc: "等用户确认 (10~45m)" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
     if (wSpans.length) lanes.push({ actorId: "", label: "等你确认", color: "var(--wait)", spans: wSpans });
     return lanes;
   };
 
   const TL_LANES = collectAllSpans();
   const allPts = TL_LANES.flatMap((l) => l.spans);
-  const minTs = allPts.length ? Math.min(...allPts.map((s) => s.a)) : (S && S.startedAt ? Date.parse(S.startedAt) : null);
-  const maxTs = allPts.length ? Math.max(...allPts.map((s) => s.b)) : (S && S.cutoffAt ? Date.parse(S.cutoffAt) : null);
-  const wallMin = minTs !== null && maxTs !== null && maxTs >= minTs ? (maxTs - minTs) / 60000 : null;
 
-  const unionActiveMin = (() => {
-    const workSpans = TL_LANES.filter((l) => l.color !== "var(--wait)").flatMap((l) => l.spans).map((s) => [s.a, s.b]).sort((x, y) => x[0] - y[0]);
-    if (!workSpans.length) return dLeadMin + dispSlotMin + verSlotMin || null;
-    const merged = [];
-    for (const [a, b] of workSpans) {
-      const last = merged[merged.length - 1];
-      if (last && a <= last[1]) last[1] = Math.max(last[1], b);
-      else merged.push([a, b]);
-    }
-    return merged.reduce((s, [a, b]) => s + (b - a) / 60000, 0);
-  })();
+  const activeWrap = S && S.cockpit && S.cockpit.activeMinutes ? S.cockpit.activeMinutes : null;
+  const unionActiveMin = activeWrap ? val(activeWrap) : null;
+  const activeReason = activeWrap ? why(activeWrap) : cockpitMissingReason;
+  const wallWrap = S && S.cockpit && S.cockpit.wallSpanMinutes ? S.cockpit.wallSpanMinutes : null;
+  const wallMin = wallWrap ? val(wallWrap) : null;
+  const wallReason = wallWrap ? why(wallWrap) : cockpitMissingReason;
 
   const goals = R.goals || [];
   const judgedGoals = goals.filter((g) => g.status !== "info");
   const metGoals = judgedGoals.filter((g) => g.status === "good" || g.status === "达成").length;
-  const engDispatches = dispatches.filter((d) => (d.seat || (d.ticket ? "engineering" : "review")) === "engineering");
-  const ticketIds = [...new Set(engDispatches.map((d) => d.ticket).filter((t) => t !== null && t !== undefined))];
-  const reworkTickets = new Set(engDispatches.filter((d) => val(d.category) === "返工" || /^gh-\d+-\d+$/.test(d.record || "") || (val(d.exitCode) !== null && val(d.exitCode) !== 0)).map((d) => d.ticket).filter(Boolean));
-  const firstPassCount = Math.max(0, ticketIds.length - reworkTickets.size);
-  const passPct = ticketIds.length ? Math.round((firstPassCount / ticketIds.length) * 100) : 100;
+  const ticketsWrap = S && S.cockpit && S.cockpit.tickets ? S.cockpit.tickets : null;
+  const ticketStats = val(ticketsWrap);
+  const ticketsReason = ticketsWrap ? why(ticketsWrap) : (S && S.cockpit ? findMissingReason("dispatches", cockpitMissingReason) : cockpitMissingReason);
+  const ticketTotal = ticketStats && typeof ticketStats.total === "number" ? ticketStats.total : null;
+  const firstPassCount = ticketStats && typeof ticketStats.firstPass === "number" ? ticketStats.firstPass : null;
+  const reworkCount = ticketStats && typeof ticketStats.rework === "number" ? ticketStats.rework : 0;
+  const redispatchCount = ticketStats && typeof ticketStats.redispatch === "number" ? ticketStats.redispatch : 0;
+  const interruptedCount = ticketStats && typeof ticketStats.interrupted === "number" ? ticketStats.interrupted : 0;
+  const passPct = ticketTotal && ticketTotal > 0 && firstPassCount !== null ? Math.round((firstPassCount / ticketTotal) * 100) : null;
+  const mergesText = merges && typeof merges.landCount === "number" ? `${merges.landCount} 次` : `未记录（${findMissingReason("merges", "缺少验证台账")}）`;
 
   const KPIS = [
     {
       v: judgedGoals.length ? `${metGoals} / ${judgedGoals.length}` : `${(R.delivered || []).length} 项`,
       k: judgedGoals.length ? "量化与核对目标达成" : "核心模块交付",
-      n: goals.length > judgedGoals.length ? `另 ${goals.length - judgedGoals.length} 项仅报告对比` : `交付 ${(R.delivered || []).length} 组模块`,
-      pct: judgedGoals.length ? Math.round((metGoals / judgedGoals.length) * 100) : 100,
+      n: judgedGoals.length
+        ? `环：已达成 / 判定目标（${metGoals}/${judgedGoals.length}）${goals.length > judgedGoals.length ? ` · 另 ${goals.length - judgedGoals.length} 项仅对比` : ""}`
+        : `交付 ${(R.delivered || []).length} 组模块 · 未设判定目标分母，无比例环`,
+      pct: judgedGoals.length ? Math.round((metGoals / judgedGoals.length) * 100) : null,
       color: "var(--good)"
     },
-    {
-      v: ticketIds.length ? `${firstPassCount} / ${ticketIds.length}` : "100%",
-      k: ticketIds.length ? `工程工单一次通过 ${passPct}%` : "纯主会话定稿闭环",
-      n: dispatches.length ? `共 ${dispatches.length} 次派发 · 合并 ${merges ? merges.landCount : ticketIds.length} 次` : "外部 CLI 派发 0 次",
-      pct: passPct,
-      color: "var(--agy)"
-    },
-    {
-      v: fmtMin(unionActiveMin),
-      k: "Agent 净干活时长",
-      n: wallMin !== null ? `日历跨度 ${fmtMin(wallMin)}${longPauseMin > 0 ? `（停工 ${fmtMin(longPauseMin)}）` : ""}` : "按有效记录汇总",
-      pct: wallMin ? Math.min(100, Math.max(18, Math.round(((unionActiveMin || 0) / wallMin) * 100))) : 80,
-      color: "var(--pi)"
-    },
-    {
-      v: fmtTok(totalRealTok),
-      k: "真实干活 Token (新读+写出)",
-      n: totalFresh !== null ? `首次新读 ${fmtTok(totalFresh)} · 写出 ${fmtTok(totalOut)}` : "部分旧日志未记分项",
-      pct: totalRealTok !== null && totalCached !== null ? Math.max(12, Math.min(98, 100 - Math.round((totalCached / Math.max(1, totalRealTok + totalCached)) * 80))) : 75,
-      color: "var(--design)"
-    }
+    ticketStats === null
+      ? {
+        v: "未记录",
+        k: "工程工单一次通过数",
+        n: `未记录：${ticketsReason} · 合并 ${mergesText}`,
+        pct: null,
+        color: "var(--agy)"
+      }
+      : ticketTotal === 0
+        ? {
+          v: "0 张工单",
+          k: dispatches.length ? "非工单 / 辅助派发" : "纯主会话执行（0 张工单）",
+          n: `共 ${dispatches.length} 次派发 · 合并 ${mergesText} · 工单分母为 0，无比例环`,
+          pct: null,
+          color: "var(--agy)"
+        }
+        : {
+          v: `${firstPassCount} / ${ticketTotal}`,
+          k: `工程工单一次通过 ${passPct}%${ticketsWrap && ticketsWrap.complete === false ? "（待核）" : ""}`,
+          n: `环：一次通过(首派退出0且无返工/重派) / 总工单（${firstPassCount}/${ticketTotal}）· 返工 ${reworkCount} · 重派 ${redispatchCount}${interruptedCount ? ` · 中断 ${interruptedCount}` : ""} · 合并 ${mergesText}`,
+          pct: passPct,
+          color: "var(--agy)"
+        },
+    unionActiveMin === null
+      ? {
+        v: "未记录",
+        k: "Agent 净干活时长",
+        n: `未记录：${activeReason} · 日历跨度 ${wallMin !== null ? fmtMin(wallMin) : `未记录（${wallReason}）`}`,
+        pct: null,
+        color: "var(--pi)"
+      }
+      : {
+        v: fmtMin(unionActiveMin),
+        k: `Agent 净干活时长${activeWrap && activeWrap.complete === false ? "（已知部分）" : ""}`,
+        n: wallMin !== null && wallMin > 0
+          ? `日历跨度 ${fmtMin(wallMin)}${longPauseMin && longPauseMin > 0 ? `（停工 ${fmtMin(longPauseMin)}）` : ""} · 环：净干活 / 日历跨度（${fmtMin(unionActiveMin)}/${fmtMin(wallMin)}）`
+          : wallMin === 0
+            ? "日历跨度 0m · 分母为 0，无比例环"
+            : `日历跨度未记录（${wallReason}）· 分母缺失，无比例环`,
+        pct: wallMin !== null && wallMin > 0 ? Math.round((unionActiveMin / wallMin) * 100) : null,
+        color: "var(--pi)"
+      },
+    totalRealTok === null
+      ? {
+        v: "未记录",
+        k: "真实干活 Token (新读+写出)",
+        n: `未记录：${cockpitTotalsReason}`,
+        pct: null,
+        color: "var(--design)"
+      }
+      : {
+        v: fmtTok(totalRealTok),
+        k: `真实干活 Token (新读+写出)${cockpitTotalsWrap && cockpitTotalsWrap.complete === false ? "（已知部分）" : ""}`,
+        n: totalInput !== null && totalInput > 0
+          ? `首次新读 ${fmtTok(totalFresh)} · 写出 ${fmtTok(totalOut)} · 缓存 ${fmtTok(totalCached)} · 环：缓存重读 / 总输入（${fmtTok(totalCached)}/${fmtTok(totalInput)}）`
+          : `首次新读 ${fmtTok(totalFresh)} · 写出 ${fmtTok(totalOut)} · 总输入为 0，无比例环`,
+        pct: totalCached !== null && totalInput !== null && totalInput > 0 ? Math.round((totalCached / totalInput) * 100) : null,
+        color: "var(--design)"
+      }
   ];
 
   const SHOTS = [
@@ -1022,22 +805,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     })))
   ];
 
-  const TAKEAWAYS = (R.takeaways && R.takeaways.length) ? R.takeaways : [
-    {
-      title: "⏱ 耗时与并发结构",
-      body: `净干活 ${fmtMin(unionActiveMin)}（设计 ${fmtMin(dLeadMin)} · 派发 ${fmtMin(dispSlotMin)} · 验证 ${fmtMin(verSlotMin)}）${longPauseMin > 0 ? `，已自动剥离 ${fmtMin(longPauseMin)} 长停工空档` : ""}。`
-    },
-    {
-      title: "🏅 四元组协作表现",
-      body: `共 ${ACTORS.length} 组（角色·框架·模型·思考强度）参演；${ver ? `完整验证 ${ver.fullCount} 次、静态检查 ${ver.staticCount} 次，` : ""}流程故障 0 次。`
-    },
-    {
-      title: "🧮 Token 账面拆解",
-      body: totalRealTok !== null
-        ? `真实新读 ${fmtTok(totalFresh)} + 思考写出 ${fmtTok(totalOut)}${totalCached ? `；另 ${fmtTok(totalCached)} 为多轮工具自动复用的打折历史缓存` : ""}。`
-        : "部分历史记录未包含缓存分项，详见下方四元组表与数据口径。"
-    }
-  ];
+  const TAKEAWAYS = Array.isArray(R.takeaways) ? R.takeaways.filter((t) => t && (t.title || t.body)) : [];
 
   const state = {
     topTab: "overview",
@@ -1050,12 +818,13 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
   document.title = `spec #${R.spec} 汇报：${R.title || ""}`;
 
   const renderKpiRing = (pct, color) => {
+    if (pct === null || pct === undefined || !Number.isFinite(Number(pct))) return "";
     const r = 18, c = 2 * Math.PI * r;
-    const p = Math.max(0, Math.min(100, Number(pct) || 0));
-    const dash = (Math.max(6, p) / 100) * c;
+    const p = Math.max(0, Math.min(100, Math.round(Number(pct))));
+    const dash = (p / 100) * c;
     return `<svg class="kpi-ring" viewBox="0 0 46 46" aria-hidden="true">
       <circle cx="23" cy="23" r="${r}" fill="none" stroke="var(--wash2)" stroke-width="4.5"/>
-      <circle cx="23" cy="23" r="${r}" fill="none" stroke="${color}" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 23 23)"/>
+      ${p > 0 ? `<circle cx="23" cy="23" r="${r}" fill="none" stroke="${color}" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 23 23)"/>` : ""}
       <text x="23" y="26.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--ink)">${p}%</text>
     </svg>`;
   };
@@ -1233,7 +1002,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 
   const renderTimelineBox = () => {
     if (!AXIS || !TL_LANES.length) {
-      return `<div class="timeline-box"><div data-slot="timeline"><div class="muted">评分表暂无可视化时段记录。</div></div></div>`;
+      return `<div class="timeline-box"><div data-slot="timeline"><div class="muted">未记录：${esc(S && S.cockpit ? "评分表暂无可视化时段记录" : cockpitMissingReason)}</div></div></div>`;
     }
     const W = 920, LW = 216, RP = 14, PW = W - LW - RP, rowH = 26;
     const gapCount = AXIS.segs.length - 1;
@@ -1266,7 +1035,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
     return `<div class="timeline-box">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:12px" class="muted">
         <span><b style="color:var(--ink)">全局并发泳道时间线</b>（悬停色块查看时段、工单与真实 Token）</span>
-        <span>日历跨度 ${fmtMin(wallMin)}${foldedMin >= 45 ? ` · 已自动折叠 ${fmtMin(foldedMin)} 停工空档` : ""}</span>
+        <span>日历跨度 ${wallMin !== null ? fmtMin(wallMin) : `未记录（${esc(wallReason)}）`}${foldedMin >= 45 ? ` · 已自动折叠 ${fmtMin(foldedMin)} 停工空档` : ""}</span>
       </div>
       <div data-slot="timeline">
         <svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="分角色与框架并发泳道时间线">
@@ -1338,7 +1107,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
   };
 
   const renderGroupedBarSvg = () => {
-    if (!ACTORS.length) return `<div class="muted">暂无席位耗时与用量记录。</div>`;
+    if (!ACTORS.length) return `<div class="muted">未记录：${esc(cockpitSeatsReason)}</div>`;
     const maxMin = Math.max(...ACTORS.map((a) => a.minutes || 0), 1);
     const maxTok = Math.max(...ACTORS.map((a) => (a.fresh || 0) + (a.output || 0)), 1);
     const W = 560, L = 142, Rpad = 148, PW = W - L - Rpad, rowH = 52, H = 12 + ACTORS.length * rowH;
@@ -1369,24 +1138,32 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 
   const renderChartsLens = () => {
     const timeSegs = [
-      { label: "设计统筹 / 主会话", val: dLeadMin, color: "#d97706", desc: "Spec 定稿、拆单、设计工单与验收把关" },
-      { label: "派发写码 / 审查", val: dispSlotMin, color: "#0d9488", desc: "各工程与审查席位并发去重后的活跃时长" },
-      { label: "验证门禁与排队", val: verSlotMin, color: "#7c3aed", desc: "静态检查、land 完整验证与本机 CI" },
-      { label: "等你确认 (10~45m)", val: waitUserMin, color: "#db2777", desc: "等待人工反馈与拍板确认的真实间隔" },
-      { label: "长停工空档 (>45m)", val: longPauseMin, color: "#94a3b8", desc: "超过 45 分钟的跨夜或配额等待，已从干活时长剥离" }
+      { label: "设计统筹 / 主会话", val: dLeadMin, missingKey: "time.designLead", color: "#d97706", desc: "Spec 定稿、拆单、设计工单与验收把关" },
+      { label: "派发写码 / 审查", val: dispSlotMin, missingKey: "time.dispatchSlots", color: "#0d9488", desc: "各工程与审查席位并发去重后的活跃时长" },
+      { label: "验证执行", val: verMin, missingKey: "time.verification", color: "#7c3aed", desc: "静态检查、land 完整验证与本机 CI" },
+      { label: "验证排队等待", val: queueMin, missingKey: "time.queue", color: "#a855f7", desc: "台账记录的排队等待实际验证开始前时段" },
+      { label: "等你确认 (10~45m)", val: waitUserMin, missingKey: "time.waitingUser", color: "#db2777", desc: "等待人工反馈与拍板确认的真实间隔" },
+      { label: "长停工空档 (>45m)", val: longPauseMin, missingKey: "time.longPause", color: "#94a3b8", desc: "超过 45 分钟的跨夜或配额等待，已从干活时长剥离" }
     ];
+    const missingTimeNotes = timeSegs
+      .filter((seg) => seg.val === null)
+      .map((seg) => `${seg.label}（${findMissingReason(seg.missingKey, "未记录")}）`);
+    const positiveTimeSegs = timeSegs.filter((s) => typeof s.val === "number" && s.val > 0);
     return `<div class="chart-split">
       <div class="chart-card">
         <div>
           <div class="chart-title">🍩 时间去向构成环形图（悬停扇区查看明细）</div>
-          <div class="chart-sub">把「真干活」「等你确认」与「>45m 停工空档」彻底拆开</div>
+          <div class="chart-sub">比例 = 各分项时长 / 已记录分项时长之和（分项间可重叠，非净干活并集）；中心为 cockpit 净干活并集</div>
         </div>
-        ${renderDonutSvg(timeSegs, fmtMin(unionActiveMin), "净干活时长", fmtMin)}
+        ${positiveTimeSegs.length
+          ? renderDonutSvg(timeSegs, fmtMin(unionActiveMin), unionActiveMin !== null ? "净干活(席位∪验证)" : "净干活未记录", fmtMin)
+          : `<div class="muted">未记录：${esc(missingTimeNotes.join("；") || cockpitMissingReason)}</div>`}
+        ${positiveTimeSegs.length && missingTimeNotes.length ? `<div class="muted" style="font-size:11.5px;margin-top:6px">缺失分项：${esc(missingTimeNotes.join("；"))}</div>` : ""}
       </div>
       <div class="chart-card">
         <div>
           <div class="chart-title">📊 各席位耗时 vs 真实干活 Token 分组柱状图</div>
-          <div class="chart-sub">上柱 = 活跃时长，下柱 = 首次新读材料(蓝) + 思考与写出(绿)；点击行筛选该角色</div>
+          <div class="chart-sub">上柱 = 席位活跃时长 / 最大席位时长，下柱 = (首次新读 + 写出) / 最大席位干活 Token；点击行筛选</div>
         </div>
         <div style="margin:auto 0">${renderGroupedBarSvg()}</div>
       </div>
@@ -1394,48 +1171,54 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
   };
 
   const renderTokensLens = () => {
-    const tokSegs = [
-      { label: "首次新读材料", val: totalFresh || 0, color: "#2563eb", desc: "首次读入上下文的代码、文档与测试输出" },
-      { label: "思考与写出", val: totalOut || 0, color: "#16a34a", desc: "模型推理链与产出的代码、审查和汇报" },
-      { label: typeof totalTurns === "number" ? `多轮历史缓存重读(${totalTurns}轮)` : "多轮历史缓存重读(轮数未记录)", val: totalCached || 0, color: "#94a3b8", desc: "每轮工具调用自动重发的前文历史，命中缓存大幅打折" }
-    ];
+    const tokSegs = totalRealTok !== null && totalCached !== null ? [
+      { label: "首次新读材料", val: totalFresh, color: "#2563eb", desc: "首次读入上下文的代码、文档与测试输出" },
+      { label: "思考与写出", val: totalOut, color: "#16a34a", desc: "模型推理链与产出的代码、审查和汇报" },
+      { label: typeof totalTurns === "number" ? `多轮历史缓存重读(${totalTurns}轮)` : "多轮历史缓存重读(轮数未记录)", val: totalCached, color: "#94a3b8", desc: "每轮工具调用自动重发的前文历史，命中缓存大幅打折" }
+    ] : [];
     const palette = ["#2563eb", "#0d9488", "#ea580c", "#7c3aed", "#db2777", "#4f46e5"];
-    const seatSegs = ACTORS.map((a, i) => ({
+    const seatSegs = ACTORS.filter((a) => typeof a.fresh === "number" && typeof a.output === "number").map((a, i) => ({
       label: `${a.role} (${fwInfo(a.fw).label})`,
-      val: (a.fresh || 0) + (a.output || 0),
+      val: a.fresh + a.output,
       color: palette[i % palette.length],
       desc: `${a.model} · 思考:${a.effort}｜首次新读 ${fmtTok(a.fresh)} + 思考写出 ${fmtTok(a.output)}`
     }));
+    const missingTokSeats = ACTORS.filter((a) => a.fresh === null || a.output === null).map((a) => a.role);
     const maxReal = Math.max(...ACTORS.map((a) => (a.fresh || 0) + (a.output || 0)), 1);
 
     return `<div class="two-col">
       <div class="chart-card">
         <div>
           <div class="chart-title">🧮 账面总 Token 三段式结构图</div>
-          <div class="chart-sub">灰色是工具多轮调用自动重发的历史缓存，蓝绿才是真实新读与思考产出</div>
+          <div class="chart-sub">比例 = 各分项 / (首次新读 + 写出 + 缓存重读) 账面总计；中心显示首次新读 + 写出</div>
         </div>
-        ${renderDonutSvg(tokSegs, fmtTok(totalRealTok), "首次新读 + 写出", fmtTok)}
+        ${tokSegs.some((s) => s.val > 0)
+          ? renderDonutSvg(tokSegs, fmtTok(totalRealTok), "首次新读 + 写出", fmtTok)
+          : `<div class="muted">未记录：${esc(cockpitTotalsReason)}</div>`}
       </div>
       <div class="chart-card">
         <div>
           <div class="chart-title">🥧 真实干活 Token 按四元组席位占比</div>
-          <div class="chart-sub">剔除缓存重读噪音后，对比各角色与模型的真实干活投入</div>
+          <div class="chart-sub">比例 = 单席位(首次新读 + 写出) / 完整记录席位真实干活 Token 之和</div>
         </div>
-        ${renderDonutSvg(seatSegs, fmtTok(totalRealTok), `${ACTORS.length} 个席位合计`, fmtTok)}
+        ${seatSegs.some((s) => s.val > 0)
+          ? renderDonutSvg(seatSegs, fmtTok(totalRealTok), `${seatSegs.length}/${ACTORS.length} 席位有分项`, fmtTok)
+          : `<div class="muted">未记录：${esc(ACTORS.length ? "席位用量分项缺失" : cockpitSeatsReason)}</div>`}
+        ${missingTokSeats.length ? `<div class="muted" style="font-size:11.5px;margin-top:6px">以下席位用量缺失未计入环图：${esc(missingTokSeats.join("、"))}</div>` : ""}
       </div>
     </div>
     <div class="chart-card">
       <div class="chart-title">🏅 四元组（角色/席位 · 框架 · 模型 · 思考强度）投入产出对比表</div>
-      <div class="chart-sub">固定拆分首次新读材料、思考与写出、多轮历史缓存重读及可写席位动手前读档耗时</div>
+      <div class="chart-sub">全部数值直接读取 scorecard.cockpit.seats：首次新读、思考与写出、缓存重读、工单一次通过数及动手前读档中位耗时</div>
       <div class="tw">
-        <table class="clean">
+        ${ACTORS.length ? `<table class="clean">
           <thead>
             <tr>
               <th>角色/席位 · 框架 · 模型 · 思考强度</th>
               <th>活跃时长</th>
               <th>首次新读材料 + 思考与写出</th>
               <th>多轮历史缓存重读</th>
-              <th>完成情况与动手前读档耗时</th>
+              <th>工单与完成情况 / 动手前读档</th>
             </tr>
           </thead>
           <tbody>
@@ -1463,14 +1246,18 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
               </tr>`;
             }).join("")}
           </tbody>
-        </table>
+        </table>` : `<div class="muted">未记录：${esc(cockpitSeatsReason)}</div>`}
       </div>
     </div>`;
   };
 
   const renderWaterfallLens = (openAll) => {
+    const dispatchRaw = S && S.dispatches ? val(S.dispatches) : null;
+    if (!Array.isArray(dispatchRaw)) {
+      return `<div class="muted" style="padding:12px;border-radius:9px;background:var(--wash)">未记录：${esc(findMissingReason("dispatches", cockpitMissingReason))}</div>`;
+    }
     if (!dispatches.length && !batches.length) {
-      return `<div class="muted" style="padding:12px;border-radius:9px;background:var(--wash)">本场为纯主会话执行模式（0 次外部 CLI 派发，无缺项）。</div>`;
+      return `<div class="muted" style="padding:12px;border-radius:9px;background:var(--wash)">本场为纯主会话执行模式（0 次外部 CLI 派发）。</div>`;
     }
     const notesMap = R.dispatchNotes || {};
     const dispatchByRecord = new Map(dispatches.map((d) => [d.record, d]));
@@ -1480,20 +1267,14 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
 
     const batchHtml = batches.map((b) => {
       const recNames = Array.isArray(b.records) ? b.records : [];
-      const memberDispatches = recNames.map((rec) => dispatchByRecord.get(rec)).filter(Boolean);
       const anomMap = new Map(((b.anomalies) || []).map((a) => [a.record || a.source, a.reason || String(a)]));
-      const firstMember = memberDispatches[0] || {};
-      const fw = fwInfo(b.framework || firstMember.framework || firstMember.agent || "codex");
+      const fw = fwInfo(b.framework || "codex");
       const bu = normUsage(b.usage);
-      const totalCount = typeof b.count === "number" ? b.count : (recNames.length || (b.representatives || []).length);
-      const okCount = memberDispatches.length
-        ? memberDispatches.filter((d) => val(d.exitCode) === 0).length
-        : (typeof b.succeeded === "number"
-            ? b.succeeded
-            : (typeof b.okCount === "number"
-                ? b.okCount
-                : (typeof b.successRate === "number" ? Math.round(b.successRate * totalCount) : Math.max(0, totalCount - anomMap.size))));
-      const failCount = Math.max(0, totalCount - okCount);
+      const totalCount = typeof b.count === "number" ? b.count : recNames.length;
+      const okCount = typeof b.successRate === "number"
+        ? Math.round(b.successRate * totalCount)
+        : (typeof b.succeeded === "number" ? b.succeeded : null);
+      const failCount = okCount !== null ? Math.max(0, totalCount - okCount) : null;
       const repSet = new Set((b.representatives || []).map((r) => typeof r === "string" ? r : (r && (r.record || r[0]))).filter(Boolean));
       const detailEntries = (recNames.length ? recNames : [...repSet]).map((rec) => {
         const d = dispatchByRecord.get(rec);
@@ -1503,7 +1284,7 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
       });
       return `<details class="batch-fold" ${openAll ? "open" : ""}>
         <summary>
-          <span>📦 <b>${esc(b.prefix || "批量池")}</b>（同前缀 &gt;10 批自动折叠：<b>${esc(okCount)}/${esc(totalCount)}</b> 成功${failCount ? ` · <span style="color:var(--critical)">${esc(failCount)} 异常</span>` : ""}${b.complete === false ? " · 部分缺数" : ""}）</span>
+          <span>📦 <b>${esc(b.prefix || "批量池")}</b>（同前缀 &gt;10 批自动折叠：<b>${esc(okCount !== null ? okCount : "未记录")}/${esc(totalCount)}</b> 成功${failCount ? ` · <span style="color:var(--critical)">${esc(failCount)} 异常</span>` : ""}${b.complete === false ? " · 部分缺数" : ""}）</span>
           <span class="num">${esc(fw.label)} ｜ 累计 ${esc(fmtMin(val(b.minutes) ?? b.wallMin))} · ${esc(bu ? `新读 ${fmtTok(bu.fresh)} / 写 ${fmtTok(bu.output)}` : "用量部分未记录")}</span>
         </summary>
         <div class="tw" style="margin-top:8px">
@@ -1723,9 +1504,9 @@ footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: 
               </div>
             </div>
 
-            <div class="takeaway-strip">
+            ${TAKEAWAYS.length ? `<div class="takeaway-strip">
               ${TAKEAWAYS.map((t) => `<div class="takeaway-card"><b>${esc(t.title)}</b>${esc(t.body)}</div>`).join("")}
-            </div>
+            </div>` : ""}
 
             ${renderTimelineBox()}
 
