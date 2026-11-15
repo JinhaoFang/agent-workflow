@@ -18,7 +18,7 @@ npx skills add JinhaoFang/agent-workflow#workflow-v6 --skill run-spec --skill se
 
 - `#` 后面是版本 tag。安装工具按这个 tag 取文件，目标仓库固定在这个版本上，不会跟着 `main` 变。
 - 两个技能不进目标仓库的 git。`-a claude-code` 总要带，脚本路径以 `.claude/skills/` 为准；设计负责人或席位用 Codex、pi、agy 时再加 `-a codex`（它们读 `.agents/skills/`）。派出去的 agent 由派发层按名称屏蔽这两个技能。
-- 装完运行 `node .claude/skills/run-spec/scripts/tickets.ts doctor`，再提交 `skills-lock.json` 里变了的两项。
+- 装完运行 `node .claude/skills/run-spec/scripts/tickets.ts doctor`，再提交 `skills-lock.json` 里变了的两项。现在的安装器会把锁文件升到 `version: 2` 并改动别的条目，只留这两项的变化，其余还原；锁文件已经是目标版本时，重装后整份还原。
 - 前提：Matt 的技能（`npx skills add mattpocock/skills`），`/setup-run-spec` 会检查，缺了会给出安装办法。派发层随 `run-spec` 自带，不再需要 DispatchDock。
 
 ## 版本
