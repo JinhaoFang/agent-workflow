@@ -28,7 +28,7 @@
 
 ## 下一步
 
-**发布与安装 v6**：`workflow-v6`（含 spec #50、#51）就绪后合并至 `main` 并打 tag。`video-studio`、`design-system`、`PathJX`、`organize_management` 四个消费仓库按需升级到 `#workflow-v6`，跑 `doctor` 后提交锁文件；PathJX 产品线机器由用户重装。真实业务 spec 用新汇报模板和 `agy` 席位的效果，按 `docs/research/run-spec-migration.md`「用过以后再评估」持续跟踪。
+**用过 v6 再评估**：`workflow-v6` 11-15 发布，四个消费仓库的锁文件已升到 v6（PathJX-01 #292、design-system #101、organize_management #8、video-studio #145）；各机器的主工作区等手头的 spec 收尾后重装，PathJX 产品线机器由用户重装。真实业务 spec 用新汇报模板和 `agy` 席位的效果，按 `docs/research/run-spec-migration.md`「用过以后再评估」跟踪。下个版本先看观察记录第 141—143 条：Actions 上 `report-check` 收尾不稳、CI 约定过时，`run` 不认绝对路径，安装器改锁文件格式。
 
 ## 待定
 
