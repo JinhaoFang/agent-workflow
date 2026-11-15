@@ -14,7 +14,7 @@
 
 ## 用户从哪里进入
 
-设计负责人交付独立 HTML 汇报后，用随 `run-spec` 分发的 `tickets.ts report-check` 检查。历史单视图回归样本是 `docs/reports/spec-22-agent-seats.html`，V6 多页签驾驶舱样本是 `docs/reports/spec-51-report-v6.html`；验收别的汇报时只替换文件参数，证据另开目录。检查量法及退出码以 `report-check --help` 为准。
+设计负责人交付独立 HTML 汇报后，用随 `run-spec` 分发的 `tickets.ts report-check` 检查。历史单视图回归样本是 `docs/reports/spec-22-agent-seats.html`，v6 页签版样本是 `docs/reports/spec-51-report-v6.html`；验收别的汇报时只替换文件参数，证据另开目录。检查量法及退出码以 `report-check --help` 为准。
 
 ## 怎么驱动
 
