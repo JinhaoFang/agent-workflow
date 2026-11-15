@@ -12,12 +12,12 @@ disable-model-invocation: true
 
 ## 1. 查看
 
-先运行自检命令，它逐项列出 git、`gh`、Node、标签、合并设置、Matt 设置的产物、技能隔离、执行配置、忽略规则（含根目录的 `.env`）和 `AGENTS.md` 的情况。还没接入的仓库，配置相关的项不通过是正常的。
+先运行自检命令，列出 git、`gh`、Node、标签、合并设置、Matt 产物、技能隔离、执行配置、忽略规则（含根 `.env`）和 `AGENTS.md` 现状。未接入仓库里配置项不通过属正常。
 
-再查自检命令管不到的，和它的结果一起整理成一张事实表：
+再查自检管不到的项，合并成一张事实表：
 
-- **Matt 的技能**：装了哪些。装了 `implement-spec` 的，建议移除：它是另一套执行 spec 的流程（Claude 子代理、不分执行角色），和 `run-spec` 并存时两边的约定会混用。
-- **派发**：`run-spec` 自带派发层，不需要 DispatchDock。装了它的 `codex-dispatch` 的可以卸掉。装了 `dual-role-workflow` 的，建议卸掉：它的描述按审美分工写，每次会话都会加载；分工规则以 [roles.md](roles.md) 为准。
+- **Matt 的技能**：装了哪些。装了 `implement-spec` 建议移除（它是 Claude 子代理、不分角色的另一套流程，并存会混用约定）。
+- **旧插件清理**：`run-spec` 自带派发层，装了 `codex-dispatch` 或旧 `dual-role-workflow`（按审美分工写）的建议卸掉；分工以 [roles.md](roles.md) 为准。
 - **规则文档**：`docs/roles/` 下有没有设计负责人和工程负责人两份角色文档。
 - **worktree 要用的目录**：哪些不进 git 的目录派出去的 agent 要读（参考资料、第三方技能）。
 - **基线**：包管理器、锁文件和验证命令；用跑派发的那个系统用户实际跑一遍验证命令，记下用时；最近几次 CI 有没有间歇性失败。
@@ -80,15 +80,16 @@ disable-model-invocation: true
 
 - GitHub：建 `role:engineering`、`role:design` 两个标签（`ready-for-human` 来自 Matt 的设置）；合并方式只允许 merge commit，打开合并后自动删除分支。
 - 规则文档：`AGENTS.md` 的角色一节和提交格式、两份角色文档，按 [roles.md](roles.md) 生成：固定部分照写，生成部分用领域画像填，只写仓库规则。和用户一起改，由用户定；仓库已有的命名和结构要改，先问。已有角色文档的仓库，对照模板逐节报告差异，固定部分缺的补上，生成部分和画像对不上的提出来，按思路 3 逐条归类（含被"先读"引用的文档），不是仓库规则的提议移出去，冲突列给用户裁决。
-- 篇幅：生成的三处合计不超过上一版，写之前和写之后各 `wc -c` 一次，结果写进 PR。加一条固定规则先删或并一条；能做成脚本或检查的，不写成规则。
+- 篇幅：生成的三处合计不超过上一版，写前后各 `wc -c` 一次，结果写进 PR。单份 `AGENTS.md` 或 `SKILL.md` 不超过 24,000 字节；加一条固定规则先删或并一条，能做成脚本或检查的不写成规则。
+- 个人席位配置：本机还没有 `~/.config/agent-workflow/seats.json` 时，按第 3 步的选择建好（不进 git，见 [seats.md](seats.md)）。
 - 第 2 步用户同意的可选约定：拆开的登记处、`.gitattributes`、各目录的 README、画图约定。
 
-已经接过的仓库：只报告当前文件和模板的差异，用户同意的才改，不覆盖已有配置。`run-spec` 进了 git 时，提议换成安装的版本：
+已经接过的仓库只报当前文件与模板差异，用户同意才改，不覆盖已有配置。`run-spec` 进了 git 时提议改为安装版：
 
 1. `git rm -r --cached .claude/skills/run-spec`，去掉 `.gitignore` 里为它开的例外；
-2. 运行第 5 步的安装命令重装；
-3. 核对暂存区，然后不带路径提交。只提交指定路径时，git 按磁盘上的现状提交，会把文件重新加回去。
-4. 提醒用户：PR 合并后更新本地 `main`，先 `git fetch origin main:main` 再切过去。先切到还停在旧提交的本地 `main` 再拉取，git 会把 `run-spec` 从磁盘上删掉；删了就重新运行安装命令。
+2. 运行第 5 步安装命令重装；
+3. 核对暂存区后不带路径提交（指定路径会按磁盘现状重新加回）；
+4. 提醒用户：PR 合并后先 `git fetch origin main:main` 再切 `main`（先切旧 `main` 再拉取会从磁盘删掉 `run-spec`，删了重装即可）。
 
 完成标准：文件已提交，标签和 GitHub 设置已生效，PR 已开。
 
@@ -102,7 +103,7 @@ disable-model-invocation: true
    npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
    ```
 
-   `-a claude-code` 总要带（脚本路径以它为准），只用 Claude Code 的可去掉 `-a codex`；派发层会对执行者屏蔽这两个技能。更新完运行自检。安装会改 `skills-lock.json` 里这两项的哈希，要提交；不提交的话主工作区不干净，`land` 会拒绝合并。
+   `-a claude-code` 总要带（脚本路径以它为准）；主会话或席位用 Codex、pi 或 agy 的保留 `-a codex`（写入 `.agents/skills/`），只用 Claude Code 可去掉。派发层对执行者屏蔽这两个技能。更新完运行自检，并提交 `skills-lock.json` 里变了的两项哈希（否则 `land` 因工作区不干净拒绝合并）。
 
 完成标准：自检全部通过，冒烟测试五项都有证据。
 

@@ -424,7 +424,9 @@ test("seat doctor probes configured Codex and Claude paths and ignores unused fr
     assert.match(configured.stdout, /用户 .*seats.json.agents.codex.path/);
     writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { "spec-review": { default: { agent: "codex" } }, watch: { default: { agent: "codex", model: null } } }, agents: { codex: { path: codexPath } } }));
     const unused = f.run(["doctor"], { isolatedPath: true });
-    assert.equal(unused.status, 0, unused.stdout + unused.stderr);
+    assert.equal(unused.status, 1, unused.stdout + unused.stderr);
+    assert.match(unused.stderr, /受限席位 spec-review.default；codex 不支持受限调用/);
+    assert.match(unused.stderr, /受限席位 watch.default；codex 不支持受限调用/);
     assert.doesNotMatch(unused.stdout + unused.stderr, /claude CLI 可用/);
   } finally { f.cleanup(); }
 });
@@ -1330,6 +1332,75 @@ test("doctor finds configured Codex Node and npm wrapper entries without Codex o
   } finally {
     f.cleanup();
   }
+});
+
+for (const seat of ["spec-review", "watch"]) for (const agent of ["codex", "agy"]) test(`doctor 拒绝 ${seat} 使用无受限调用的 ${agent}`, () => {
+  const f = fixture();
+  try {
+    f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, seats: { [seat]: { default: { agent, model: null } } } }));
+    if (agent === "agy") writeFileSync(join(f.bin, "agy"), `#!${process.execPath}\nconst args=process.argv.slice(2);if(args.includes('--version'))console.log('1.5.9');else { const name=args.at(-1).slice(1);console.log(JSON.stringify({status:'SUCCESS',duration_seconds:0,usage:{total_tokens:0},command:{name,data:name==='model'?{id:'gemini-4-carbon-high'}:{adjustable:true,current:'high',available:['high']}}})); }`, { mode: 0o755 });
+    const result = f.run();
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, new RegExp(`受限席位 ${seat}.default；${agent} 不支持受限调用；当前支持：claude、pi`));
+  } finally { f.cleanup(); }
+});
+
+test("doctor 的 agy 零配额查询覆盖每组模型强度、错误和来源", () => {
+  const f = fixture();
+  try {
+    const fake = join(f.temporary, "custom agy.cjs");
+    const calls = join(f.temporary, "agy-calls.jsonl");
+    writeFileSync(fake, `
+const fs=require('node:fs');const args=process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(args)+'\\n');
+if(args.includes('--version')){console.log('1.5.9');return;}
+const name=args.at(-1).slice(1), model=args[args.indexOf('--model')+1], effort=args[args.indexOf('--effort')+1];
+const bad=model==='invalid' || effort==='extreme';
+if(bad)process.exitCode=1;
+const id=model==='gemini-4-carbon'?'gemini-4-carbon-medium':model;
+console.log(JSON.stringify({status:bad?'ERROR':'SUCCESS',error:bad?'invalid selection':undefined,duration_seconds:0,usage:{total_tokens:process.env.AGY_PAID==='1'?1:0},command:{name,data:name==='model'?{id,effort:'high'}:{adjustable:true,current:effort,available:['low','medium','high']}}}));
+`);
+    const user = join(f.temporary, "xdg/agent-workflow"); mkdirSync(user, { recursive: true });
+    writeFileSync(join(user, "seats.json"), JSON.stringify({ agents: { agy: { path: fake, concurrency: 3 } } }));
+    const configure = (model = "gemini-4-carbon-high", effort = "high") => f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, seats: { research: { default: { agent: "agy", model, effort } }, review: { default: [{ agent: "agy", model: "another-high", effort: "high" }] } } }));
+    configure();
+    const result = f.run();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /agy 模型与强度 gemini-4-carbon-high\/high；模型：gemini-4-carbon-high；强度：high/);
+    assert.match(result.stdout, /框架配置 agy：并发：3；路径：.*custom agy.cjs；来源：并发=用户、路径=用户/);
+    const probes = readFileSync(calls, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(args => args.includes("-p"));
+    assert.equal(probes.length, 4);
+    for (const args of probes) { assert.deepEqual(args.slice(-4, -2), ["--output-format", "json"]); assert.ok(["/model", "/effort"].includes(args.at(-1))); }
+    const env = f.run(["doctor"], { env: { RUN_SPEC_AGY_CONCURRENCY: "5" } });
+    assert.equal(env.status, 0, env.stderr);
+    assert.match(env.stdout, /框架配置 agy：并发：5；路径：.*；来源：并发=环境、路径=用户/);
+    configure("invalid"); assert.equal(f.run().status, 1);
+    configure("gemini-4-carbon"); const bare = f.run(); assert.equal(bare.status, 1); assert.match(bare.stderr, /不能使用裸前缀/);
+    configure("gemini-4-carbon-high", "extreme"); assert.equal(f.run().status, 1);
+    configure(); assert.equal(f.run(["doctor"], { env: { AGY_PAID: "1" } }).status, 1);
+  } finally { f.cleanup(); }
+});
+
+test("doctor 仅提示缺个人配置和 agy 文件超 24000 字节，边界按字节检查", () => {
+  const f = fixture();
+  try {
+    const fake = join(f.bin, "agy");
+    writeFileSync(fake, `#!${process.execPath}\nconst args=process.argv.slice(2);if(args.includes('--version'))console.log('1.5.9');else {const name=args.at(-1).slice(1);console.log(JSON.stringify({status:'SUCCESS',duration_seconds:0,usage:{total_tokens:0},command:{name,data:name==='model'?{id:'gemini-4-carbon-high'}:{current:'high',adjustable:true,available:['high']}}}));}`, { mode: 0o755 });
+    f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, seats: { research: { default: { agent: "agy" } } } }));
+    f.write("AGENTS.md", agentRules + "a".repeat(24001 - Buffer.byteLength(agentRules)));
+    f.write("GEMINI.md", "中".repeat(8000));
+    f.write(".agents/skills/large/SKILL.md", "中".repeat(8001));
+    f.write(".claude/skills/large/SKILL.md", "a".repeat(24001));
+    const result = f.run();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /提示：可在 .*agent-workflow\/seats.json 创建个人席位配置/);
+    const warnings = result.stdout.split("\n").filter(line => line.startsWith("提示：agy 单文件截断风险"));
+    assert.equal(warnings.length, 3, result.stdout);
+    assert.ok(warnings.some(line => line.includes("AGENTS.md 为 24001 字节")));
+    assert.ok(!warnings.some(line => line.includes("GEMINI.md")));
+    f.write("GEMINI.md", "a".repeat(24001));
+    assert.match(f.run().stdout, /GEMINI.md 为 24001 字节/);
+  } finally { f.cleanup(); }
 });
 
 test("doctor reports the adapter diagnostic when config and PATH have no Codex CLI", () => {

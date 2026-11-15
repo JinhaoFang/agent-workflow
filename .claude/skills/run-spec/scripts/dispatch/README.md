@@ -23,7 +23,7 @@
 | 成员 | 用途 |
 |---|---|
 | `label` | 进度起止行的框架名称；Codex 文字保持不变 |
-| `isConcurrencyLimit(output)` | 判断滚动输出是否含可重排的并发超限；派发失败时才重排。Codex 识别 `Concurrency limit exceeded`，Claude、pi 暂无已知样本，返回 `false` |
+| `isConcurrencyLimit(output)` | 判断滚动输出是否含可重排的并发超限；派发失败时才重排。Codex 识别 `Concurrency limit exceeded`；agy 识别并发超限、HTTP 429 和短时限流，配额耗尽直接失败；Claude、pi 暂无已知样本，返回 `false` |
 | `restrictedCommand({root,prompt,settings,detection,env,tools})` | 可选的受限调用，工具档为 `files/none`；未提供时拒绝启动，可用框架提示从登记中筛选并取 `label` |
 | `outcome({code,failed,events,settings,root})` | 适配器决定 `success`，统一 `usage:{input,cached,output}` 与 `actualModel/actualEffort`；未知为 `null`，不猜配置即实际值 |
 | `isolationArgs()` | 生成显式隔离参数；Codex 按名称禁用两项技能，保留其他技能 |
@@ -37,11 +37,13 @@
 
 `doctor` 的技能隔离检查逐个列出已配置席位所用框架，要求适配器提供 `isolationArgs()` 及非空隔离参数；缺少时报失败。`run-spec`、`setup-run-spec` 可装在 `.claude/skills` 或共享的 `.agents/skills`，目录不再承担隔离判断；`review-spec`、`watch` 沿用工具裁剪隔离。
 
-`tickets.ts run <任务文件|任务文字> --seat <席位> [--spec <S>] [--name <记录名>]` 在当前工作区执行，记录统一写主工作区 `.codex-runs`；覆盖参数见 `run --help`。带 `--spec` 时逐份复用 `scorecard --record` 的精确关联存储，失败记录也保留关联；评分表把非规范命名的记录计为辅助派发，cleanup 沿用辅助原始证据保护。预览不启动模型、不写记录、清单、关联或 GitHub。已安装仓库无需迁移旧记录或配置。
+`doctor` 另外对 `spec-review`、`watch` 的每个实际配置检查 `restrictedCommand`，缺少时退出 1，列出当前支持的 `claude`、`pi`。个人席位文件不存在时提示可创建的绝对路径，继续检查。使用 agy 时，每组不同模型/强度分别通过 `--output-format json -p /model`、`/effort` 验证 `status:SUCCESS`、`command.data`、零耗时和零 Token；`/model` 返回的完整 ID 必须与配置一致，裸前缀即使被 CLI 自动补全也失败。根 `AGENTS.md`、`GEMINI.md` 及 `.claude/skills`、`.agents/skills` 已安装技能的 `SKILL.md` 超过 **24000 字节**时只提示截断风险，软链接别名按真实路径去重。
+
+`tickets.ts run <任务文件|任务文字> --seat <席位> [--spec <S>] [--name <记录名>]` 在当前工作区执行，记录统一写主工作区 `.codex-runs`；覆盖参数见 `run --help`。`--spec <S>` 同时支持 Issue 编号与字符串专项标识，逐份复用 `scorecard --record` 的精确关联存储，失败记录也保留关联；评分表将 `review` 席位归为“审查”，其余非规范命名的记录计为辅助派发，cleanup 沿用辅助原始证据保护。预览不启动模型、不写记录、清单、关联或 GitHub。已安装仓库无需迁移旧记录或配置。
 
 `engineering`、`review`、`research` 与 `dispatch` 一样传 `--role engineering`，告知工程负责人角色和角色文档；角色写入进度头和全局 start 登记，预览也显示。`spec-review`、`watch` 不告知角色。已安装仓库使用前三种席位时需有 `docs/roles/engineering.md`，沿用 `dispatch` 的角色文档约定。
 
-`review` 列表的各项依次收到相同提示，记录名为 `<批次前缀>-<序号>-<框架>`；单项保留前缀本身。带 spec 的 review 默认前缀为 `review-<S>`，重名将整个前缀追加 `-2`、`-3`。原子创建的 `<前缀>.batch.json` 保存全部精确名，`review --record <前缀>` 按清单合计、逐份列出实际模型；缺失或失败仍保留已知用量并注明不完整。批次清单不作为额外派发计入评分表。
+`review` 列表的各项依次收到相同提示，记录名为 `<批次前缀>-<序号>-<框架>`；单项保留前缀本身。带 spec 的 review 默认前缀：整数编号为 `review-<S>`，字符串专项标识为 `review-spec-id-<S>`（避免纯数字开头与工单编号混淆），重名将整个前缀追加 `-2`、`-3`。原子创建的 `<前缀>.batch.json` 保存全部精确名，`review --record <前缀>` 按清单合计、逐份列出实际模型；缺失或失败仍保留已知用量并注明不完整。批次清单不作为额外派发计入评分表。
 
 Codex 审查已有 `.json` 汇总而根会话缺失时，仍从根会话 ID 查找子代理及后代；根用量取汇总，后代用量取各自会话，保留已知合计并注明根会话缺失、合计不完整。
 
@@ -72,5 +74,21 @@ pi 各权限均关闭扩展和 MCP，防止扩展重新加入屏蔽技能；可�
 pi 回放样本为 `../fixtures/pi-{success,model-error,tool-error,aborted}.jsonl`：成功取自本机 GLM 只读实测；其余来自本机 pi 连接本地受控 OpenAI 兼容服务，其中模型错误返回 HTTP 400，工具错误实际执行退出 3 的 Python 命令，中止通过 RPC `abort`。四种进程均退出 0；样本仅截取完整消息和生命周期、工具事件，移除时间、响应 ID、重复快照并归一化工作区及用户路径。缺用量、缺结束事件和恢复运行由假可执行文件基于真实样本生成，全部从 CLI 入口回放。
 
 `../fixtures/pi-retry-{success,failed}.jsonl` 是上述真实样本的受控变换：将 `pi-model-error` 的 400 错误改为 503 服务暂不可用，保留失败 assistant 消息、用量和会话结构；将首个 `agent_end.willRetry` 改为 `true`，移走中间的 `agent_settled`，按 pi 1.5.0 的 `AgentSessionEvent` 和 `_prepareRetry/_handleAgentEvent/_handlePostAgentRun` 加入 `auto_retry_start`（`attempt/maxAttempts/delayMs/errorMessage`）与新的 `agent_start/turn_start`。成功样本接入 `pi-success` 的最后一条完整 assistant 消息，随后 `auto_retry_end success:true attempt:1`、`agent_end willRetry:false`、`agent_settled aborted:false`；失败样本重放两次失败响应，按 1、2 次重试计数增加延迟，耗尽后在 `agent_end willRetry:false` 后发出 `auto_retry_end success:false attempt:2 finalError`，最后同样 settled。两种假进程均退出 0；中止、截断、缺 settled、恢复后错误和进程非零由成功重试样本继续受控变换。
+
+Antigravity CLI（`agy`，本机核对版本 1.5.9）接入 `engineering`、`review`、`research`，不提供 `restrictedCommand`。路径和并发复用 `agents.agy.path/concurrency`，环境覆盖为 `RUN_SPEC_AGY_CONCURRENCY`；`slots` 显示独立名额。启动参数为数组，`--model/--effort` 传席位值，任务经 stdin 传一行 `{"event":"user","message":{"content":"…"}}`，使用 `--input-format stream-json --output-format stream-json`，不传 `-p`，不使用会展开 `/plan` 的 `--mode plan`。
+
+agy 从当前检出的 `.codex-runs/agy-isolation-<随机值>/` 启动。该目录仍位于当前检出，只包含本次技能副本、`.agents/skills.json` 和探测结果；从原 `.agents/skills`（包括共享软链接）复制其余完整技能目录，按目录名与正文名称排除 `run-spec`、`setup-run-spec`，再以顶层 `exclude:["run-spec","setup-run-spec"]` 防止继承重新加载（使用技能名原值，不加正则锚点）。agy 1.5.9 不发现软链接技能目录，故使用可删除的实体副本，保留相对脚本和参考文件。启动前用同一权限参数执行零配额 `/skills`，列表无效、仍含屏蔽项或漏掉已复制技能时拒绝启动；其他仓库、全局及内置技能继续发现。适配器 `isolationArgs()` 同时提供 `--settings` 中的默认定向读取拒绝规则；`command()` 按原仓库根补齐两项技能在 `.agents/skills/<名称>`、`.claude/skills/<名称>` 的相对及绝对路径拒绝，三档均合成一次传入。Windows 权限目标去掉盘符并将反斜杠转为正斜杠。规则在所有模式下按 `Deny > Ask > Allow` 生效，拒绝读取同时拒绝同路径的写文件工具访问；shell 和子进程仍无操作系统路径边界。仅传读取拒绝规则不会从 `/skills` 隐藏技能，不能替代清单隔离。启动桥 `agy-launch.ts` 改变 CLI 的发现起点，以 `--add-dir <原仓库根目录>` 保留工作区访问，并显式允许读取原仓库；提示要求从原仓库绝对路径读写和执行 git；结束时删除本次目录，原 `.agents` 和主工作区不改动。启动参数、起点及已验证技能名作为 `dispatch` 事件写原始日志和统一事件，便于核查。
+
+| agy 权限 | 参数与约束 | 损失 |
+|---|---|---|
+| `read-only` | `--mode accept-edits`、`toolPermission:request-review`、`allowNonWorkspaceAccess:false`；允许仓库根 `read_file` 及下列命令正则，拒绝 `write_file(*)`、`mcp(*)`、`execute_url(*)`，附只读任务说明 | 没有操作系统只读沙箱；命令正则不验证全部参数，shell 参数、子进程、原生子代理/工作流、网络、CLI 缓存和会话仍可能写入；不是受限工具席位 |
+| `workspace-write` | `--mode accept-edits`、`allowNonWorkspaceAccess:false`；无头模式显式放行仓库根 `write_file`、`read_file` 及 `command(*)`，拒绝 `mcp(*)`、`execute_url(*)` | 工程任务可编辑文件、运行测试与静态检查、执行 `git add/commit`；shell 和子进程没有操作系统工作区边界，仍可写工作区外 |
+| `full` | `--dangerously-skip-permissions`，保留技能隔离和路径拒绝设置 | 跳过确认，无操作系统沙箱；显式技能文件拒绝仍生效 |
+
+只读命令用跨平台 `command(regex:...)` 匹配命令自身或后跟空白参数（兼容 `.exe`）：`git diff/status/show/log/merge-base/rev-parse/branch/ls-files/blame/cat-file`、`gh issue/pr view/list/diff/status`、`gh api --method GET`，以及 `rg`、`grep`、`find`、`ls`、`pwd`、`cat`、`head`、`tail`、`wc`、`stat`、`jq`。整行正则排除分号、管道、重定向、命令替换等连接符；CLI 的逐词前缀匹配仍依赖其对各子命令的权限判断。此列表不校验每种参数，`find -exec/-delete`、`git branch` 写操作、`jq` 参数等仍须遵守只读任务约束。无头调用中未获批准的动作会软拒绝并写入 `denied_actions`，即使进程退出 0 也判派发失败；可写档因此显式放行 `command(*)`。
+
+agy 的 `init/step_update/result` 事件中，`agent_response.text_delta` 按 `step_index` 分别累加，每步的 `say` 只含自身文本；新命令和 `init` 清空累加状态。`result.status` 必须为 `SUCCESS`、无模型错误、无 `denied_actions` 且进程退出 0；缺最终结果、最终结果后仍有活动、模型/配额错误都失败，即使进程退出 0。工具失败可由模型处理，不直接视作模型失败。只取最后一个 `result.usage`（累计计数），不重复累加步骤或流式分片；输入为 `input_tokens + cache_read_tokens`，缓存为 `cache_read_tokens`，输出为 `output_tokens`（已含思考 Token），缺字段或非法计数记 `null`。`init.model` 仅是启动选择，不当成实际模型；实际模型优先取响应字段，再查同会话 `transcript.jsonl` 的 `source:MODEL` 行。实际强度优先取响应明确字段，再取实际完整模型 ID 的标准档位后缀，未知保留 `null`，不读全局设置猜测。新增可选汇总字段 `sessionId/sessionPath` 保存会话与 `~/.gemini/antigravity-cli/brain/<会话号>/.system_generated/logs/transcript.jsonl`，进度也打印该路径。
+
+`../fixtures/agy-success.jsonl` 来自本工单本机 agy 1.5.9 的最小只读真实流：只回复 OK，保留原始工具清单、文本分片、用量及结束事件；仅替换会话 ID 和工作区绝对路径。`../agy-adapter.test.ts` 经 CLI 假可执行文件回放；模型错误、配额/短时限流、缺结果、未完成、缺用量、缓存和实际模型字段为受控变体，排队与重排走 `tickets.ts dispatch` 的真实临时 git 仓库。
 
 同名 `.json` 与全局 end 记录保存席位、工作类型、框架、配置模型/强度、权限、成功与否、进程/派发退出码、统一用量、实际模型/强度。其余四种记录不变。验收、审查、评分表优先读此汇总；新记录用量缺失保持未知，旧记录继续用原日志/会话读取方式。清理和保护仍按原记录名规则，涵盖新增 `.json` 和已有旧文件。

@@ -23,6 +23,13 @@ Claude 用 skillOverrides 按名称关闭两项项目技能；实际模型取响
 pi 使用 --mode json，模型写提供商/模型；effort 传 --thinking，实际降档另记。
 pi 会话位于 .codex-runs/<记录名>.pi-sessions/；完整消息取 message_end，缺 agent_settled 判失败。
 pi 按 RPC 清单显式排除两项技能，关闭扩展和 MCP；只读保留 bash 以运行 git diff，靠任务约束且无系统沙箱。
+agy 使用 --input-format stream-json 从 stdin 读 NDJSON 用户消息，--output-format stream-json 输出事件；模型与强度传 --model/--effort。
+agy 在当前检出内用短命 skills.json 排除两项技能，并用零配额 /skills 验证，保留其余技能且不改共享 .agents。
+agy 三档均拒绝两项技能在 .agents/skills、.claude/skills 的相对及仓库根路径读取，Deny > Ask > Allow，拒绝读取也拒绝同路径写入；Windows 规则路径去盘符并转正斜杠。
+agy 只读拒绝直接写工具、MCP 和浏览器执行，用跨平台 command(regex:...) 放行所列 git、gh 只读子命令及读取工具，附只读任务约束；正则不校验全部参数，没有操作系统只读沙箱，不使用 --mode plan。
+agy 无头可写档为 --mode accept-edits，显式允许仓库根 read_file/write_file 和 command(*) 以运行测试、静态检查与 git add/commit，拒绝 MCP 和浏览器执行。
+agy 只读与可写均为 allowNonWorkspaceAccess:false；shell、命令参数与子进程没有操作系统工作区边界。
+agy 最终 result 非 SUCCESS、模型错误或缺结束事件均失败；会话号和 transcript 路径写入同名 JSON 与进度。
 全局登记沿用 CODEX_DISPATCH_HOME 或 XDG_CONFIG_HOME/codex-dispatch/runs.jsonl；不修改旧记录。
 不提供 Windows 查看窗口、监控托管服务或配置写入；--watch-window 仅兼容接收。
 任务退出码保留框架非零值；适配器判定失败时即使进程退出 0 也失败；缺用量记 null。

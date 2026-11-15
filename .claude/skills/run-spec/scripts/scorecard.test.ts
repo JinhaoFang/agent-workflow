@@ -5,7 +5,7 @@
  * SCORECARD_EVIDENCE 可指定输出
  * 固定输入、预期/实际 JSON、手算过程和测试命令记录的验收目录。
  * TICKET_12_EVIDENCE 保存真实 CLI 的启动故障、失败调用和帮助文字证据。
- * TICKET_17_EVIDENCE 可保存全部 CLI 输出及关联台账，供本轮叶节点和辅助归属验收。
+ * TICKET_17_EVIDENCE、TICKET_57_EVIDENCE 可保存全部 CLI 输出及关联台账，供叶节点和辅助归属验收。
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -138,9 +138,10 @@ else if (args[0] === 'api' && args[2] === 'GET') {
   const chmod = spawnSync("chmod", ["+x", join(temporary, "gh")]);
   assert.equal(chmod.status, 0);
   let sequence = 0;
-  const evidence = process.env.TICKET_17_EVIDENCE ? join(process.env.TICKET_17_EVIDENCE, temporary.split("/").at(-1)!) : null;
+  const evidenceRoot = process.env.TICKET_57_EVIDENCE ?? process.env.TICKET_54_EVIDENCE ?? process.env.TICKET_17_EVIDENCE;
+  const evidence = evidenceRoot ? join(evidenceRoot, temporary.split("/").at(-1)!) : null;
   const run = (args: string[], cwd = root) => {
-    const result = spawnSync(process.execPath, [cli, ...args], { cwd, encoding: "utf8", timeout: 30000, env: { ...process.env, PATH: `${temporary}${delimiter}${process.env.PATH}`, CODEX_HOME: codex, CODEX_DISPATCH_HOME: dispatch, SCORECARD_FIXTURE: temporary } });
+    const result = spawnSync(process.execPath, [cli, ...args], { cwd, encoding: "utf8", timeout: 30000, env: { ...process.env, PATH: `${temporary}${delimiter}${process.env.PATH}`, AGY_BRAIN_DIR: join(temporary, "brain"), CODEX_HOME: codex, CODEX_DISPATCH_HOME: dispatch, SCORECARD_FIXTURE: temporary } });
     assert.ifError(result.error);
     if (evidence) {
       mkdirSync(evidence, { recursive: true });
@@ -242,20 +243,23 @@ test("verify 和 scorecard 帮助写明启动失败与合并失败的统计口�
   } finally { f.cleanup(); }
 });
 
-const expected = (collectedAt: string) => {
+const expected = (collectedAt: string, claude: string) => {
+  const identity = (seat: string, framework = "codex") => ({ role: seat, seat, agent: framework, framework, model: null, actualModel: null, effort: null, actualEffort: null });
   const spans = (...bounds: [number, number][]) => ({ spans: bounds.map(([a, b]) => ({ start: at(a), end: at(b) })), minutes: bounds.reduce((sum, [a, b]) => sum + b - a, 0) });
-  const dispatch = (record: string, ticket: number | null, category: string, start: number, end: number, usage: ReturnType<typeof tokens>) => ({ record, ticket, seat: ticket ? "engineering" : "review", workType: "default", framework: "codex", model: null, effort: null, permission: null, actualModel: null, actualEffort: null, category: value(category), start: value(at(start)), end: value(at(end)), minutes: value(end - start), exitCode: value(0), usage: value(usage) });
-  const reasons = ["Codex 会话中未找到成功的 apply_patch 事件", "缺少派发开始或首次成功改文件事件", "首次改文件之前缺少累计 token_count"];
-  return { version: 2, spec: 2, mainFrameworks: ["claude"], dispatchLanes: value([{ framework: "codex", time: value(spans([0, 20])) }]), cutoffAt: at(51), collectedAt, verification: value({ runs: [
+  const dispatch = (record: string, ticket: number | null, category: string, start: number, end: number, usage: ReturnType<typeof tokens>) => ({ record, ticket, seat: ticket ? "engineering" : "review", workType: "default", framework: "codex", identity: identity(ticket ? "engineering" : "review"), model: null, effort: null, permission: null, actualModel: null, actualEffort: null, category: value(category), start: value(at(start)), end: value(at(end)), minutes: value(end - start), exitCode: value(0), usage: value(usage) });
+  const reason = "只读席位不统计首次编辑";
+  return { version: 2, spec: 2, startedAt: at(0), mainFrameworks: ["claude"], mainSessions: [{ session: "claude:main", path: claude, ...identity("design", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(150, 20, 10), child: false, startedAt: at(0), cutoffAt: at(51) }],
+    subagents: [{ session: "claude:main:sidechain:claude:main", path: claude, child: true, ...identity("subagent", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(6, 2, 4) }, { session: "codex:child", ...identity("subagent"), usage: tokens(20, 10, 2) }], subagentAnomalies: [], batches: [],
+    dispatchLanes: value([{ framework: "codex", anomalies: [], time: value(spans([0, 20])) }]), cutoffAt: at(51), collectedAt, verification: value({ runs: [
     { layer: "full", target: { kind: "ticket", number: 5 }, caller: "land", branch: "ticket/5", start: at(3), end: at(8), queuedMinutes: 2, minutes: 5, exitCode: 1 },
     { layer: "static", target: { kind: "main" }, caller: "verify", branch: "spec/2-test", start: at(9), end: at(10), queuedMinutes: 0, minutes: 1, exitCode: 0 },
   ], fullCount: 1, fullMinutes: 5, staticCount: 1 }), merges: value({ landCount: 2, fullVerificationFailures: 1, stops: { rebaseConflict: 0, installFailure: 0, verificationFailure: 1, pushFailure: 0, other: 0 } }),
     dispatches: value([dispatch("gh-5", 5, "首次", 0, 20, tokens(1000, 800, 50)), dispatch("review-2-batch", null, "审查", 5, 15, tokens(200, 100, 20))]),
-    time: { dispatchSlots: value(spans([0, 20])), verification: value(spans([3, 8], [9, 10])), queue: value(spans([1, 3])), designLead: value(spans([0, 21], [45, 50])), waitingUser: value(spans([21, 45])) },
-    overhead: value([{ record: "gh-5", firstEditAt: value(at(4)), minutes: value(4), inputTokens: value(100) }, { record: "review-2-batch", firstEditAt: value(null, reasons[0]), minutes: value(null, reasons[1]), inputTokens: value(null, reasons[2]) }]),
+    time: { dispatchSlots: value(spans([0, 20])), verification: value(spans([3, 8], [9, 10])), queue: value(spans([1, 3])), designLead: value(spans([0, 21], [45, 50])), waitingUser: value(spans([21, 45])), longPause: value({ count: 0, ...spans(), intervals: [] }) },
+    overhead: value([{ record: "gh-5", firstEditAt: value(at(4)), minutes: value(4), inputTokens: value(100) }, { record: "review-2-batch", firstEditAt: value(null, reason), minutes: value(null, reason), inputTokens: value(null, reason) }]),
     userInterventions: value(4), failures: { dispatchWithoutReport: value(0), landStops: value(1), verificationLaunch: value(0) },
-    usage: { dispatches: value([{ seat: "engineering", framework: "codex", usage: value(tokens(1000, 800, 50)) }, { seat: "review", framework: "codex", usage: value(tokens(200, 100, 20)) }]), mainSession: value(tokens(150, 20, 10)), independentReview: value(tokens(10, 2, 4)), subagents: value(tokens(26, 12, 6)), subagentNotifications: value(99) },
-    missing: ["firstEditAt", "minutes", "inputTokens"].map((field, index) => ({ field: `overhead.review-2-batch.${field}`, reason: reasons[index] })),
+    usage: { dispatches: value([{ seat: "engineering", framework: "codex", identities: [identity("engineering")], anomalies: [], complete: true, usage: value(tokens(1000, 800, 50)) }, { seat: "review", framework: "codex", identities: [identity("review")], anomalies: [], complete: true, usage: value(tokens(200, 100, 20)) }]), mainSession: value(tokens(150, 20, 10)), independentReview: value(tokens(10, 2, 4)), subagents: value(tokens(26, 12, 6)), subagentNotifications: value(99) },
+    missing: [],
   };
 };
 
@@ -266,13 +270,13 @@ test("固定输入完整 JSON 与手写预期一致；静态层、调用次数�
     assert.equal(result.status, 0, result.stderr);
     const card = JSON.parse(result.stdout);
     assert.ok(Number.isFinite(Date.parse(card.collectedAt)));
-    assert.deepEqual(card, expected(card.collectedAt));
+    assert.deepEqual(card, expected(card.collectedAt, f.claude));
     for (const group of Object.values(card.time) as { value: { spans: { start: string; end: string }[]; minutes: number } }[]) assert.equal(group.value.minutes, group.value.spans.reduce((sum, item) => sum + (Date.parse(item.end) - Date.parse(item.start)) / 60000, 0));
     const directory = process.env.SCORECARD_EVIDENCE;
     if (directory) {
       mkdirSync(directory, { recursive: true });
       writeFileSync(join(directory, "fixed-scorecard.json"), result.stdout);
-      writeFileSync(join(directory, "expected-scorecard.json"), JSON.stringify(expected(card.collectedAt), null, 2) + "\n");
+      writeFileSync(join(directory, "expected-scorecard.json"), JSON.stringify(expected(card.collectedAt, f.claude), null, 2) + "\n");
       cpSync(f.records, join(directory, "fixed-input/records"), { recursive: true });
       cpSync(f.codex, join(directory, "fixed-input/codex"), { recursive: true });
       cpSync(f.dispatch, join(directory, "fixed-input/dispatch"), { recursive: true });
@@ -629,7 +633,10 @@ test("显式辅助关联持久幂等，精确名隔离，跨 spec 冲突和缺�
     assert.equal(missing.status, 0, missing.stderr);
     const absent = JSON.parse(missing.stdout);
     assert.ok(absent.missing.some((item: { field: string }) => item.field === "dispatches.missing-work.start"));
-    assert.equal(absent.usage.dispatches.value.find((g: { seat: string }) => g.seat === "research").usage.value, null);
+    const partial = absent.usage.dispatches.value.find((g: { seat: string }) => g.seat === "research");
+    assert.deepEqual(partial.usage.value, tokens(30, 10, 4));
+    assert.equal(partial.complete, false);
+    assert.ok(partial.anomalies.some((item: { record: string }) => item.record === "missing-work"));
   } finally { f.cleanup(); }
 });
 
@@ -910,15 +917,16 @@ test("多框架派发按席位和框架分组，保留配置与实际模型并�
     const result = f.run(["scorecard", "2"]);
     assert.equal(result.status, 0, result.stderr);
     const card = JSON.parse(result.stdout);
-    assert.deepEqual(card.usage.dispatches.value, [{ seat: "engineering", framework: "pi", usage: value(tokens(120, 20, 10)) }, { seat: "review", framework: "claude", usage: value(tokens(200, 10, 5)) }]);
+    assert.deepEqual(card.usage.dispatches.value.map(({ seat, framework, usage }: Record<string, any>) => ({ seat, framework, usage })), [{ seat: "engineering", framework: "pi", usage: value(tokens(120, 20, 10)) }, { seat: "review", framework: "claude", usage: value(tokens(200, 10, 5)) }]);
     assert.deepEqual(card.dispatchLanes.value.map((g: { framework: string }) => g.framework), ["claude", "pi"]);
     const dispatch = card.dispatches.value.find((row: { record: string }) => row.record === "gh-5-second");
     assert.equal(dispatch.minutes.value, 20);
     for (const [key, expected] of Object.entries({ seat: "engineering", framework: "pi", workType: "前端", model: "configured", effort: "high", actualModel: "actual", actualEffort: "medium", permission: "read-only" })) assert.equal(dispatch[key], expected);
     f.write(join(f.records, "gh-5-second.json"), JSON.stringify({ v: 1, framework: "pi", seat: "engineering", success: true, usage: null }));
     const incomplete = JSON.parse(f.run(["scorecard", "2"]).stdout);
-    assert.equal(incomplete.usage.dispatches.value[0].usage.value, null);
-    assert.ok(incomplete.usage.dispatches.value[0].usage.reason);
+    assert.deepEqual(incomplete.usage.dispatches.value[0].usage.value, tokens(100, 10, 5));
+    assert.equal(incomplete.usage.dispatches.value[0].complete, false);
+    assert.equal(incomplete.usage.dispatches.value[0].anomalies[0].record, "gh-5-second");
     assert.deepEqual(incomplete.usage.dispatches.value[1].usage.value, tokens(200, 10, 5));
   } finally { f.cleanup(); }
 });
@@ -940,5 +948,332 @@ test("cleanup 接受新旧两版评分表，post 原位升级旧评论且重复�
     assert.match(updated[0].body, /^<!-- run-spec-scorecard:v2 -->/);
     f.write(f.comments, JSON.stringify([...comments, { ...updated[0], id: 102 }]));
     assert.equal(f.run(["scorecard", "2", "--post"]).status, 1);
+  } finally { f.cleanup(); }
+});
+
+const moment = (minute: number) => new Date(Date.parse(at(0)) + minute * 60000).toISOString();
+const agyStep = (minute: number, step_index: number, extra: Record<string, unknown> = {}) => ({ source: "MODEL", type: "PLANNER_RESPONSE", step_index, created_at: moment(minute), input_tokens: 10, cache_read_tokens: 20, output_tokens: 3, content: "请确认", ...extra });
+const agyUser = (minute: number, step_index: number) => ({ source: "USER_EXPLICIT", type: "USER_INPUT", step_index, created_at: moment(minute), content: "继续" });
+const agyFile = (f: ReturnType<typeof fixture>, id: string) => join(f.temporary, "brain", id, ".system_generated/logs/transcript.jsonl");
+const clearSources = (f: ReturnType<typeof fixture>) => {
+  for (const directory of [f.records, join(f.worktree, ".codex-runs"), f.dispatch, f.codex]) rmSync(directory, { recursive: true, force: true });
+};
+
+test("共享 sessionId 的 Claude 主日志、sidechain 与重叠快照合并不受传入顺序影响", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const response = (minute: number, id: string, extra = {}) => ({ type: "assistant", uuid: id, sessionId: "shared", timestamp: moment(minute), message: { id, model: "claude-fixture", content: [{ type: "text", text: "回复" }], usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 1 } }, ...extra });
+    const initial = [{ type: "user", uuid: "start", sessionId: "shared", timestamp: moment(0), message: { content: "开始" } }, response(1, "main-first")];
+    const child = response(2, "child-reply", { isSidechain: true, agentId: "child-a" });
+    const childLast = response(4, "child-last", { isSidechain: true, agentId: "child-a" });
+    const older = join(f.temporary, "claude-old.jsonl");
+    const newer = join(f.temporary, "claude-new.jsonl");
+    const sidechain = join(f.temporary, "claude-child.jsonl");
+    f.lines(older, initial);
+    f.lines(newer, [...initial, child, response(3, "main-last")]);
+    f.lines(sidechain, [child, childLast]);
+    let expected;
+    for (const paths of [[older, sidechain, newer], [older, newer, sidechain], [sidechain, older, newer], [sidechain, newer, older], [newer, older, sidechain], [newer, sidechain, older]]) {
+      const result = f.run(["scorecard", "shared-session", ...paths.flatMap((path) => ["--session", path])]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.deepEqual(card.usage.mainSession.value, tokens(24, 4, 2));
+      assert.deepEqual(card.usage.subagents.value, tokens(24, 4, 2));
+      assert.equal(card.mainSessions.length, 1);
+      assert.equal(card.subagents.length, 1);
+      assert.equal(card.subagents[0].session, "claude:shared:sidechain:child-a");
+      assert.equal(card.userInterventions.value, 1);
+      assert.equal(card.time.designLead.value.minutes, 3);
+      assert.deepEqual(card.subagentAnomalies, []);
+      const actual = { mainSessions: card.mainSessions, subagents: card.subagents, usage: card.usage, time: card.time, missing: card.missing };
+      if (expected) assert.deepEqual(actual, expected);
+      else expected = actual;
+    }
+  } finally { f.cleanup(); }
+});
+
+for (const framework of ["agy", "codex"]) {
+  test(`${framework} 窗前启动的子代理保留窗内用量，完全窗外子代理不计入`, () => {
+    const f = fixture();
+    try {
+      clearSources(f);
+      const childIds = ["active-child", "before-child", "after-child"];
+      let main: string;
+      if (framework === "agy") {
+        main = agyFile(f, "window-parent");
+        f.lines(main, [agyUser(0, 0), agyStep(1, 1, { tool_calls: [{ name: "invoke_subagent", args: {} }] }),
+          { type: "GENERIC", source: "MODEL", created_at: moment(2), content: childIds.map((conversationId) => JSON.stringify({ conversationId })).join("\n") }, agyUser(6, 3), agyStep(10, 4)]);
+        for (const [index, id] of childIds.entries()) f.lines(agyFile(f, id), index === 0
+          ? [agyUser(2, 0), agyStep(4, 1), agyStep(5, 2), agyStep(10, 3), agyStep(11, 4)]
+          : [agyUser(index === 1 ? 2 : 11, 0), agyStep(index === 1 ? 4 : 12, 1)]);
+      } else {
+        main = f.sessionFile("window-parent");
+        const meta = (id: string, minute: number, parent?: string) => ({ type: "session_meta", timestamp: moment(minute), payload: { id, cwd: f.root, ...(parent ? { parent_thread_id: parent } : {}) } });
+        const message = (minute: number) => ({ type: "response_item", timestamp: moment(minute), payload: { type: "message", role: "user", content: [{ type: "input_text", text: "继续" }] } });
+        const snapshot = (minute: number, n: number) => ({ type: "event_msg", timestamp: moment(minute), payload: { type: "token_count", info: { total_token_usage: { input_tokens: n, cached_input_tokens: n / 2, output_tokens: n / 10 } } } });
+        f.lines(main, [meta("window-parent", 0), message(0), message(6), snapshot(10, 100)]);
+        for (const [index, id] of childIds.entries()) f.lines(f.sessionFile(id), index === 0
+          ? [meta(id, 2, "window-parent"), message(2), snapshot(4, 100), snapshot(5, 130), snapshot(10, 160), snapshot(11, 1000)]
+          : [meta(id, index === 1 ? 2 : 11, "window-parent"), snapshot(index === 1 ? 4 : 12, 1000)]);
+      }
+      const result = f.run(["scorecard", "pre-window-child", "--session", main, "--started-at", moment(5), "--cutoff-at", moment(10)]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.deepEqual(card.usage.subagents.value, framework === "agy" ? tokens(60, 40, 6) : tokens(60, 30, 6));
+      assert.deepEqual(card.subagents.map((child: { session: string }) => child.session), [`${framework}:active-child`]);
+      assert.deepEqual(card.subagentAnomalies, []);
+      assert.equal(card.userInterventions.value, 1);
+      assert.equal(card.startedAt, moment(5));
+      assert.equal(card.cutoffAt, moment(10));
+      if (framework === "codex") {
+        f.write(join(f.records, "window-dispatch.log"), JSON.stringify({ type: "thread.started", thread_id: "window-parent", _at: moment(0) }) + "\n");
+        f.write(join(f.records, "window-dispatch.json"), JSON.stringify({ v: 1, framework: "codex", seat: "engineering", permission: "workspace-write", success: true, usage: { input: 100, cached: 50, output: 10 }, started: moment(0), at: moment(10), exit: 0 }));
+        const dispatchResult = f.run(["scorecard", "dispatch-window", "--record", "window-dispatch", "--started-at", moment(5), "--cutoff-at", moment(10)]);
+        assert.equal(dispatchResult.status, 0, dispatchResult.stderr);
+        const dispatchCard = JSON.parse(dispatchResult.stdout);
+        assert.deepEqual(dispatchCard.usage.subagents.value, tokens(60, 30, 6));
+        assert.deepEqual(dispatchCard.subagents.map((child: { session: string }) => child.session), ["codex:active-child"]);
+      }
+    } finally { f.cleanup(); }
+  });
+}
+
+test("Claude 同 message.id 的流分片在首次编辑前只累计一份输入 Token", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const name = "claude-fragments";
+    f.write(join(f.records, `${name}.json`), JSON.stringify({ v: 1, framework: "claude", seat: "engineering", permission: "workspace-write", success: true, usage: { input: 180, cached: 30, output: 5 }, started: moment(0), at: moment(10), exit: 0 }));
+    const fragment = (minute: number, id: string, input: number, cache: number, tool: string) => ({ type: "assistant", timestamp: moment(minute), message: { id, content: [{ type: "tool_use", name: tool }], usage: { input_tokens: input, cache_read_input_tokens: cache, output_tokens: 1 } } });
+    f.lines(join(f.records, `${name}.log`), [fragment(1, "read", 100, 20, "Read"), fragment(2, "read", 100, 20, "Read"), fragment(3, "write", 50, 10, "Read"), fragment(4, "write", 50, 10, "Edit"), fragment(5, "later", 999, 0, "Write")]);
+    const result = f.run(["scorecard", "first-write", "--record", name]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.equal(card.overhead.value[0].firstEditAt.value, moment(4));
+    assert.equal(card.overhead.value[0].minutes.value, 4);
+    assert.equal(card.overhead.value[0].inputTokens.value, 180);
+  } finally { f.cleanup(); }
+});
+
+test("默认起点包含主会话写 spec 阶段，默认截点沿用本地记录，显式边界精确切分", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    f.lines(join(f.records, "verification.jsonl"), [{ ...f.ledger[1], branch: "spec/draft-window", startedAt: moment(5), finishedAt: moment(10), verification: { startedAt: moment(5), finishedAt: moment(10), exitCode: 0 } }]);
+    const reply = (minute: number) => ({ type: "assistant", uuid: `reply-${minute}`, sessionId: "draft", timestamp: moment(minute), message: { id: `reply-${minute}`, content: [{ type: "text", text: "写 spec" }], usage: { input_tokens: 10, output_tokens: 1 } } });
+    f.lines(f.claude, [{ type: "user", uuid: "draft-start", sessionId: "draft", timestamp: moment(0), message: { content: "起草 spec" } }, reply(1), reply(5), reply(10), reply(11)]);
+    const args = ["scorecard", "draft-window", "--session", f.claude];
+    for (const [bounds, start, end, count] of [[[], 0, 10, 3], [["--started-at", moment(5)], 5, 10, 2], [["--started-at", moment(5), "--cutoff-at", moment(11)], 5, 11, 3]] as const) {
+      const result = f.run([...args, ...bounds]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.equal(card.startedAt, moment(start));
+      assert.equal(card.cutoffAt, moment(end));
+      assert.deepEqual(card.usage.mainSession.value, tokens(count * 10, 0, count));
+      assert.equal(card.mainSessions[0].startedAt, moment(start === 0 ? 0 : 5));
+      assert.equal(card.mainSessions[0].cutoffAt, moment(end));
+    }
+    f.lines(join(f.records, "verification.jsonl"), [{ ...f.ledger[1], branch: "spec/draft-window", startedAt: moment(-5), finishedAt: moment(10), verification: { startedAt: moment(-5), finishedAt: moment(10), exitCode: 0 } }]);
+    const earlierLocal = f.run(args);
+    assert.equal(earlierLocal.status, 0, earlierLocal.stderr);
+    const earlierCard = JSON.parse(earlierLocal.stdout);
+    assert.equal(earlierCard.startedAt, moment(-5));
+    assert.deepEqual(earlierCard.usage.mainSession.value, tokens(30, 0, 3));
+    const help = f.run(["scorecard", "--help"]);
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /较早/);
+    assert.match(help.stdout, /写 spec/);
+  } finally { f.cleanup(); }
+});
+
+test("agy 会话 ID、目录、路径解析与子代理去重，缺模型只接受手工补录，Token 含缓存", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const main = agyFile(f, "main-agy");
+    const child = agyFile(f, "child-agy");
+    f.lines(main, [agyUser(0, 0), agyUser(0.5, 0), agyStep(1, 1, { model: null, input_tokens: 10924, cache_read_tokens: 0, output_tokens: 2, tool_calls: [{ name: "invoke_subagent", args: {} }] }),
+      { type: "GENERIC", source: "MODEL", step_index: 2, created_at: moment(2), content: 'Created the following subagent: {"conversationId":"child-agy"}' },
+      agyStep(3, 3, { input_tokens: 6376, cache_read_tokens: 10925, output_tokens: 5 }), agyUser(30, 4),
+      agyStep(31, 5, { input_tokens: 999999, cache_read_tokens: 999999, tool_calls: [{ name: "invoke_subagent", args: { conversationId: "outside-child" } }] })]);
+    f.lines(child, [agyUser(2, 0), agyStep(3, 1, { model: "child-model", effort: "low" }), agyStep(31, 2, { input_tokens: 999999 })]);
+    f.write(join(f.temporary, "settings.json"), JSON.stringify({ model: "global-guess-must-not-appear" }));
+    for (const source of ["main-agy", join(f.temporary, "brain/main-agy"), main]) {
+      const result = f.run(["scorecard", "local-agy", "--session", source, "--session", child, "--session", main, "--cutoff-at", moment(30)]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.deepEqual(card.mainFrameworks, ["agy"]);
+      assert.equal(card.mainSessions.length, 1);
+      assert.equal(card.mainSessions[0].actualModel, null);
+      assert.deepEqual(card.mainSessions[0].sources, { actualModel: null, actualEffort: null });
+      assert.deepEqual(card.usage.mainSession.value, tokens(28225, 10925, 7));
+      assert.deepEqual(card.usage.subagents.value, tokens(30, 20, 3));
+      assert.equal(card.subagents.length, 1);
+      assert.equal(card.subagents[0].actualModel, "child-model");
+      assert.equal(card.subagents[0].actualEffort, "low");
+      assert.equal(card.userInterventions.value, 3);
+      assert.equal(card.time.waitingUser.value.minutes, 27);
+      assert.equal(card.time.designLead.value.minutes, 3);
+      assert.deepEqual(card.dispatches.value, []);
+      assert.deepEqual(card.usage.dispatches.value, []);
+      assert.equal(card.time.dispatchSlots.value.minutes, 0);
+      assert.equal(card.failures.dispatchWithoutReport.value, 0);
+      assert.ok(!card.missing.some((item: { field: string }) => /dispatch|overhead/i.test(item.field)));
+    }
+    const manual = f.run(["scorecard", "local-agy", "--session", main, "--main-model", "explicit-model", "--main-effort", "high", "--cutoff-at", moment(30)]);
+    const card = JSON.parse(manual.stdout);
+    assert.equal(manual.status, 0, manual.stderr);
+    assert.equal(card.mainSessions[0].actualModel, "explicit-model");
+    assert.equal(card.mainSessions[0].actualEffort, "high");
+    assert.deepEqual(card.mainSessions[0].sources, { actualModel: "manual", actualEffort: "manual" });
+    assert.equal(card.subagents[0].actualModel, "child-model");
+    assert.equal(existsSync(join(f.temporary, "calls.jsonl")), false);
+    const recordedRows = readFileSync(main, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    recordedRows[2].model = "recorded-model";
+    recordedRows[2].effort = "low";
+    f.lines(main, recordedRows);
+    const recorded = JSON.parse(f.run(["scorecard", "local-agy", "--session", main, "--main-model", "ignored-model", "--main-effort", "high", "--cutoff-at", moment(30)]).stdout);
+    assert.equal(recorded.mainSessions[0].actualModel, "recorded-model");
+    assert.equal(recorded.mainSessions[0].actualEffort, "low");
+    assert.deepEqual(recorded.mainSessions[0].sources, { actualModel: "session", actualEffort: "session" });
+    rmSync(child);
+    const missing = JSON.parse(f.run(["scorecard", "local-agy", "--session", main, "--cutoff-at", moment(30)]).stdout);
+    assert.equal(missing.usage.subagents.value, null);
+    assert.match(missing.subagentAnomalies[0], /子代理会话文件不存在/);
+  } finally { f.cleanup(); }
+});
+
+test("四框架闭区间切片与 10、11、45、46 分钟边界，跨夜停工单列", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const timings = [[0, "assistant"], [10, "user"], [11, "assistant"], [22, "user"], [23, "assistant"], [68, "user"], [69, "assistant"], [115, "user"], [116, "assistant"], [236, "user"]] as const;
+    for (const framework of ["claude", "codex", "pi", "agy"]) {
+      const path = join(f.temporary, `window-${framework}.jsonl`);
+      const messages = [[-1, "user"], ...timings, [237, "user"]].map(([minute, role], index) => {
+        const time = Number(minute);
+        if (framework === "agy") return role === "user" ? agyUser(time, index) : agyStep(time, index, { model: "actual-agy", effort: "high" });
+        const message = { role, model: role === "assistant" ? `actual-${framework}` : undefined, content: [{ type: "text", text: role === "user" ? "确认" : "请确认" }], usage: framework === "pi" ? { input: 1, cacheRead: 1, output: 1 } : { input_tokens: 1, output_tokens: 1 } };
+        if (framework === "claude") return { type: role, uuid: `${index}`, sessionId: "window", timestamp: moment(time), message: { ...message, id: `${index}` } };
+        if (framework === "pi") return { type: "message", id: `${index}`, timestamp: moment(time), message };
+        return { type: "response_item", timestamp: moment(time), payload: { type: "message", ...message } };
+      });
+      f.lines(path, framework === "pi" ? [{ type: "session", id: "window", timestamp: moment(-2) }, { type: "thinking_level_change", thinkingLevel: "high", timestamp: moment(-1) }, ...messages]
+        : framework === "codex" ? [{ type: "session_meta", timestamp: moment(-2), payload: { id: "window", cwd: f.root } }, { type: "turn_context", timestamp: moment(-1), payload: { model: "actual-codex", effort: "high" } }, ...messages, { type: "token_usage_record", timestamp: moment(236), payload: { thread_token_usage: { input_tokens: 5, cached_input_tokens: 0, output_tokens: 5 } } }] : messages);
+      const result = f.run(["scorecard", "window-test", "--session", path, "--started-at", moment(0), "--cutoff-at", moment(236)]);
+      assert.equal(result.status, 0, result.stderr);
+      const card = JSON.parse(result.stdout);
+      assert.equal(card.startedAt, moment(0));
+      assert.equal(card.cutoffAt, moment(236));
+      assert.equal(card.time.waitingUser.value.minutes, 56);
+      assert.equal(card.time.longPause.value.count, 2);
+      assert.equal(card.time.longPause.value.minutes, 166);
+      assert.deepEqual(card.time.longPause.value.intervals, [{ start: moment(69), end: moment(115) }, { start: moment(116), end: moment(236) }]);
+      assert.equal(card.userInterventions.value, 5);
+      assert.equal(card.mainSessions[0].actualModel, `actual-${framework}`);
+      assert.deepEqual(card.usage.mainSession.value, framework === "agy" ? tokens(150, 100, 15) : framework === "pi" ? tokens(10, 5, 5) : tokens(5, 0, 5));
+    }
+  } finally { f.cleanup(); }
+});
+
+test("Codex 窗内累计用量扣窗前基线，原生后代按同一时间窗切片且归因", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const main = f.sessionFile("main-window");
+    const snapshot = (minute: number, n: number) => ({ type: "event_msg", timestamp: moment(minute), payload: { type: "token_count", info: { total_token_usage: { input_tokens: n, cached_input_tokens: n / 2, output_tokens: n / 10 } } } });
+    const message = (minute: number, role: string) => ({ type: "response_item", timestamp: moment(minute), payload: { type: "message", role, content: [{ type: "input_text", text: "会话" }] } });
+    f.lines(main, [{ type: "session_meta", timestamp: moment(0), payload: { id: "main-window", cwd: f.root } }, message(0, "user"), snapshot(4, 100), message(5, "user"), snapshot(5, 120), message(6, "assistant"), message(30, "user"), snapshot(30, 200), message(31, "user"), snapshot(31, 1000)]);
+    f.lines(f.sessionFile("child-window"), [{ type: "session_meta", timestamp: moment(6), payload: { id: "child-window", cwd: f.root, parent_thread_id: "main-window" } }, { type: "turn_context", timestamp: moment(6), payload: { model: "child-codex", effort: "medium" } }, message(6, "assistant"), snapshot(30, 60), snapshot(31, 1000)]);
+    const result = f.run(["scorecard", "window-test", "--session", main, "--started-at", moment(5), "--cutoff-at", moment(30)]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.deepEqual(card.usage.mainSession.value, tokens(100, 50, 10));
+    assert.deepEqual(card.usage.subagents.value, tokens(60, 30, 6));
+    assert.equal(card.subagents[0].actualModel, "child-codex");
+    assert.equal(card.subagents[0].actualEffort, "medium");
+    assert.equal(card.userInterventions.value, 2);
+    assert.equal(card.time.waitingUser.value.minutes, 24);
+  } finally { f.cleanup(); }
+});
+
+test("四框架派发四元组与首次写改工具耗时，只读席位固定 null", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const records: string[] = [];
+    for (const [framework, tool] of [["codex", "apply_patch"], ["claude", "Edit"], ["claude", "Write"], ["claude", "MultiEdit"], ["pi", "edit"], ["pi", "write"], ["agy", "edit_file"], ["agy", "write_file"]]) for (const readOnly of [false, true]) {
+      const name = `${framework}-${tool}-${readOnly ? "read" : "write"}`;
+      records.push(name);
+      f.write(join(f.records, `${name}.json`), JSON.stringify({ v: 1, framework, seat: "engineering", permission: readOnly ? "read-only" : "workspace-write", model: "configured", effort: "high", actualModel: `actual-${framework}`, actualEffort: "medium", success: true, usage: { input: 100, cached: 10, output: 5 }, started: moment(0), at: moment(10), exit: 0 }));
+      const call = framework === "agy" ? agyStep(3, 0, { tool_calls: [{ name: tool, args: {} }] }) : { timestamp: moment(3), type: framework === "pi" ? "message_end" : "assistant", message: { role: "assistant", content: [{ type: framework === "pi" ? "toolCall" : "tool_use", name: tool }], usage: { input: 10, output: 1, input_tokens: 10, output_tokens: 1 } } };
+      if (framework === "codex") {
+        f.lines(join(f.records, `${name}.log`), [{ type: "thread.started", thread_id: name, _at: moment(0) }]);
+        f.lines(f.sessionFile(name), [{ type: "session_meta", timestamp: moment(0), payload: { id: name, cwd: f.root } }, { type: "response_item", timestamp: moment(3), payload: { type: "function_call", name: "apply_patch", call_id: "edit" } }, { type: "response_item", timestamp: moment(4), payload: { type: "function_call_output", call_id: "edit", output: "Success. Updated the following files" } }]);
+      } else if (framework === "pi" && tool === "write") {
+        f.lines(join(f.records, `${name}.log`), [{ type: "tool_execution_start", toolName: tool, _at: moment(4) }]);
+        f.lines(join(f.records, `${name}.pi-sessions/session.jsonl`), [{ type: "session", id: name, timestamp: moment(0) }, { ...call, type: "message", id: "edit" }]);
+      } else if (framework === "agy" && tool === "write_file") f.lines(join(f.records, `${name}.events.jsonl`), [{ v: 1, seq: 1, at: Date.parse(moment(3)), kind: "tool", phase: "start", name: tool }]);
+      else f.lines(join(f.records, `${name}.log`), [call]);
+    }
+    const result = f.run(["scorecard", "identity-test", ...records.flatMap((name) => ["--record", name])]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    for (const item of card.dispatches.value) {
+      assert.deepEqual(item.identity, { role: "engineering", seat: "engineering", agent: item.framework, framework: item.framework, model: "configured", actualModel: `actual-${item.framework}`, effort: "high", actualEffort: "medium" });
+      const overhead = card.overhead.value.find((row: { record: string }) => row.record === item.record);
+      assert.equal(overhead.minutes.value, item.record.endsWith("-read") ? null : 3);
+    }
+    for (const group of card.usage.dispatches.value) assert.equal(group.identities[0].actualEffort, "medium");
+  } finally { f.cleanup(); }
+});
+
+test("字符串 spec 跳过 GitHub，同前缀超过十条聚合并保留异常明细，非法标识不写关联", () => {
+  const f = fixture();
+  try {
+    clearSources(f);
+    const names = Array.from({ length: 11 }, (_, index) => `audit-${index + 1}`);
+    for (const [index, name] of names.entries()) f.write(join(f.records, `${name}.json`), JSON.stringify({ v: 1, framework: "agy", seat: "research", success: index < 10, usage: index < 10 ? { input: 100, cached: 20, output: 5 } : null, started: moment(index), at: moment(index + 2), exit: index < 10 ? 0 : 1 }));
+    f.lines(join(f.records, "verification.jsonl"), [{ ...f.ledger[0], branch: "spec/feishu-refactor" }, { ...f.ledger[1], branch: "spec/feishu-refactor-extra" }]);
+    const result = f.run(["scorecard", "feishu-refactor", ...names.flatMap((name) => ["--record", name])]);
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(result.stdout);
+    assert.equal(card.spec, "feishu-refactor");
+    assert.equal(card.verification.value.fullCount, 1);
+    assert.equal(card.verification.value.staticCount, 0);
+    assert.equal(card.dispatches.value.length, 11);
+    assert.equal(card.batches.length, 1);
+    const batch = card.batches[0];
+    assert.equal(batch.prefix, "audit");
+    assert.equal(batch.count, 11);
+    assert.equal(batch.startedAt, moment(0));
+    assert.equal(batch.cutoffAt, moment(12));
+    assert.equal(batch.successRate, 10 / 11);
+    assert.equal(batch.minutes, 22);
+    assert.deepEqual(batch.usage, tokens(1000, 200, 50));
+    assert.equal(batch.complete, false);
+    assert.equal(batch.anomalies[0].record, "audit-11");
+    assert.ok(card.commits.length > 0);
+    assert.deepEqual(card.usage.dispatches.value[0].usage.value, tokens(1000, 200, 50));
+    assert.equal(card.usage.dispatches.value[0].complete, false);
+    assert.equal(existsSync(join(f.temporary, "calls.jsonl")), false);
+    const saved = readFileSync(join(f.records, "scorecard-records.json"), "utf8");
+    for (const args of [["../bad"], ["bad_name"], ["-bad"], ["0"], ["feishu-refactor", "--post"], ["valid", "--started-at", moment(10), "--cutoff-at", moment(0)], ["valid", "--cutoff-at", "bad-date"], ["valid", "--main-model", ""]]) {
+      const invalid = f.run(["scorecard", ...args]);
+      assert.equal(invalid.status, 2, invalid.stderr);
+      assert.match(invalid.stderr, /^出错：/);
+    }
+    assert.equal(readFileSync(join(f.records, "scorecard-records.json"), "utf8"), saved);
+    const shortened = f.run(["scorecard", "ten-only", ...names.slice(0, 10).map((name) => `ten-${name}`).flatMap((name) => ["--record", name]), "--dry-run"]);
+    assert.equal(JSON.parse(shortened.stdout).batches.length, 0);
+    const postedNames = names.map((name) => `post-${name}`);
+    for (const [index, name] of postedNames.entries()) f.write(join(f.records, `${name}.json`), readFileSync(join(f.records, `${names[index]}.json`), "utf8"));
+    const posted = f.run(["scorecard", "2", ...postedNames.flatMap((name) => ["--record", name]), "--post", "--dry-run"]);
+    assert.equal(posted.status, 0, posted.stderr);
+    assert.match(posted.stderr, /批次摘要/);
+    assert.match(posted.stderr, /post-audit.*11.*90\.9%/);
+    assert.match(posted.stderr, /post-audit-11/);
+    assert.deepEqual(JSON.parse(readFileSync(f.comments, "utf8")), []);
   } finally { f.cleanup(); }
 });

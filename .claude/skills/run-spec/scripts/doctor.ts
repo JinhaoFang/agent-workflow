@@ -24,6 +24,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -31,7 +33,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { adapters } from "./dispatch/adapters.ts";
+import { adapters, adapterFor } from "./dispatch/adapters.ts";
 import type { SeatSettings } from "./dispatch/adapter.ts";
 import { frameworkSettings, resolveSeat, seatNames, SeatConfigError } from "./dispatch/settings.ts";
 import {
@@ -362,10 +364,12 @@ const doctor = async (values: Values): Promise<void> => {
   if (config) {
     const seats = config.seatConfiguration;
     const used = new Map<string, SeatSettings>();
+    const agyProfiles = new Map<string, SeatSettings>();
     const fallbacks = new Map<string, string[]>();
     const losses = new Map<string, { loss: string; seats: Set<string> }>();
     const unavailable = new Map<string, { seats: Set<string>; readOnly: boolean }>();
     console.log(`用户席位配置：${seats.userFile}；${seats.userExists ? "已读取" : "文件不存在，使用仓库和内置默认"}`);
+    if (!seats.userExists) console.log(`提示：可在 ${seats.userFile} 创建个人席位配置，按 seats 配置席位、按 agents 配置框架路径和并发；当前继续使用仓库和内置默认。`);
     console.log(`工作类型词表：${Object.entries(seats.workTypes).map(([name, description]) => `${name}（${description}）`).join("、") || "无"}；来源：仓库`);
     for (const seat of seatNames) {
       for (const workType of ["default", ...Object.keys(seats.workTypes)]) {
@@ -377,6 +381,12 @@ const doctor = async (values: Values): Promise<void> => {
           }
           for (const [index, settings] of entries.entries()) {
             used.set(settings.agent, settings);
+            if (settings.agent === "agy") agyProfiles.set(JSON.stringify([settings.model, settings.effort]), settings);
+            if (seat === "spec-review" || seat === "watch") check(`受限席位 ${seat}.${workType}`, "将此席位改为支持 restrictedCommand 的框架。", () => {
+              const supported = Object.values(adapters).filter(adapter => adapter.restrictedCommand).map(adapter => adapter.id);
+              requireCheck(!!adapterFor(settings.agent).restrictedCommand, `${settings.agent} 不支持受限调用；当前支持：${supported.join("、")}。`);
+              return settings.agent;
+            }, true);
             console.log(`${seat}.${workType}${entries.length > 1 ? `[${index}]` : ""}：框架：${settings.agent}；模型：${settings.model ?? "框架默认"}；强度：${settings.effort ?? "框架默认"}；权限：${settings.permission}${compactSources(settings.sources ?? {}, { agent: "框架", model: "模型", effort: "强度", permission: "权限" })}`);
             const adapter = adapters[settings.agent];
             if (!adapter) {
@@ -418,6 +428,42 @@ const doctor = async (values: Values): Promise<void> => {
         return `${detection.version ?? "版本未知"}；路径：${path}；来源：${settings.sources.path}`;
       });
     }
+    for (const settings of agyProfiles.values()) {
+      await check(`agy 模型与强度 ${settings.model ?? "框架默认"}/${settings.effort ?? "框架默认"}`, "使用 agy /model 和 /effort 返回的完整模型 ID 与支持的强度，拒绝会被补全的裸模型前缀。", async () => {
+        const detection = await adapterFor("agy").detect({ env: process.env, settings });
+        requireCheck(detection.installed && !!detection.launcher, "agy CLI 不可用，无法零配额校验。");
+        const launcher = detection.launcher!;
+        const query = (name: string, effort: boolean): Record<string, any> => {
+          const args = [...launcher.args, ...(settings.model ? ["--model", settings.model] : []), ...(effort && settings.effort ? ["--effort", settings.effort] : []), "--output-format", "json", "-p", `/${name}`];
+          const result = spawnSync(launcher.executable, args, { cwd: root, env: process.env, encoding: "utf8", shell: false, windowsHide: true, timeout: 10000, maxBuffer: 1024 * 1024 });
+          let value;
+          try { value = JSON.parse(result.stdout); } catch {}
+          requireCheck(!result.error && result.status === 0 && value?.status === "SUCCESS" && value.command?.name === name && value.command?.data && value.usage?.total_tokens === 0 && value.duration_seconds === 0, `agy /${name} 零配额校验失败：${value?.error || result.error?.message || result.stderr?.trim() || "未返回有效的零配额 JSON"}`);
+          return value.command.data;
+        };
+        const model = query("model", false);
+        requireCheck(typeof model.id === "string" && (!settings.model || model.id === settings.model), `模型名必须使用完整有效 ID：配置 ${settings.model}，agy 返回 ${model.id}；不能使用裸前缀或别名。`);
+        const effort = query("effort", true);
+        requireCheck(typeof effort.current === "string" && (!settings.effort || effort.current === settings.effort) && (effort.adjustable !== true || Array.isArray(effort.available) && effort.available.includes(effort.current)), `agy 不支持所配强度 ${settings.effort ?? "框架默认"}。`);
+        return `模型：${model.id}；强度：${effort.current}；/model 与 /effort 均 total_tokens=0、duration_seconds=0`;
+      });
+    }
+    if (used.has("agy")) check("agy 单文件截断风险", "将超限规则或技能拆成入口与按需读取的参考文件。", () => {
+      const files = new Set<string>();
+      for (const file of [join(root, "AGENTS.md"), join(root, "GEMINI.md")]) if (isFile(file)) files.add(realpathSync(file));
+      for (const base of [join(root, ".claude/skills"), join(root, ".agents/skills")]) {
+        if (!existsSync(base)) continue;
+        for (const name of readdirSync(base)) {
+          const file = join(base, name, "SKILL.md");
+          if (isFile(file)) files.add(realpathSync(file));
+        }
+      }
+      for (const file of files) {
+        const size = statSync(file).size;
+        if (size > 24000) console.log(`提示：agy 单文件截断风险：${file} 为 ${size} 字节，超过 24 KB（24000 字节）。`);
+      }
+      return `已扫描 ${files.size} 个根规则和已安装技能文件；阈值 24000 字节，超限仅提示`;
+    });
     for (const [agent] of used)
       check(`技能隔离 ${agent}`, `为 ${agent} 适配器提供屏蔽 run-spec、setup-run-spec 的 isolationArgs。`, () => {
         const adapter = adapters[agent];
@@ -574,7 +620,10 @@ export const doctorCommand: Command = {
 只读自检，逐项输出通过、不通过和修法，不改仓库、不改 GitHub。
 席位每个已配置的档（含 default、review 列表各项）一行，列出框架、模型、强度、权限；来源仅列非内置项，用参数、环境、仓库、用户层名。
 词表内未配档的席位按类型合并提示回落 default；框架路径、并发各展示一次，默认不展开席位 JSON。
-用户文件 $XDG_CONFIG_HOME/agent-workflow/seats.json（默认 ~/.config/agent-workflow/seats.json）不存在时使用默认；格式错误退出 2。
+用户文件 $XDG_CONFIG_HOME/agent-workflow/seats.json（默认 ~/.config/agent-workflow/seats.json）不存在时提示创建路径并使用默认；格式错误退出 2。
+spec-review、watch 必须选择提供 restrictedCommand 的适配器；不支持时退出 1 并列出当前可用框架。
+使用 agy 的每组模型/强度通过 --output-format json -p /model、/effort 零配额查询校验，拒绝裸模型前缀与无效强度；
+根 AGENTS.md、GEMINI.md 和已安装 SKILL.md 单文件超过 24 KB（24000 字节）时提示截断风险，不判失败。
 优先级：参数 > 环境变量 > 仓库 > 用户 > 内置；空环境值视为未设置；框架路径和并发放 agents，报告各框架安装情况。
 权限映射损失直接取适配器 permissions，合并涉及席位提示；未接适配器也合并提示不可用。
 词表内用户未配档只提示；codexSandbox/codexConcurrency 继续兼容并建议迁移。

@@ -1,6 +1,6 @@
 # agent-workflow
 
-双角色开发流程的方法层：设计负责人拆 spec、派发、验收，工程负责人执行工单；两个角色各用哪个 agent 框架和模型（Claude Code、Codex、pi）按席位配置。这里有两个技能：
+双角色开发流程的方法层：设计负责人拆 spec、派发、验收，工程负责人执行工单；两个角色各用哪个 agent 框架和模型（Claude Code、Codex、pi、agy）按席位配置。这里有两个技能：
 
 - `run-spec`：执行 GitHub 上的 spec 和工单，包括选单、派发、合并、验收、审查、收尾。
 - `setup-run-spec`：把这套流程接进一个仓库，包括读懂仓库、生成角色文档、写配置、建标签。
@@ -17,7 +17,7 @@ npx skills add JinhaoFang/agent-workflow#workflow-v5 --skill run-spec --skill se
 然后由用户输入 `/setup-run-spec`，按它的步骤接入。
 
 - `#` 后面是版本 tag。安装工具按这个 tag 取文件，目标仓库固定在这个版本上，不会跟着 `main` 变。
-- 两个技能不进目标仓库的 git。`-a claude-code` 总要带，脚本路径以 `.claude/skills/` 为准；设计负责人用 Codex 或 pi 时再加 `-a codex`（它们读 `.agents/skills/`）。派出去的 agent 由派发层按名称屏蔽这两个技能。
+- 两个技能不进目标仓库的 git。`-a claude-code` 总要带，脚本路径以 `.claude/skills/` 为准；设计负责人或席位用 Codex、pi、agy 时再加 `-a codex`（它们读 `.agents/skills/`）。派出去的 agent 由派发层按名称屏蔽这两个技能。
 - 装完运行 `node .claude/skills/run-spec/scripts/tickets.ts doctor`，再提交 `skills-lock.json` 里变了的两项。
 - 前提：Matt 的技能（`npx skills add mattpocock/skills`），`/setup-run-spec` 会检查，缺了会给出安装办法。派发层随 `run-spec` 自带，不再需要 DispatchDock。
 
