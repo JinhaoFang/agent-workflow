@@ -2,6 +2,7 @@
  * report-check 的 CLI 测试：真实临时 git 仓库、入库 HTML 样本、实际 Chromium。
  * 从命令行核对四项结果、退出码、固定 360 的量法、分段 PNG 和临时目录清理；
  * 核对启动首行包含浏览器 PID 和临时用户目录绝对路径，成功、检查失败及启动失败后该目录均已删除。
+ * 伪浏览器主进程先退、子进程持有 stderr 并延迟写入，验证清理等到子进程管道关闭。
  * 长页覆盖按序分段、每段不高于视口、手机展开折叠和延迟重排、清理后保留全部截图；
  * 多页签样本覆盖浅色与深色桌面 [role="tab"] 巡检与恢复初始态（含深色恢复步时间线移除、隐藏或 2000px 溢出拦截，report.2、report.5）、切换抛错、非默认页签时间线溢出或消失隐藏及手机解除隐藏面板。
  * 延迟溢出样本覆盖视口切换后 150 毫秒才出现的窄屏失败；分段 PNG 共用一处断言。
@@ -179,6 +180,40 @@ test("report-check 启动失败以 2 退出且删除临时用户目录", () => {
     assert.equal(result.status, 2, result.stdout + result.stderr);
     assert.match(result.stderr, /出错：Chromium 启动失败（退出码 3）/);
     assert.match(result.stderr, /伪浏览器启动失败/);
+    assertBrowserSite(result.stdout, repo.temporary);
+    assert.deepEqual(readdirSync(repo.temporary), []);
+  } finally {
+    rmSync(repo.root, { recursive: true, force: true });
+  }
+});
+
+test("report-check 等浏览器退出并关闭子进程管道后才删除用户目录", () => {
+  const repo = repository();
+  try {
+    const program = join(repo.root, "延迟退出的浏览器");
+    const marker = join(repo.root, "cleanup-order.txt");
+    const worker = `
+const fs = require("node:fs");
+const path = require("node:path");
+const [profile, marker] = process.argv.slice(1);
+process.send("ready");
+setTimeout(() => {
+  fs.writeFileSync(marker, String(fs.existsSync(profile)));
+  fs.mkdirSync(path.join(profile, "Default"), { recursive: true });
+  fs.writeFileSync(path.join(profile, "Default", "Preferences"), "{}");
+  process.disconnect();
+}, 150);
+`;
+    writeFileSync(program, `#!${process.execPath}
+const { spawn } = require("node:child_process");
+const profile = process.argv.find(arg => arg.startsWith("--user-data-dir=")).slice("--user-data-dir=".length);
+const child = spawn(process.execPath, ["-e", ${JSON.stringify(worker)}, profile, ${JSON.stringify(marker)}], { stdio: ["ignore", "ignore", "inherit", "ipc"] });
+child.once("message", () => { process.stderr.write("伪浏览器启动失败\\n"); process.exit(3); });
+`, { mode: 0o755 });
+    const result = repo.run(["report-check", repo.input, "--chromium", program]);
+    assert.equal(result.status, 2, result.stdout + result.stderr);
+    assert.match(result.stderr, /出错：Chromium 启动失败（退出码 3）/);
+    assert.equal(readFileSync(marker, "utf8"), "true", "浏览器子进程最后写入时用户目录仍存在");
     assertBrowserSite(result.stdout, repo.temporary);
     assert.deepEqual(readdirSync(repo.temporary), []);
   } finally {

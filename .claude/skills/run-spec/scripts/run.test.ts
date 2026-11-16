@@ -133,6 +133,24 @@ for (const seat of ["engineering", "review", "research", "spec-review"]) {
   });
 }
 
+for (const absolute of [false, true]) {
+  test(`run 读取${absolute ? "工作仓库外的绝对路径" : "相对路径"}任务文件并启动派发`, () => {
+    const f = fixture();
+    try {
+      const file = absolute ? join(f.base, "外部任务 空格.md") : "任务 空格.md";
+      const task = "读取当前工作仓库的 git 状态。";
+      writeFileSync(absolute ? file : join(f.tree, file), task);
+      const result = f.run(["run", file, "--seat", "research", "--name", "file-task"]);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const [call] = f.calls("agents.jsonl");
+      assert.equal(f.calls("agents.jsonl").length, 1);
+      assert.equal(call.cwd, f.tree);
+      assert.ok(call.prompt.includes(`任务：\n${task}`), call.prompt);
+      assert.ok(existsSync(join(f.root, ".codex-runs/file-task.md")));
+    } finally { f.cleanup(); }
+  });
+}
+
 test("run associates exact auxiliary names, avoids orphan collisions, and scorecard/cleanup preserve auxiliary evidence", () => {
   const f = fixture();
   try {

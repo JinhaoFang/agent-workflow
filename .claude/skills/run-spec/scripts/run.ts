@@ -5,7 +5,7 @@
  * 失败也保留关联与清单，继续其余审查份；不写 GitHub、不创建工单 worktree。
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { adapterFor } from "./dispatch/adapters.ts";
 import { run as dispatchTask } from "./dispatch/run.ts";
 import { taskDetails } from "./dispatch/protocol.ts";
@@ -24,7 +24,7 @@ const run = async (values: Values, _numbers: number[], args: string[]): Promise<
   const opts: Record<string, string> = values.name === undefined ? {} : { name: values.name as string };
   if (["engineering", "review", "research"].includes(seat)) opts.role = "engineering";
   const details = taskDetails(cwd, { task: args[0], extra: "", opts });
-  const task = details.spec ? readFileSync(join(cwd, details.spec), "utf8") : args[0];
+  const task = details.spec ? readFileSync(resolve(cwd, details.spec), "utf8") : args[0];
   if (!task.trim()) throw usageError("任务内容不能为空。", runCommand.help);
   const fallbackName = /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(details.name) ? details.name : `task-${Date.now()}`;
   const reviewPrefix = `review-${typeof spec === "string" ? `spec-id-${spec}` : spec}`;
@@ -102,7 +102,7 @@ export const runCommand: Command = {
   execute: run,
   help: `${entry} run <任务说明文件|任务文字> --seat <engineering|review|spec-review|research> [--spec <S>] [--name <记录名>] [--dry-run]
 覆盖参数：--work-type <工作类型> --agent <codex|claude|pi|agy> --model <模型> --effort <强度> --permission <read-only|workspace-write|full>。
-在当前工作区执行，任务文件在启动前读取；review 列表每项收到同样的提示，逐份运行，失败继续其余项。
+在当前工作区执行，任务文件支持相对当前工作区的路径或绝对路径，在启动前读取；review 列表每项收到同样的提示，逐份运行，失败继续其余项。
 engineering、review、research 告知工程负责人角色并要求阅读 docs/roles/engineering.md；spec-review 不告知角色。
 记录统一写主工作区 .codex-runs；--spec 接受正整数 Issue 号或安全字符串（字母、数字、连字符）。
 数字只读查询 spec 与子工单，字符串跳过全部 GitHub 查询；用现有 scorecard --record 存储自动关联每份精确名。
