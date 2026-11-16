@@ -100,7 +100,7 @@ node .claude/skills/run-spec/scripts/tickets.ts run "用 code-review 技能审�
 
 ## 7. 收尾
 
-所有工单都关闭后：
+所有工单都关闭后（没有派发或只派了一两张工单的 spec，可以只做前 3 步，PR 正文写清做了什么和验证结果，再用 `cleanup --no-scorecard` 清理；思路 2、4）：
 
 1. **目标核对**（思路 1）：把 spec 问题陈述里的现状按同一口径重测，量大就用 `run --seat research` 只读去做。没达到的开返工工单，或者写进 PR 正文和汇报；问题陈述没有可度量现状的，写明用什么判断目标达成。
 2. 按第 6 步以 `main` 为固定点审一次整个分支，要修的返工做完。
