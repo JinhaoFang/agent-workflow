@@ -260,7 +260,7 @@ const expected = (collectedAt: string, claude: string) => {
   });
   const reason = "只读席位不统计首次编辑";
   return { version: 3, spec: 2, startedAt: at(0), mainFrameworks: ["claude"], mainSessions: [{ session: "claude:main", path: claude, ...identity("design", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(150, 20, 10), child: false, startedAt: at(0), cutoffAt: at(51), spans: [{ start: at(0), end: at(21) }, { start: at(45), end: at(50) }] }],
-    subagents: [{ session: "claude:main:sidechain:claude:main", path: claude, child: true, ...identity("subagent", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(6, 2, 4) }, { session: "codex:child", ...identity("subagent"), usage: tokens(20, 10, 2) }], subagentAnomalies: [], batches: [],
+    subagents: [{ session: "claude:main:sidechain:claude:main", path: claude, child: true, ...identity("subagent", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(6, 2, 4) }, { session: "codex:child", ...identity("subagent"), usage: tokens(20, 10, 2) }], subagentAnomalies: [],
     dispatchLanes: value([{ framework: "codex", anomalies: [], time: value(spans([0, 20])) }]), cutoffAt: at(51), collectedAt, verification: value({ runs: [
     { layer: "full", target: { kind: "ticket", number: 5 }, caller: "land", branch: "ticket/5", start: at(3), end: at(8), queuedMinutes: 2, minutes: 5, exitCode: 1 },
     { layer: "static", target: { kind: "main" }, caller: "verify", branch: "spec/2-test", start: at(9), end: at(10), queuedMinutes: 0, minutes: 1, exitCode: 0 },
@@ -999,7 +999,7 @@ test("共享 sessionId 的 Claude 主日志、sidechain 与重叠快照合并不
     f.lines(sidechain, [child, childLast]);
     let expected;
     for (const paths of [[older, sidechain, newer], [older, newer, sidechain], [sidechain, older, newer], [sidechain, newer, older], [newer, older, sidechain], [newer, sidechain, older]]) {
-      const result = f.run(["scorecard", "shared-session", ...paths.flatMap((path) => ["--session", path])]);
+      const result = f.run(["scorecard", "2", ...paths.flatMap((path) => ["--session", path])]);
       assert.equal(result.status, 0, result.stderr);
       const card = JSON.parse(result.stdout);
       assert.deepEqual(card.usage.mainSession.value, tokens(24, 4, 2));
@@ -1040,7 +1040,7 @@ for (const framework of ["agy", "codex"]) {
           ? [meta(id, 2, "window-parent"), message(2), snapshot(4, 100), snapshot(5, 130), snapshot(10, 160), snapshot(11, 1000)]
           : [meta(id, index === 1 ? 2 : 11, "window-parent"), snapshot(index === 1 ? 4 : 12, 1000)]);
       }
-      const result = f.run(["scorecard", "pre-window-child", "--session", main, "--started-at", moment(5), "--cutoff-at", moment(10)]);
+      const result = f.run(["scorecard", "2", "--session", main, "--started-at", moment(5), "--cutoff-at", moment(10)]);
       assert.equal(result.status, 0, result.stderr);
       const card = JSON.parse(result.stdout);
       assert.deepEqual(card.subagents.map((child: { session: string }) => child.session), [`${framework}:active-child`]);
@@ -1051,7 +1051,7 @@ for (const framework of ["agy", "codex"]) {
       if (framework === "codex") {
         f.write(join(f.records, "window-dispatch.log"), JSON.stringify({ type: "thread.started", thread_id: "window-parent", _at: moment(0) }) + "\n");
         f.write(join(f.records, "window-dispatch.json"), JSON.stringify({ v: 1, framework: "codex", seat: "engineering", permission: "workspace-write", success: true, usage: { input: 100, cached: 50, output: 10 }, started: moment(0), at: moment(10), exit: 0 }));
-        const dispatchResult = f.run(["scorecard", "dispatch-window", "--record", "window-dispatch", "--started-at", moment(5), "--cutoff-at", moment(10)]);
+        const dispatchResult = f.run(["scorecard", "2", "--record", "window-dispatch", "--started-at", moment(5), "--cutoff-at", moment(10)]);
         assert.equal(dispatchResult.status, 0, dispatchResult.stderr);
         const dispatchCard = JSON.parse(dispatchResult.stdout);
         assert.deepEqual(dispatchCard.subagents.map((child: { session: string }) => child.session), ["codex:active-child"]);
@@ -1068,7 +1068,7 @@ test("Claude 同 message.id 的流分片在首次编辑前只累计一份输入 
     f.write(join(f.records, `${name}.json`), JSON.stringify({ v: 1, framework: "claude", seat: "engineering", permission: "workspace-write", success: true, usage: { input: 180, cached: 30, output: 5 }, started: moment(0), at: moment(10), exit: 0 }));
     const fragment = (minute: number, id: string, input: number, cache: number, tool: string) => ({ type: "assistant", timestamp: moment(minute), message: { id, content: [{ type: "tool_use", name: tool }], usage: { input_tokens: input, cache_read_input_tokens: cache, output_tokens: 1 } } });
     f.lines(join(f.records, `${name}.log`), [fragment(1, "read", 100, 20, "Read"), fragment(2, "read", 100, 20, "Read"), fragment(3, "write", 50, 10, "Read"), fragment(4, "write", 50, 10, "Edit"), fragment(5, "later", 999, 0, "Write")]);
-    const result = f.run(["scorecard", "first-write", "--record", name]);
+    const result = f.run(["scorecard", "2", "--record", name]);
     assert.equal(result.status, 0, result.stderr);
     const card = JSON.parse(result.stdout);
     assert.equal(card.overhead.value[0].firstEditAt.value, moment(4));
@@ -1081,10 +1081,10 @@ test("默认起点包含主会话写 spec 阶段，默认截点沿用本地记�
   const f = fixture();
   try {
     clearSources(f);
-    f.lines(join(f.records, "verification.jsonl"), [{ ...f.ledger[1], branch: "spec/draft-window", startedAt: moment(5), finishedAt: moment(10), verification: { startedAt: moment(5), finishedAt: moment(10), exitCode: 0 } }]);
+    f.lines(join(f.records, "verification.jsonl"), [{ ...f.ledger[1], branch: "spec/2-draft", startedAt: moment(5), finishedAt: moment(10), verification: { startedAt: moment(5), finishedAt: moment(10), exitCode: 0 } }]);
     const reply = (minute: number) => ({ type: "assistant", uuid: `reply-${minute}`, sessionId: "draft", timestamp: moment(minute), message: { id: `reply-${minute}`, content: [{ type: "text", text: "写 spec" }], usage: { input_tokens: 10, output_tokens: 1 } } });
     f.lines(f.claude, [{ type: "user", uuid: "draft-start", sessionId: "draft", timestamp: moment(0), message: { content: "起草 spec" } }, reply(1), reply(5), reply(10), reply(11)]);
-    const args = ["scorecard", "draft-window", "--session", f.claude];
+    const args = ["scorecard", "2", "--session", f.claude];
     for (const [bounds, start, end, count] of [[[], 0, 10, 3], [["--started-at", moment(5)], 5, 10, 2], [["--started-at", moment(5), "--cutoff-at", moment(11)], 5, 11, 3]] as const) {
       const result = f.run([...args, ...bounds]);
       assert.equal(result.status, 0, result.stderr);
@@ -1095,7 +1095,7 @@ test("默认起点包含主会话写 spec 阶段，默认截点沿用本地记�
       assert.equal(card.mainSessions[0].startedAt, moment(start === 0 ? 0 : 5));
       assert.equal(card.mainSessions[0].cutoffAt, moment(end));
     }
-    f.lines(join(f.records, "verification.jsonl"), [{ ...f.ledger[1], branch: "spec/draft-window", startedAt: moment(-5), finishedAt: moment(10), verification: { startedAt: moment(-5), finishedAt: moment(10), exitCode: 0 } }]);
+    f.lines(join(f.records, "verification.jsonl"), [{ ...f.ledger[1], branch: "spec/2-draft", startedAt: moment(-5), finishedAt: moment(10), verification: { startedAt: moment(-5), finishedAt: moment(10), exitCode: 0 } }]);
     const earlierLocal = f.run(args);
     assert.equal(earlierLocal.status, 0, earlierLocal.stderr);
     const earlierCard = JSON.parse(earlierLocal.stdout);
@@ -1121,7 +1121,7 @@ test("agy 会话 ID、目录、路径解析与子代理去重，缺模型只接�
     f.lines(child, [agyUser(2, 0), agyStep(3, 1, { model: "child-model", effort: "low" }), agyStep(31, 2, { input_tokens: 999999 })]);
     f.write(join(f.temporary, "settings.json"), JSON.stringify({ model: "global-guess-must-not-appear" }));
     for (const source of ["main-agy", join(f.temporary, "brain/main-agy"), main]) {
-      const result = f.run(["scorecard", "local-agy", "--session", source, "--session", child, "--session", main, "--cutoff-at", moment(30)]);
+      const result = f.run(["scorecard", "2", "--session", source, "--session", child, "--session", main, "--cutoff-at", moment(30)]);
       assert.equal(result.status, 0, result.stderr);
       const card = JSON.parse(result.stdout);
       assert.deepEqual(card.mainFrameworks, ["agy"]);
@@ -1141,24 +1141,23 @@ test("agy 会话 ID、目录、路径解析与子代理去重，缺模型只接�
       assert.equal(card.failures.dispatchWithoutReport.value, 0);
       assert.ok(!card.missing.some((item: { field: string }) => /dispatch|overhead/i.test(item.field)));
     }
-    const manual = f.run(["scorecard", "local-agy", "--session", main, "--main-model", "explicit-model", "--main-effort", "high", "--cutoff-at", moment(30)]);
+    const manual = f.run(["scorecard", "2", "--session", main, "--main-model", "explicit-model", "--main-effort", "high", "--cutoff-at", moment(30)]);
     const card = JSON.parse(manual.stdout);
     assert.equal(manual.status, 0, manual.stderr);
     assert.equal(card.mainSessions[0].actualModel, "explicit-model");
     assert.equal(card.mainSessions[0].actualEffort, "high");
     assert.deepEqual(card.mainSessions[0].sources, { actualModel: "manual", actualEffort: "manual" });
     assert.equal(card.subagents[0].actualModel, "child-model");
-    assert.equal(existsSync(join(f.temporary, "calls.jsonl")), false);
     const recordedRows = readFileSync(main, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     recordedRows[2].model = "recorded-model";
     recordedRows[2].effort = "low";
     f.lines(main, recordedRows);
-    const recorded = JSON.parse(f.run(["scorecard", "local-agy", "--session", main, "--main-model", "ignored-model", "--main-effort", "high", "--cutoff-at", moment(30)]).stdout);
+    const recorded = JSON.parse(f.run(["scorecard", "2", "--session", main, "--main-model", "ignored-model", "--main-effort", "high", "--cutoff-at", moment(30)]).stdout);
     assert.equal(recorded.mainSessions[0].actualModel, "recorded-model");
     assert.equal(recorded.mainSessions[0].actualEffort, "low");
     assert.deepEqual(recorded.mainSessions[0].sources, { actualModel: "session", actualEffort: "session" });
     rmSync(child);
-    const missing = JSON.parse(f.run(["scorecard", "local-agy", "--session", main, "--cutoff-at", moment(30)]).stdout);
+    const missing = JSON.parse(f.run(["scorecard", "2", "--session", main, "--cutoff-at", moment(30)]).stdout);
     assert.match(missing.subagentAnomalies[0], /子代理会话文件不存在/);
   } finally { f.cleanup(); }
 });
@@ -1180,7 +1179,7 @@ test("四框架闭区间切片与 10、11、45、46 分钟边界，跨夜超过 
       });
       f.lines(path, framework === "pi" ? [{ type: "session", id: "window", timestamp: moment(-2) }, { type: "thinking_level_change", thinkingLevel: "high", timestamp: moment(-1) }, ...messages]
         : framework === "codex" ? [{ type: "session_meta", timestamp: moment(-2), payload: { id: "window", cwd: f.root } }, { type: "turn_context", timestamp: moment(-1), payload: { model: "actual-codex", effort: "high" } }, ...messages, { type: "token_usage_record", timestamp: moment(236), payload: { thread_token_usage: { input_tokens: 5, cached_input_tokens: 0, output_tokens: 5 } } }] : messages);
-      const result = f.run(["scorecard", "window-test", "--session", path, "--started-at", moment(0), "--cutoff-at", moment(236)]);
+      const result = f.run(["scorecard", "2", "--session", path, "--started-at", moment(0), "--cutoff-at", moment(236)]);
       assert.equal(result.status, 0, result.stderr);
       const card = JSON.parse(result.stdout);
       assert.equal(card.startedAt, moment(0));
@@ -1205,7 +1204,7 @@ test("Codex 窗内累计用量扣窗前基线，原生后代按同一时间窗�
     const message = (minute: number, role: string) => ({ type: "response_item", timestamp: moment(minute), payload: { type: "message", role, content: [{ type: "input_text", text: "会话" }] } });
     f.lines(main, [{ type: "session_meta", timestamp: moment(0), payload: { id: "main-window", cwd: f.root } }, message(0, "user"), snapshot(4, 100), message(5, "user"), snapshot(5, 120), message(6, "assistant"), message(30, "user"), snapshot(30, 200), message(31, "user"), snapshot(31, 1000)]);
     f.lines(f.sessionFile("child-window"), [{ type: "session_meta", timestamp: moment(6), payload: { id: "child-window", cwd: f.root, parent_thread_id: "main-window" } }, { type: "turn_context", timestamp: moment(6), payload: { model: "child-codex", effort: "medium" } }, message(6, "assistant"), snapshot(30, 60), snapshot(31, 1000)]);
-    const result = f.run(["scorecard", "window-test", "--session", main, "--started-at", moment(5), "--cutoff-at", moment(30)]);
+    const result = f.run(["scorecard", "2", "--session", main, "--started-at", moment(5), "--cutoff-at", moment(30)]);
     assert.equal(result.status, 0, result.stderr);
     const card = JSON.parse(result.stdout);
     assert.deepEqual(card.usage.mainSession.value, tokens(100, 50, 10));
@@ -1235,7 +1234,7 @@ test("四框架派发角色与首次写改工具耗时，只读席位固定 null
       } else if (framework === "agy" && tool === "write_file") f.lines(join(f.records, `${name}.events.jsonl`), [{ v: 1, seq: 1, at: Date.parse(moment(3)), kind: "tool", phase: "start", name: tool }]);
       else f.lines(join(f.records, `${name}.log`), [call]);
     }
-    const result = f.run(["scorecard", "identity-test", ...records.flatMap((name) => ["--record", name])]);
+    const result = f.run(["scorecard", "2", ...records.flatMap((name) => ["--record", name])]);
     assert.equal(result.status, 0, result.stderr);
     const card = JSON.parse(result.stdout);
     for (const item of card.dispatches.value) {
@@ -1244,55 +1243,6 @@ test("四框架派发角色与首次写改工具耗时，只读席位固定 null
       assert.equal(overhead.minutes.value, item.record.endsWith("-read") ? null : 3);
     }
     for (const group of card.usage.dispatches.value) assert.equal(group.identities[0].actualEffort, "medium");
-  } finally { f.cleanup(); }
-});
-
-test("字符串 spec 跳过 GitHub，同前缀超过十条聚合并保留异常明细，非法标识不写关联", () => {
-  const f = fixture();
-  try {
-    clearSources(f);
-    const names = Array.from({ length: 11 }, (_, index) => `audit-${index + 1}`);
-    for (const [index, name] of names.entries()) f.write(join(f.records, `${name}.json`), JSON.stringify({ v: 1, framework: "agy", seat: "research", success: index < 10, usage: index < 10 ? { input: 100, cached: 20, output: 5 } : null, started: moment(index), at: moment(index + 2), exit: index < 10 ? 0 : 1 }));
-    f.lines(join(f.records, "verification.jsonl"), [{ ...f.ledger[0], branch: "spec/feishu-refactor" }, { ...f.ledger[1], branch: "spec/feishu-refactor-extra" }]);
-    const result = f.run(["scorecard", "feishu-refactor", ...names.flatMap((name) => ["--record", name])]);
-    assert.equal(result.status, 0, result.stderr);
-    const card = JSON.parse(result.stdout);
-    assert.equal(card.spec, "feishu-refactor");
-    assert.equal(card.verification.value.fullCount, 1);
-    assert.equal(card.verification.value.staticCount, 0);
-    assert.equal(card.dispatches.value.length, 11);
-    assert.equal(card.batches.length, 1);
-    const batch = card.batches[0];
-    assert.equal(batch.prefix, "audit");
-    assert.equal(batch.count, 11);
-    assert.equal(batch.startedAt, moment(0));
-    assert.equal(batch.cutoffAt, moment(12));
-    assert.equal(batch.successRate, 10 / 11);
-    assert.equal(batch.minutes, 22);
-    assert.deepEqual(batch.usage, tokens(1000, 200, 50));
-    assert.equal(batch.complete, false);
-    assert.equal(batch.anomalies[0].record, "audit-11");
-    assert.ok(card.commits.length > 0);
-    assert.deepEqual(card.usage.dispatches.value[0].usage.value, tokens(1000, 200, 50));
-    assert.equal(card.usage.dispatches.value[0].complete, false);
-    assert.equal(existsSync(join(f.temporary, "calls.jsonl")), false);
-    const saved = readFileSync(join(f.records, "scorecard-records.json"), "utf8");
-    for (const args of [["../bad"], ["bad_name"], ["-bad"], ["0"], ["feishu-refactor", "--post"], ["valid", "--started-at", moment(10), "--cutoff-at", moment(0)], ["valid", "--cutoff-at", "bad-date"], ["valid", "--main-model", ""]]) {
-      const invalid = f.run(["scorecard", ...args]);
-      assert.equal(invalid.status, 2, invalid.stderr);
-      assert.match(invalid.stderr, /^出错：/);
-    }
-    assert.equal(readFileSync(join(f.records, "scorecard-records.json"), "utf8"), saved);
-    const shortened = f.run(["scorecard", "ten-only", ...names.slice(0, 10).map((name) => `ten-${name}`).flatMap((name) => ["--record", name]), "--dry-run"]);
-    assert.equal(JSON.parse(shortened.stdout).batches.length, 0);
-    const postedNames = names.map((name) => `post-${name}`);
-    for (const [index, name] of postedNames.entries()) f.write(join(f.records, `${name}.json`), readFileSync(join(f.records, `${names[index]}.json`), "utf8"));
-    const posted = f.run(["scorecard", "2", ...postedNames.flatMap((name) => ["--record", name]), "--post", "--dry-run"]);
-    assert.equal(posted.status, 0, posted.stderr);
-    assert.match(posted.stderr, /批次摘要/);
-    assert.match(posted.stderr, /post-audit.*11.*90\.9%/);
-    assert.match(posted.stderr, /post-audit-11/);
-    assert.deepEqual(JSON.parse(readFileSync(f.comments, "utf8")), []);
   } finally { f.cleanup(); }
 });
 
@@ -1359,7 +1309,7 @@ test("cockpit 按角色（框架 · 模型 · 思考强度）聚合矩阵，校�
       { v: 1, seq: 4, at: Date.parse(moment(16)), kind: "turn" },
     ]);
     const cleanResult = f.run([
-      "scorecard", "cockpit-v6",
+      "scorecard", "2",
       "--session", main,
       "--record", "eng-1", "--record", "eng-2", "--record", "zero-say", "--record", "turn-only",
     ]);
@@ -1417,7 +1367,7 @@ test("cockpit 按角色（框架 · 模型 · 思考强度）聚合矩阵，校�
       success: false, usage: null, started: moment(22), at: moment(24), exit: 1,
     }));
     const degradedResult = f.run([
-      "scorecard", "cockpit-v6",
+      "scorecard", "2",
       "--session", main,
       "--record", "legacy-only", "--record", "broken-eng",
     ]);
@@ -1460,7 +1410,7 @@ test("cutoffAt 之后启动的子代理即使已在磁盘生成空文件也在�
     ]);
     f.lines(activeChild, [agyUser(2, 0), agyStep(3, 1, { model: "gemini-4-carbon-flash", effort: "low" })]);
     f.write(postCutoffEmpty, "");
-    const result = f.run(["scorecard", "cutoff-skip-empty", "--session", main, "--cutoff-at", moment(30)]);
+    const result = f.run(["scorecard", "2", "--session", main, "--cutoff-at", moment(30)]);
     assert.equal(result.status, 0, result.stderr);
     const card = JSON.parse(result.stdout);
     assert.deepEqual(card.subagentAnomalies, []);
@@ -1536,7 +1486,7 @@ test("统一事件按非空工具调用 ID 唯一计轮，agy 回退日志按复
       { source: "MODEL", type: "PLANNER_RESPONSE", tool_calls: [{ name: "read_file" }] },
     ]);
     const result = f.run([
-      "scorecard", "turns-dedup-regression",
+      "scorecard", "2",
       "--record", "same-id-multi",
       "--record", "mixed-unkeyed",
       "--record", "agy-resume-time",

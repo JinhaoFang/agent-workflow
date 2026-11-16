@@ -364,15 +364,15 @@ test("shared command passthrough preserves help, flags, whitespace and shell cha
 const claudeFixture = `
 const { claude } = await import(${JSON.stringify(pathToFileURL(join(import.meta.dirname, "dispatch/claude.ts")).href)});
 runCommands({fixture: {
-  help: "fixture [--model <模型>] [--effort <强度>] -- <工具>…",
-  options: {model: {type: "string"}, effort: {type: "string"}}, positionals: 0, passthrough: true,
-  execute: (values, numbers, tools) => {
+  help: "fixture [--model <模型>] [--effort <强度>]",
+  options: {model: {type: "string"}, effort: {type: "string"}}, positionals: 0,
+  execute: (values) => {
     const cwd = process.cwd();
     const command = claude.restrictedCommand({
       root: cwd, prompt: "prompt with spaces\\n$(literal)", env: process.env,
       settings: {seat: "spec-review", workType: "default", agent: "claude", model: values.model ?? null,
         effort: values.effort ?? null, permission: "read-only", tier: null, path: null},
-      detection: {installed: true, version: null}, tools: tools.length ? "files" : "none",
+      detection: {installed: true, version: null},
     });
     const result = runClaude({cwd, command});
     console.log(JSON.stringify(result));
@@ -389,15 +389,10 @@ test("shared Claude 调用使用适配器生成的受限参数并解析文本、
     cache_read_input_tokens: 80,
   };
   const modelUsage = { "claude-haiku": { inputTokens: 120, outputTokens: 45 } };
-  for (const [tools, effort] of [
-    [[], null],
-    [["Read", "Glob", "Grep"], null],
-    [[], "low"],
-    [["Read", "Glob", "Grep"], "low"],
-  ] as const) {
+  for (const effort of [null, "low"]) {
     const result = runShared(
       claudeFixture,
-      ["fixture", "--model", "haiku", ...(effort ? ["--effort", effort] : []), "--", ...tools],
+      ["fixture", "--model", "haiku", ...(effort ? ["--effort", effort] : [])],
       {
         output: JSON.stringify({
           type: "result",
@@ -417,7 +412,7 @@ test("shared Claude 调用使用适配器生成的受限参数并解析文本、
         "--no-session-persistence",
         "--strict-mcp-config",
         "--tools",
-        tools.join(","),
+        "Read,Glob,Grep",
         "--model",
         "haiku",
         ...(effort ? ["--effort", effort] : []),

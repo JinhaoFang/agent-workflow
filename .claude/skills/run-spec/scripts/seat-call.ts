@@ -12,24 +12,24 @@ import { runClaude, type ClaudeResult } from "./shared.ts";
 export const restrictedSeat = (seat: "spec-review", cwd: string): SeatSettings =>
   resolveSeat(loadSeatConfiguration(cwd), seat)[0];
 
-export const callSeat = async (options: { settings: SeatSettings; prompt: string; tools: string[]; cwd: string }): Promise<ClaudeResult & { framework: string; actualModel: string | null }> => {
-  const { settings, prompt, tools, cwd } = options;
+export const callSeat = async (options: { settings: SeatSettings; prompt: string; cwd: string }): Promise<ClaudeResult & { framework: string; actualModel: string | null }> => {
+  const { settings, prompt, cwd } = options;
   const adapter = adapterFor(settings.agent);
   if (!adapter.restrictedCommand) {
     const available = Object.values(adapters).filter(item => item.restrictedCommand).map(item => item.label);
-    throw new Error(`席位 ${settings.seat} 的 ${adapter.label} 适配器不能保证只给文件读取工具或空工具集，拒绝启动；${available.length ? `请使用 ${available.join(" 或 ")}` : "当前没有支持受限调用的适配器"}。`);
+    throw new Error(`席位 ${settings.seat} 的 ${adapter.label} 适配器不能保证只给文件读取工具，拒绝启动；${available.length ? `请使用 ${available.join(" 或 ")}` : "当前没有支持受限调用的适配器"}。`);
   }
   if (settings.agent === "claude") {
     const detection = settings.path ? await adapter.detect({ env: process.env, settings }) : undefined;
     if (detection && !detection.installed) throw new Error(detection.error ?? `找不到可用的 ${adapter.label} CLI`);
-    const command = adapter.restrictedCommand({ root: cwd, prompt, settings, detection: detection ?? { installed: true, version: null }, env: process.env, tools: tools.length ? "files" : "none" });
+    const command = adapter.restrictedCommand({ root: cwd, prompt, settings, detection: detection ?? { installed: true, version: null }, env: process.env });
     const result = runClaude({ cwd, command });
     const models = Object.keys(result.modelUsage ?? {});
     return { ...result, framework: settings.agent, actualModel: models.length === 1 ? models[0] : null };
   }
   const detection = await adapter.detect({ env: process.env, settings });
   if (!detection.installed) throw new Error(detection.error ?? `找不到可用的 ${adapter.label} CLI`);
-  const command = adapter.restrictedCommand({ root: cwd, prompt, settings, detection, env: process.env, tools: tools.length ? "files" : "none" });
+  const command = adapter.restrictedCommand({ root: cwd, prompt, settings, detection, env: process.env });
   const result = spawnSync(command.executable, command.args, { cwd, input: command.stdin, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, shell: false });
   const events = (result.stdout ?? "").split(/\r?\n/).flatMap(line => {
     try { return [JSON.parse(line)]; } catch { return []; }

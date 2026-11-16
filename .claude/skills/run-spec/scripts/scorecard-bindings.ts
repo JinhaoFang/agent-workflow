@@ -1,6 +1,6 @@
 /**
- * 评分表的精确记录归属：数字 Issue 和安全字符串 spec 共用 version=1 关联文件；
- * 正常登记写主工作区，预览仅内存合并；字符串专项只按绑定关联，避免同前缀串数。
+ * 评分表的精确记录归属：数字 Issue 使用 version=1 关联文件；
+ * 正常登记写主工作区，预览仅内存合并。
  * 同名跨 spec 或与 gh-/review- 规范归属冲突时报错。目录锁串行更新，临时文件
  * 原子替换；重复登记不改文件。只保存关联，不授予任何原始记录的删除权限。
  */
@@ -8,9 +8,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { alive } from "./dispatchdock.ts";
-import { matchesRecord, recordName, specIdentifier, type SpecId } from "./shared.ts";
+import { issueNumber, matchesRecord, recordName } from "./shared.ts";
 
-export type RecordBinding = { spec: SpecId; name: string; registeredAt: string };
+export type RecordBinding = { spec: number; name: string; registeredAt: string };
 export const bindingFile = (root: string): string => join(root, ".codex-runs/scorecard-records.json");
 const validName = (name: unknown): name is string => typeof name === "string" &&
   /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) && recordName(name) === name &&
@@ -18,9 +18,9 @@ const validName = (name: unknown): name is string => typeof name === "string" &&
 const assertName = (name: unknown): void => {
   if (!validName(name)) throw new Error("--record 必须是精确派发记录名，不能包含路径、通配符或文件后缀。");
 };
-const canonical = (name: string, spec: SpecId, tickets: Set<number>): boolean =>
-  typeof spec === "number" && (matchesRecord(name, `review-${spec}`) || [...tickets].some((ticket) => matchesRecord(name, `gh-${ticket}`)));
-const assertOwner = (name: string, spec: SpecId, tickets: Set<number>): void => {
+const canonical = (name: string, spec: number, tickets: Set<number>): boolean =>
+  matchesRecord(name, `review-${spec}`) || [...tickets].some((ticket) => matchesRecord(name, `gh-${ticket}`));
+const assertOwner = (name: string, spec: number, tickets: Set<number>): void => {
   if (/^(?:gh|review)-[1-9]\d*(?:-|$)/.test(name) && !canonical(name, spec, tickets))
     throw new Error(`记录 ${name} 与 spec #${spec} 的规范归属冲突，不能显式关联。`);
 };
@@ -31,7 +31,7 @@ const load = (root: string): RecordBinding[] => {
   if (value?.version !== 1 || !Array.isArray(value.records)) throw new Error("评分表记录归属文件无效，需要 version=1 和 records 数组。");
   const names = new Set<string>();
   for (const row of value.records) {
-    if (!row || !["number", "string"].includes(typeof row.spec) || specIdentifier(String(row.spec)) !== row.spec || !validName(row.name) ||
+    if (!row || typeof row.spec !== "number" || issueNumber(String(row.spec)) !== row.spec || !validName(row.name) ||
       typeof row.registeredAt !== "string" || !Number.isFinite(Date.parse(row.registeredAt)))
       throw new Error("评分表记录归属文件包含无效记录。");
     if (names.has(row.name)) throw new Error(`评分表记录归属文件重复登记了 ${row.name}。`);
@@ -39,14 +39,14 @@ const load = (root: string): RecordBinding[] => {
   }
   return value.records;
 };
-const selected = (records: RecordBinding[], spec: SpecId, tickets: Set<number>): RecordBinding[] => {
+const selected = (records: RecordBinding[], spec: number, tickets: Set<number>): RecordBinding[] => {
   for (const row of records) {
     if (row.spec === spec) assertOwner(row.name, spec, tickets);
     else if (canonical(row.name, spec, tickets)) throw new Error(`记录 ${row.name} 已归属 spec #${row.spec}，与 spec #${spec} 的规范归属冲突。`);
   }
   return records.filter((row) => row.spec === spec).sort((a, b) => a.name.localeCompare(b.name));
 };
-export const readRecordBindings = (root: string, spec: SpecId, tickets: Set<number>): RecordBinding[] => selected(load(root), spec, tickets);
+export const readRecordBindings = (root: string, spec: number, tickets: Set<number>): RecordBinding[] => selected(load(root), spec, tickets);
 const acquire = (directory: string): (() => void) => {
   const lock = join(directory, "scorecard-records.lock");
   const deadline = Date.now() + 30000;
@@ -74,7 +74,7 @@ const acquire = (directory: string): (() => void) => {
     Atomics.wait(wait, 0, 0, 25);
   }
 };
-export const registerRecordBindings = (root: string, spec: SpecId, tickets: Set<number>, names: string[], dryRun = false): RecordBinding[] => {
+export const registerRecordBindings = (root: string, spec: number, tickets: Set<number>, names: string[], dryRun = false): RecordBinding[] => {
   for (const name of names) { assertName(name); assertOwner(name, spec, tickets); }
   if (!names.length) return readRecordBindings(root, spec, tickets);
   const merge = (records: RecordBinding[]): RecordBinding[] => {

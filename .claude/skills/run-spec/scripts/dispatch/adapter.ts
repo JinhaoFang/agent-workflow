@@ -28,7 +28,7 @@ export type Adapter = {
   isConcurrencyLimit(output: string): boolean;
   detect(input: { env: NodeJS.ProcessEnv; settings: SeatSettings }): Detection | Promise<Detection>;
   command(input: { root: string; report: string; prompt: string; settings: SeatSettings; detection: Detection; env: NodeJS.ProcessEnv }): { executable: string; args: string[]; stdin: string };
-  restrictedCommand?(input: { root: string; prompt: string; settings: SeatSettings; detection: Detection; env: NodeJS.ProcessEnv; tools: "files" | "none" }): { executable: string; args: string[]; stdin: string };
+  restrictedCommand?(input: { root: string; prompt: string; settings: SeatSettings; detection: Detection; env: NodeJS.ProcessEnv }): { executable: string; args: string[]; stdin: string };
   mapLine(line: string, input: { root: string }): Event[];
   outcome(input: { code: number | null; failed: boolean; events: Event[]; settings: SeatSettings; root: string; recordsRoot?: string }): Outcome;
   isolationArgs(): string[];

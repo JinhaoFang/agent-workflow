@@ -8,7 +8,7 @@
  * before any command receives them. Empty/root, absolute and parent paths fail
  * with the configured entry index and value; symlink targets are not resolved.
  * Optional codexSandbox selects engineering Codex permissions; otherwise seats
- * must supply engineering permissions. dispatchScript is obsolete and ignored.
+ * must supply engineering permissions.
  * The dispatcher ships with run-spec. Missing/invalid required config exits with 2.
  * Optional codexConcurrency and prCheckCommand use defaults and report sources;
  * RUN_SPEC_CODEX_CONCURRENCY overrides the validated configured concurrency.
@@ -139,13 +139,6 @@ export const issueNumber = (value: string | undefined): number => {
   return Number(value);
 };
 
-export type SpecId = number | string;
-export const specIdentifier = (value: string | undefined): SpecId => {
-  if (value && /^\d+$/.test(value)) return issueNumber(value);
-  if (!value || !/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/.test(value)) throw new Error("spec 标识必须是正整数或只含字母、数字、连字符的安全字符串。");
-  return value;
-};
-
 export const github = (dryRun: boolean) => {
   const repo = (
     JSON.parse(gh(["repo", "view", "--json", "nameWithOwner"])) as {
@@ -222,7 +215,6 @@ export type DispatchConfig = {
   symlinkDirectories: string[];
   acceptanceRoot: string;
   codexSandbox?: string;
-  dispatchScript?: unknown;
   codexConcurrency: number;
   prCheckCommand: string[];
   verificationEnv: Record<string, string>;

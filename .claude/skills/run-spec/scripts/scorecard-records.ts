@@ -2,8 +2,7 @@
  * 评分表的只读采集：按 spec 分支、直接子工单和持久精确归属采集记录，按
  * 记录名合并主工作区、工单 worktree 与 .kept 的派发副本；读取生命周期和进度。
  * Codex 会话按 session_meta.cwd、thread.started ID 和父会话关联，使用最后
- * 一个累计 token_count；时间窗采集时扣除窗前基线。字符串 spec 只精确匹配
- * 分支和绑定，不按前缀猜其他专项。公共台账不删除、不改写；截点包含记录文件修改时间，
+ * 一个累计 token_count；时间窗采集时扣除窗前基线。公共台账不删除、不改写；截点包含记录文件修改时间，
  * 使尚在运行、补写汇报和没有结构化时间的旧记录也能触发 cleanup 拦截。
  * 显式归属可采集外部 runner 生命周期；同名多次运行只报告歧义，不猜归属。
  * cleanup 按实际待删除 worktree 和 .kept 清单核对辅助证据的主工作区完整副本，
@@ -14,7 +13,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { dispatchSummary } from "./dispatch/summary.ts";
 import { dispatchHome } from "./dispatchdock.ts";
-import { CheckFailure, git, matchesRecord, recordName, type SpecId } from "./shared.ts";
+import { CheckFailure, git, matchesRecord, recordName } from "./shared.ts";
 import { readRecordBindings, type RecordBinding } from "./scorecard-bindings.ts";
 export { readRecordBindings, registerRecordBindings, type RecordBinding } from "./scorecard-bindings.ts";
 
@@ -83,9 +82,9 @@ export type LocalDispatch = {
   raw: Json[];
   prompt: string;
 };
-export const sourceSnapshot = (root: string, spec: SpecId, tickets: Set<number>, bindings: RecordBinding[] = readRecordBindings(root, spec, tickets)) => {
+export const sourceSnapshot = (root: string, spec: number, tickets: Set<number>, bindings: RecordBinding[] = readRecordBindings(root, spec, tickets)) => {
   const ownedBranch = (branch: unknown): boolean => typeof branch === "string" &&
-    (branch === `spec/${spec}` || (typeof spec === "number" && branch.startsWith(`spec/${spec}-`)) || (typeof spec === "string" && branch === spec) || [...tickets].some((ticket) => branch === `ticket/${ticket}`));
+    (branch === `spec/${spec}` || branch.startsWith(`spec/${spec}-`) || [...tickets].some((ticket) => branch === `ticket/${ticket}`));
   const ledgerFile = join(root, ".codex-runs/verification.jsonl");
   const allLedger = existsSync(ledgerFile) ? jsonLines(read(ledgerFile)) : null;
   const ledger = allLedger?.filter((row) => ownedBranch(row.branch)) ?? null;
@@ -102,7 +101,7 @@ export const sourceSnapshot = (root: string, spec: SpecId, tickets: Set<number>,
   }
   for (const row of bindings) touch(row.registeredAt);
   const owner = (name: string) => [...tickets].find((ticket) => matchesRecord(name, `gh-${ticket}`));
-  const ownedName = (name: string) => owner(name) !== undefined || (typeof spec === "number" && matchesRecord(name, `review-${spec}`)) || explicit.has(name);
+  const ownedName = (name: string) => owner(name) !== undefined || matchesRecord(name, `review-${spec}`) || explicit.has(name);
   const ensure = (name: string): LocalDispatch => {
     if (!dispatches.has(name)) dispatches.set(name, {
       name, ticket: owner(name) ?? null, kind: owner(name) !== undefined ? "ticket" : matchesRecord(name, `review-${spec}`) ? "review" : "auxiliary",

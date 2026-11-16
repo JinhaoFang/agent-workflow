@@ -52,7 +52,6 @@ const fixture = () => {
   const skill = (name: string, base = ".claude/skills") =>
     write(`${base}/${name}/SKILL.md`, `---\nname: ${name}\n---\n`);
   skill("run-spec");
-  skill("codex-dispatch");
   skill("triage", ".agents/skills");
   const config = {
     verificationCommand: ["pnpm", "verify"],
@@ -60,9 +59,7 @@ const fixture = () => {
     symlinkDirectories: ["references", ".agents"],
     acceptanceRoot: "out/qa",
     codexSandbox: "danger-full-access",
-    dispatchScript: ".claude/skills/codex-dispatch/codex-task.mjs",
   };
-  write(config.dispatchScript, "process.exitCode = 99;\n");
   write("docs/agents/run-spec.json", JSON.stringify(config));
   for (const path of ["issue-tracker", "domain", "triage-labels"])
     write(`docs/agents/${path}.md`, `# ${path}\n`);
@@ -956,12 +953,12 @@ test("doctor reports each absent label and each incorrect merge setting", () => 
   }
 });
 
-test("doctor reports absent configuration, every missing field, invalid JSON and missing dispatcher", () => {
+test("doctor reports absent configuration, every missing field and invalid JSON", () => {
   const f = fixture();
   try {
     rmSync(join(f.root, "docs/agents/run-spec.json"));
     fails(f.run(), "执行配置完整", /必填项/);
-    for (const key of Object.keys(f.config).filter(key => !["dispatchScript", "codexSandbox"].includes(key))) {
+    for (const key of Object.keys(f.config).filter(key => key !== "codexSandbox")) {
       const config: Record<string, unknown> = { ...f.config };
       delete config[key];
       f.write("docs/agents/run-spec.json", JSON.stringify(config));
@@ -976,10 +973,6 @@ test("doctor reports absent configuration, every missing field, invalid JSON and
       JSON.stringify({ ...f.config, verificationCommand: "pnpm verify" }),
     );
     fails(f.run(), "执行配置完整", /非空的程序和参数数组/);
-    f.write("docs/agents/run-spec.json", JSON.stringify(f.config));
-    rmSync(join(f.root, f.config.dispatchScript));
-    assert.equal(f.run().status, 0);
-    assert.match(f.run().stdout, /已忽略 dispatchScript，可以删除/);
   } finally {
     f.cleanup();
   }
@@ -1048,27 +1041,6 @@ process.stdout.write(r.stdout || "");process.stderr.write(r.stderr || "");proces
   }
 });
 
-test("doctor reads configuration in ticket checkout and third-party dispatcher in main worktree", () => {
-  const f = fixture();
-  try {
-    f.git(["rm", "--cached", "-r", ".claude/skills/codex-dispatch"]);
-    f.write(
-      ".gitignore",
-      "references\n.agents\nout\n.codex-runs\n.claude/skills/codex-dispatch\n",
-    );
-    f.git(["add", ".gitignore"]);
-    f.git(["commit", "-m", "ignore third party"]);
-    const worktree = join(f.temporary, "ticket");
-    f.git(["worktree", "add", "-b", "ticket/42", worktree]);
-    assert.ok(!existsSync(join(worktree, f.config.dispatchScript)));
-    const result = f.run(["doctor"], { cwd: worktree });
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /已忽略 dispatchScript，可以删除/);
-  } finally {
-    f.cleanup();
-  }
-});
-
 test("doctor help lists all checks and incorrect arguments exit 2 without invoking gh", () => {
   const f = fixture();
   try {
@@ -1091,7 +1063,6 @@ test("doctor help lists all checks and incorrect arguments exit 2 without invoki
       "codexConcurrency",
       "prCheckCommand",
       "各席位使用的框架 CLI",
-      "dispatchScript",
       ".codex-runs",
       "末尾斜杠",
       ".env",

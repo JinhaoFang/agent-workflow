@@ -514,11 +514,6 @@ const doctor = async (values: Values): Promise<void> => {
       return `实际取值 ${JSON.stringify(effective)}；来源：${config!.optionalSources.verificationEnv}；各变量来源：${JSON.stringify(sources)}`;
     },
   );
-  check(
-    "过时配置 dispatchScript",
-    "删除执行配置中的 dispatchScript；run-spec 已自带派发层。",
-    () => config?.dispatchScript === undefined ? "未配置，无需处理" : "已忽略 dispatchScript，可以删除；来源：仓库 run-spec.json.dispatchScript；派发使用 run-spec 内置入口。",
-  );
   const directories: [string, string, boolean][] = [
     ["派发记录目录", ".codex-runs", false],
   ];
@@ -642,7 +637,7 @@ Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签�
 技能隔离逐个检查已配置席位所用框架的适配器 isolationArgs，须提供非空隔离参数以屏蔽 run-spec、setup-run-spec，缺少时报失败；
 两项技能装在 .claude/skills 或共享目录 .agents/skills 都正常，不按安装目录判定隔离；
 review-spec 通过工具裁剪隔离，不另加技能隔离开关；
-执行配置完整；dispatchScript 不再使用，存在时提示可删除；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
+执行配置完整；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
 报告可选配置 codexConcurrency、prCheckCommand、verificationEnv、exclusiveVerification、disposableIgnored 的实际取值及来源；
 报告 staticCheckCommand（默认 null，未配置）、staticOnlyPaths（默认 []）的实际取值及来源；
 staticCheckCommand 为非空参数数组；staticOnlyPaths 为非空单行 gitignore 模式的数组，不能含 NUL；

@@ -254,7 +254,6 @@ const reviewSpec = async (values: Values, numbers: number[]): Promise<void> => {
     const result = await callSeat({
       settings,
       prompt,
-      tools: ["Read", "Glob", "Grep"],
       cwd: process.cwd(),
     });
     const durationMs = Date.now() - started;
