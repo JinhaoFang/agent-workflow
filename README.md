@@ -45,9 +45,11 @@ v7 只删不加：按 v5 期间的真实使用删掉没用上的功能，修两�
 3. **评分表升到第 3 版**：不再有子代理用量、子代理通知两项，也不再把同前缀的派发折叠成批次。旧评分表和旧汇报不受影响，`cleanup` 照旧认得。
 4. **spec 号只能是数字**：`run --spec` 和 `scorecard` 不再接受字符串标识；`review --session` 参数删除。
 5. **不用改的**：派发排队、验证锁、四个框架、`review-spec`、`report-check` 都没动。`run` 的任务文件现在可以用绝对路径。
+6. **两处不再有的提示和分支**：`doctor` 不再提示旧配置项 `dispatchScript`（五个仓库都已不写）；"不给工具"的受限调用随巡检一起删除，派发前审查照旧只给读文件工具。
 
+## 从 v5 升级到 v6
 
-1. **重装**：在目标仓库根目录运行`#workflow-v6` 的安装命令（主会话或席位用 Codex、pi、agy 的保留 `-a codex`），跑 `doctor`，全部通过后提交 `skills-lock.json` 里变了的两项。
+1. **重装**：在目标仓库根目录运行 `#workflow-v6` 的安装命令（主会话或席位用 Codex、pi、agy 的保留 `-a codex`），跑 `doctor`，全部通过后提交 `skills-lock.json` 里变了的两项。
 2. **想用 agy（可选）**：在个人 `~/.config/agent-workflow/seats.json` 里把工程、审查或调研席位配成 agy，写法见 `setup-run-spec` 的 `seats.md`，跑 `doctor` 核对。派发前审查和巡检两个席位不能配 agy。
 3. **评分表**：同一个会话跨了几个 spec 时，用 `scorecard` 的时间窗参数切开；agy 会话的记录里没有思考强度，用 `--main-effort` 补上。参数见 `scorecard --help`。
 4. **汇报**：新汇报用新版 `report-template.html`，按 `report.md` 填；已有的旧汇报是独立快照，不用重做，`report-check` 照旧能查。
