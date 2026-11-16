@@ -1,6 +1,6 @@
 /**
  * Designer-only ticket CLI: run `node .claude/skills/run-spec/scripts/tickets.ts
- * <frontier|link|review-spec|dispatch|run|slots|watch|verify|land|accept|review|pr-check|cleanup|doctor|report-check>
+ * <frontier|link|review-spec|dispatch|run|slots|verify|land|accept|review|pr-check|cleanup|doctor|report-check>
  * --help` from a clone.
  * Register each command once; modules provide help, options, required/optional
  * numeric positional counts, optional raw `--` passthrough and a handler.
@@ -22,7 +22,6 @@ import { doctorCommand } from "./doctor.ts";
 import { reviewCommand } from "./review.ts";
 import { reviewSpecCommand } from "./review-spec.ts";
 import { slotsCommand } from "./slots.ts";
-import { watchCommand } from "./watch.ts";
 import { runCommand } from "./run.ts";
 import { reportCheckCommand } from "./report-check.ts";
 import { reportError, runCommands, type Command } from "./shared.ts";
@@ -41,7 +40,6 @@ const commands: Record<string, Command> = {
   accept: acceptCommand,
   review: reviewCommand,
   "review-spec": reviewSpecCommand,
-  watch: watchCommand,
   run: runCommand,
   "report-check": reportCheckCommand,
 };

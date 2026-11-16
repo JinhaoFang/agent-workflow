@@ -279,7 +279,7 @@ test("seat doctor reports default, user pi profiles, repository overrides and re
     assert.match(userResult.stdout, /engineering.前端：框架：pi；模型：zai-coding-cn\/glm-5.3-flash/);
     assert.match(userResult.stdout, /来源：框架=用户、模型=用户、强度=用户/);
     assert.match(userResult.stdout, /review.default\[1\].*框架：pi；模型：review-two/);
-    assert.match(userResult.stdout, /这些席位没有『后端』档，回落 default：engineering、review、spec-review、research、watch/);
+    assert.match(userResult.stdout, /这些席位没有『后端』档，回落 default：engineering、review、spec-review、research/);
     if (userResult.stdout.includes("提示：适配器未接入："))
       assert.match(userResult.stdout, /提示：适配器未接入：pi（席位：engineering、review）；当前不可用.*无法确认强制只读/);
     else assert.match(userResult.stdout, /提示：权限映射损失：.*pi\/read-only（席位：review）/);
@@ -300,13 +300,43 @@ test("seat doctor reports default, user pi profiles, repository overrides and re
   } finally { f.cleanup(); }
 });
 
+test("doctor 指出用户和仓库中已移除的席位及删除位置，其他子命令忽略该项", () => {
+  const f = fixture();
+  try {
+    const userDirectory = join(f.temporary, "xdg/agent-workflow");
+    const userFile = join(userDirectory, "seats.json");
+    mkdirSync(userDirectory, { recursive: true });
+    f.write("docs/roles/engineering.md", "# 角色：工程负责人\n");
+    for (const source of ["user", "repository"]) {
+      const seats = { watch: { default: { agent: "retired-framework", permission: "retired-permission" } } };
+      writeFileSync(userFile, JSON.stringify(source === "user" ? { seats } : {}));
+      f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, ...(source === "repository" ? { seats } : {}) }));
+      const result = f.run();
+      const file = source === "user" ? userFile : join(f.root, "docs/agents/run-spec.json");
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.ok(result.stderr.includes(`已移除配置 ${file} 的 seats.watch`), result.stderr);
+      assert.ok(result.stderr.includes(`修法：删除 ${file} 中的 seats.watch 配置。`), result.stderr);
+      assert.match(result.stdout, /自检结束：1 项不通过/);
+      assert.doesNotMatch(result.stdout, /watch\.default|retired-framework/);
+      for (const args of [["slots"], ["run", "读取 README.md", "--seat", "research", "--dry-run"]]) {
+        const other = f.run(args);
+        assert.equal(other.status, 0, other.stdout + other.stderr);
+      }
+      if (process.env.RUN_SPEC_TEST_EVIDENCE) {
+        mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
+        writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, `doctor-removed-seat-${source}.log`), result.stdout + result.stderr + `\n退出码：${result.status}\n`);
+      }
+    }
+  } finally { f.cleanup(); }
+});
+
 test("seat configuration rejects malformed user and repository fields with exit 2", () => {
   const f = fixture();
   try {
     const userDirectory = join(f.temporary, "xdg/agent-workflow");
     mkdirSync(userDirectory, { recursive: true });
     const userFile = join(userDirectory, "seats.json");
-    for (const value of ["{", "[]", "null", JSON.stringify({ seats: { unknown: {} } }), JSON.stringify({ seats: { engineering: { default: [] } } }), JSON.stringify({ seats: { review: { default: [] } } }), JSON.stringify({ seats: { watch: { default: { permission: "danger-full-access" } } } }), JSON.stringify({ seats: { engineering: { default: { agent: "other" } } } }), JSON.stringify({ agents: { pi: { path: "relative" } } }), JSON.stringify({ agents: { pi: { concurrency: 0 } } }), JSON.stringify({ workTypes: { 前端: "HTML" } })]) {
+    for (const value of ["{", "[]", "null", JSON.stringify({ seats: { unknown: {} } }), JSON.stringify({ seats: { engineering: { default: [] } } }), JSON.stringify({ seats: { review: { default: [] } } }), JSON.stringify({ seats: { research: { default: { permission: "danger-full-access" } } } }), JSON.stringify({ seats: { engineering: { default: { agent: "other" } } } }), JSON.stringify({ agents: { pi: { path: "relative" } } }), JSON.stringify({ agents: { pi: { concurrency: 0 } } }), JSON.stringify({ workTypes: { 前端: "HTML" } })]) {
       writeFileSync(userFile, value);
       const result = f.run();
       assert.equal(result.status, 2, value + result.stdout + result.stderr);
@@ -333,15 +363,14 @@ test("seat doctor compacts the ticket 25 configuration into one row per configur
     const result = f.run();
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const section = result.stdout.slice(result.stdout.indexOf("用户席位配置："), result.stdout.indexOf("通过：Codex CLI 可用"));
-    assert.deepEqual(section.split("\n").filter(line => /^(engineering|review|spec-review|research|watch)\./.test(line)), [
+    assert.deepEqual(section.split("\n").filter(line => /^(engineering|review|spec-review|research)\./.test(line)), [
       "engineering.default：框架：codex；模型：框架默认；强度：框架默认；权限：full；来源：框架=用户、权限=仓库",
       "engineering.前端：框架：pi；模型：zai-coding-cn/glm-5.3-flash；强度：框架默认；权限：workspace-write；来源：框架=用户、模型=用户",
       "review.default：框架：codex；模型：框架默认；强度：框架默认；权限：read-only",
       "spec-review.default：框架：claude；模型：框架默认；强度：框架默认；权限：read-only",
       "research.default：框架：codex；模型：框架默认；强度：框架默认；权限：read-only",
-      "watch.default：框架：claude；模型：haiku；强度：框架默认；权限：read-only",
     ]);
-    assert.match(section, /提示：这些席位没有『前端』档，回落 default：review、spec-review、research、watch/);
+    assert.match(section, /提示：这些席位没有『前端』档，回落 default：review、spec-review、research/);
     assert.equal(section.split("\n").filter(line => line.startsWith("框架配置 ")).length, 3);
     assert.equal(section.split("\n").filter(line => line.startsWith("提示：权限映射损失：")).length, 1);
     assert.ok(section.split("\n").filter(line => line.startsWith("提示：适配器未接入：")).length <= 1);
@@ -392,7 +421,7 @@ test("seat review lists replace lower lists, typed lists fall back and null rest
     assert.equal(user.status, 0, user.stdout + user.stderr);
     assert.match(user.stdout, /review.default\[1\].*模型：two/);
     assert.match(user.stdout, /review.前端：.*模型：frontend；强度：框架默认/);
-    assert.match(user.stdout, /这些席位没有『后端』档，回落 default：engineering、review、spec-review、research、watch/);
+    assert.match(user.stdout, /这些席位没有『后端』档，回落 default：engineering、review、spec-review、research/);
     assert.doesNotMatch(user.stdout, /review.后端\[1\]/);
     assert.match(user.stdout, /engineering.default：.*模型：框架默认；强度：框架默认/);
     f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, workTypes: { 前端: "HTML" }, seats: { review: { default: [{}], 前端: [{ model: "repository-type" }] } } }));
@@ -423,11 +452,10 @@ test("seat doctor probes configured Codex and Claude paths and ignores unused fr
     assert.match(configured.stdout, /Codex CLI 可用；codex custom fixture/);
     assert.match(configured.stdout, /claude CLI 可用；claude custom fixture/);
     assert.match(configured.stdout, /用户 .*seats.json.agents.codex.path/);
-    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { "spec-review": { default: { agent: "codex" } }, watch: { default: { agent: "codex", model: null } } }, agents: { codex: { path: codexPath } } }));
+    writeFileSync(join(userDirectory, "seats.json"), JSON.stringify({ seats: { "spec-review": { default: { agent: "codex" } } }, agents: { codex: { path: codexPath } } }));
     const unused = f.run(["doctor"], { isolatedPath: true });
     assert.equal(unused.status, 1, unused.stdout + unused.stderr);
     assert.match(unused.stderr, /受限席位 spec-review.default；codex 不支持受限调用/);
-    assert.match(unused.stderr, /受限席位 watch.default；codex 不支持受限调用/);
     assert.doesNotMatch(unused.stdout + unused.stderr, /claude CLI 可用/);
   } finally { f.cleanup(); }
 });
@@ -653,7 +681,7 @@ test("doctor passes with tracked source skills, paginated labels and directory-o
     assert.equal(result.stderr, "");
     assert.match(result.stdout, /自检结束：全部通过/);
     assert.match(result.stdout, /技能隔离 codex；适配器 isolationArgs/);
-    assert.match(result.stdout, /review-spec、watch 通过工具裁剪隔离/);
+    assert.match(result.stdout, /review-spec 通过工具裁剪隔离/);
     assert.match(result.stdout, /同名软链接实测通过/);
     assert.match(result.stdout, /通过：claude CLI 可用；2\.1\.0/);
     assert.match(
@@ -1335,7 +1363,7 @@ test("doctor finds configured Codex Node and npm wrapper entries without Codex o
   }
 });
 
-for (const seat of ["spec-review", "watch"]) for (const agent of ["codex", "agy"]) test(`doctor 拒绝 ${seat} 使用无受限调用的 ${agent}`, () => {
+for (const seat of ["spec-review"]) for (const agent of ["codex", "agy"]) test(`doctor 拒绝 ${seat} 使用无受限调用的 ${agent}`, () => {
   const f = fixture();
   try {
     f.write("docs/agents/run-spec.json", JSON.stringify({ ...f.config, seats: { [seat]: { default: { agent, model: null } } } }));

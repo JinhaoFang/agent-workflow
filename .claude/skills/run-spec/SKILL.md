@@ -25,7 +25,6 @@ description: 执行 GitHub 上的 spec 和工单：选出可做的工单，role:
 | `scorecard` | 采集本 spec 的评分表；`--post` 发到 spec |
 | `cleanup` | 清理本 spec 的本机记录、worktree 和分支；spec 上没有最新的评分表时先拦下 |
 | `doctor` | 自检前提和配置，报告各配置的实际值和来源 |
-| `watch` | 按需：长作业的巡检 |
 
 名字由脚本决定：集成分支 `spec/<S>-<英文短名>`，工单分支 `ticket/<T>`，worktree 在主工作区旁边的 `<仓库目录>.worktrees/<T>`，保留目录 `<仓库目录>.worktrees/.kept/<T>/`，派发记录 `gh-<T>`，验收产物在配置的验收产物目录下的 `spec-<S>/<T>/`，日志、台账和审查输出在主工作区的 `.codex-runs/`。
 

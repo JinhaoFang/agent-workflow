@@ -27,18 +27,18 @@ npx skills add JinhaoFang/agent-workflow#workflow-v6 --skill run-spec --skill se
 |---|---|---|
 | `workflow-v1` | 建仓、复盘与流程改进 | `docs/reports/spec-17-run-spec.html`、`docs/reports/spec-37-run-spec-install.html`、`docs/reports/spec-54-script-hardening.html` |
 | `workflow-v2` | `setup-run-spec` 读懂目标仓库后按模板生成角色文档 | — |
-| `workflow-v3` | 按 PathJX 第一阶段的真实使用改进：派发排队与续做、`verify` `pr-check` `watch` `review-spec` 子命令 | `docs/reports/spec-77-workflow-v3.html` |
+| `workflow-v3` | 按 PathJX 第一阶段的真实使用改进：派发排队与续做、`verify` `pr-check` `review-spec` 子命令 | `docs/reports/spec-77-workflow-v3.html` |
 | `workflow-v3.1` | 判定标准第二版、验证环境与验证排队、可直接删除的被忽略文件、`accept` 核对提交、收尾目标核对 | `docs/reports/spec-94-workflow-v3-1.html`，效果评估 `docs/reports/workflow-v3-1-evaluation.html` |
 | `workflow-v4` | 从 video-studio 抽出后的第一版：收拢成五条思路，测试分层、验证台账、评分表，汇报模板按六点重做 | `docs/reports/spec-2-workflow-v4.html` |
 | `workflow-v5` | 按全流程核查修正授权边界和规则漂移；独立审查由用户选择；嵌套验证按实际执行统计，辅助派发显式关联，审查索引按需读取，派发明细可视化。角色与工具解绑：按席位和工作类型配置框架与模型，自带派发层支持 Codex、Claude Code、pi。汇报检查做成 `report-check` 命令；新增可选的 `verification` 技能 | `docs/reports/spec-16-workflow-v5.html`、`docs/reports/spec-22-agent-seats.html`、`docs/reports/spec-23-verification.html` |
-| `workflow-v6` | 派发层支持第四个框架 agy：席位可以配 agy，`doctor` 核对 agy 的模型名，评分表读 agy 的会话；只给读文件工具或不给工具的两个席位误配时 `doctor` 当场报错。评分表修正跨天、半途中断、纯主会话几种情况的统计。汇报改为可收起的目录加页签，用图比较时间和用量，`report-check` 逐个切换页签检查 | `docs/reports/spec-50-agy-integration.html`、`docs/reports/spec-51-report-v6.html` |
+| `workflow-v6` | 派发层支持第四个框架 agy：席位可以配 agy，`doctor` 核对 agy 的模型名，评分表读 agy 的会话；只给读文件工具的派发前审查席位误配时 `doctor` 当场报错。评分表修正跨天、半途中断、纯主会话几种情况的统计。汇报改为可收起的目录加页签，用图比较时间和用量，`report-check` 逐个切换页签检查 | `docs/reports/spec-50-agy-integration.html`、`docs/reports/spec-51-report-v6.html` |
 
 v3.1 及以前的版本发布在 `JinhaoFang/video-studio`，同名 tag 两边都有，内容相同；已经从 video-studio 安装的仓库照常可用，换到本仓库只需要把命令里的仓库名改掉。
 
 ## 从 v5 升级到 v6
 
 1. **重装**：在目标仓库根目录运行上面的 `#workflow-v6` 安装命令（主会话或席位用 Codex、pi、agy 的保留 `-a codex`），跑 `doctor`，全部通过后提交 `skills-lock.json` 里变了的两项。
-2. **想用 agy（可选）**：在个人 `~/.config/agent-workflow/seats.json` 里把工程、审查或调研席位配成 agy，写法见 `setup-run-spec` 的 `seats.md`，跑 `doctor` 核对。派发前审查和巡检两个席位不能配 agy。
+2. **想用 agy（可选）**：在个人 `~/.config/agent-workflow/seats.json` 里把工程、审查或调研席位配成 agy，写法见 `setup-run-spec` 的 `seats.md`，跑 `doctor` 核对。派发前审查席位不能配 agy。
 3. **评分表**：同一个会话跨了几个 spec 时，用 `scorecard` 的时间窗参数切开；agy 会话的记录里没有思考强度，用 `--main-effort` 补上。参数见 `scorecard --help`。
 4. **汇报**：新汇报用新版 `report-template.html`，按 `report.md` 填；已有的旧汇报是独立快照，不用重做，`report-check` 照旧能查。
 
@@ -49,7 +49,7 @@ v3.1 及以前的版本发布在 `JinhaoFang/video-studio`，同名 tag 两边�
 3. **统计按实际执行**：旧台账保留；新调用有父子身份，嵌套包装不重复计完整验证。排队和合并调用仍保留，旧行不按时间重叠猜关系。
 4. **辅助派发也计入**：`scorecard <S> --record <精确记录名>` 可重复，正常运行保存关联，重跑和 `cleanup` 自动沿用。辅助记录缺失时标缺数；新增关联后重发评分表，关联本身不授权删除原始记录。
 5. **单次派发可比较**：汇报模板新增分钟横条，按框架着色，显示类别、非零退出码、输入用量和未知原因，明细表折叠保留。已有 HTML 是独立快照，不会因重装自动改变。
-6. **角色与工具解绑**：各席位（工程、审查、独立审查、调研、巡检）用哪个框架和模型写在个人的 `~/.config/agent-workflow/seats.json`，格式见 `setup-run-spec` 的 `seats.md`；仓库只在 `run-spec.json` 写工作类型词表 `workTypes` 和硬要求。不配置时行为和 v4 相同。工单正文写一行 `工作类型：<名称>` 选对应档。
+6. **角色与工具解绑**：各席位（工程、审查、独立审查、调研）用哪个框架和模型写在个人的 `~/.config/agent-workflow/seats.json`，格式见 `setup-run-spec` 的 `seats.md`；仓库只在 `run-spec.json` 写工作类型词表 `workTypes` 和硬要求。不配置时行为和 v4 相同。工单正文写一行 `工作类型：<名称>` 选对应档。
 7. **不再需要 DispatchDock**：派发层随 `run-spec` 自带，`codex-dispatch` 可以卸掉，`run-spec.json` 的 `dispatchScript` 删掉；按批审查和辅助派发改用 `tickets.ts run`。过渡期旧 DispatchDock 正在跑的派发照常占 Codex 名额。
 8. **装到会用的框架**：设计负责人会在 Codex 或 pi 里跑的，安装命令加 `-a codex`；评分表 `--session` 认 Claude Code、Codex、pi 三种主会话。
 9. **汇报检查和验证入口**：汇报交付前运行 `tickets.ts report-check <文件>`，不再现写浏览器检查。想让【实测】有固定办法的仓库，安装命令加 `--skill verification`，再派一张工单按它生成 `docs/verification/<产物>/`。
@@ -63,7 +63,6 @@ E02、E03 与观察 99—104 的额外机制修复不在本次范围，测试分
 3. **验证次数变了**：配了分层以后，Codex 开发时只跑相关测试和静态检查；设计负责人验收时不再跑 `verify <T>`，看 `land` 的完整验证；设计工单的 `verify` 按改动路径选层；spec 收尾的全套就是 `pr-check`。
 4. **改工程角色文档的完成标准**：配了分层的仓库，把"验证命令通过"改成"静态检查和相关测试通过，完整验证由 `land` 跑"。设计角色文档里复述思路的条目（反馈归类、执行中重新判断、写给没参加讨论的人）可以改成一行指向 `.claude/skills/run-spec/principles.md`。
 5. **`cleanup` 之前先发评分表**：收尾时运行 `tickets.ts scorecard <S> --session <会话记录>… --post`。spec 上没有评分表，或者评分表之后又有本 spec 的验证、派发记录，`cleanup` 以 1 退出；确实不要评分表时加 `--no-scorecard`。验证台账 `.codex-runs/verification.jsonl` 自动记录，`cleanup` 不删它。
-6. **`watch` 成了按需工具**：命令还在，技能正文不再介绍，用法看 `tickets.ts watch --help`。
 
 ## 历史
 

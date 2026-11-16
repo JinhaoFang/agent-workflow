@@ -79,7 +79,7 @@ if (args.includes('--version')) { console.log('fixture pi'); process.exit(proces
 const prompt = fs.readFileSync(0, 'utf8');
 fs.appendFileSync(path.join(process.env.RUN_FIXTURE, 'agents.jsonl'), JSON.stringify({agent:'pi',args,prompt,cwd:process.cwd()}) + '\\n');
 if (args.includes('rpc')) process.exit(91);
-const text = args.includes('--no-tools') ? 'DONE: 作业完成' : '必须改：无';
+const text = '必须改：无';
 for (const event of [{type:'session',id:'fixture-pi'}, {type:'message_end',message:{role:'assistant',provider:'fixture',model:'pi',stopReason:'stop',content:[{type:'text',text}],usage:process.env.MISSING_PI_USAGE ? undefined : {input:20,cacheRead:5,cacheWrite:0,output:7}}}, {type:'agent_settled',aborted:false}]) console.log(JSON.stringify(event));
 if (process.env.FAIL_PI) { console.error('fixture failure'); process.exitCode = 7; }
 `);
@@ -95,7 +95,7 @@ if (process.env.FAIL_PI) { console.error('fixture failure'); process.exitCode = 
   return { base, root, tree, xdg, bin, env, run, calls, seats, cleanup: () => rmSync(base, { recursive: true, force: true }) };
 };
 
-for (const seat of ["engineering", "review", "research", "spec-review", "watch"]) {
+for (const seat of ["engineering", "review", "research", "spec-review"]) {
   test(`run 的 ${seat} 席位按约定告知角色并保存进度与登记`, () => {
     const f = fixture();
     try {
@@ -234,23 +234,19 @@ test("run forwards one-shot overrides and keeps an unassociated run outside scor
   } finally { f.cleanup(); }
 });
 
-test("spec-review and watch use pi file-only/empty tools without skill discovery, isolation or persisted sessions", () => {
+test("spec-review uses pi file-only tools without skill discovery, isolation or persisted sessions", () => {
   const f = fixture();
   try {
     const profile = { agent: "pi", model: "fixture/pi", effort: "low", permission: "full" };
-    f.seats({ seats: { "spec-review": { default: profile }, watch: { default: profile } }, agents: { pi: { path: join(f.bin, "pi") } } });
+    f.seats({ seats: { "spec-review": { default: profile } }, agents: { pi: { path: join(f.bin, "pi") } } });
     writeFileSync(join(f.tree, "spec.md"), "审查材料");
     mkdirSync(join(f.tree, "drafts"));
     writeFileSync(join(f.tree, "drafts/ticket.md"), "子工单材料");
     const review = f.run(["review-spec", "22", "--spec-file", "spec.md", "--drafts", "drafts"]);
     assert.equal(review.status, 0, review.stderr);
-    writeFileSync(join(f.tree, "rules.md"), "作业完成时回复 DONE");
-    const watch = f.run(["watch", "--every", "1", "--rules", "rules.md", "--name", "22-pi", "--", process.execPath, "-e", "console.log('done')"]);
-    assert.equal(watch.status, 0, watch.stderr);
     const calls = f.calls("agents.jsonl");
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 1);
     assert.equal(calls[0].args[calls[0].args.indexOf("--tools") + 1], "read,grep,find,ls");
-    assert.ok(calls[1].args.includes("--no-tools"));
     for (const call of calls) {
       assert.ok(call.args.includes("--no-extensions"));
       assert.ok(call.args.includes("--no-mcp"));
@@ -301,18 +297,6 @@ test("受限调用的安装、失败、缺用量与拒绝提示取适配器名�
     assert.equal(rejected.status, 2, rejected.stdout + rejected.stderr);
     assert.match(rejected.stderr, /本地 Codex 适配器不能保证.*拒绝启动；请使用 本地 Claude 或 pi 或 测试框架/);
     capture("restricted-seat-labels.log", missing.stderr + failed.stderr + metadata + rejected.stderr);
-  } finally { f.cleanup(); }
-});
-
-test("restricted seats fail explicitly when their adapter cannot enforce the required tool set", () => {
-  const f = fixture();
-  try {
-    f.seats({ seats: { watch: { default: { agent: "codex", model: null } } } });
-    writeFileSync(join(f.tree, "rules.md"), "DONE");
-    const result = f.run(["watch", "--every", "1", "--rules", "rules.md", "--", process.execPath, "-e", "console.log('done')"]);
-    assert.equal(result.status, 2);
-    assert.match(result.stderr, /不能保证.*工具集.*拒绝启动/);
-    assert.deepEqual(f.calls("agents.jsonl"), []);
   } finally { f.cleanup(); }
 });
 

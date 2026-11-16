@@ -100,10 +100,10 @@ export const runCommand: Command = {
   textPositionals: true,
   options: Object.fromEntries(["seat", "spec", "name", "work-type", "agent", "model", "effort", "permission"].map(key => [key, { type: "string" as const }])),
   execute: run,
-  help: `${entry} run <任务说明文件|任务文字> --seat <engineering|review|spec-review|research|watch> [--spec <S>] [--name <记录名>] [--dry-run]
+  help: `${entry} run <任务说明文件|任务文字> --seat <engineering|review|spec-review|research> [--spec <S>] [--name <记录名>] [--dry-run]
 覆盖参数：--work-type <工作类型> --agent <codex|claude|pi|agy> --model <模型> --effort <强度> --permission <read-only|workspace-write|full>。
 在当前工作区执行，任务文件在启动前读取；review 列表每项收到同样的提示，逐份运行，失败继续其余项。
-engineering、review、research 告知工程负责人角色并要求阅读 docs/roles/engineering.md；spec-review、watch 不告知角色。
+engineering、review、research 告知工程负责人角色并要求阅读 docs/roles/engineering.md；spec-review 不告知角色。
 记录统一写主工作区 .codex-runs；--spec 接受正整数 Issue 号或安全字符串（字母、数字、连字符）。
 数字只读查询 spec 与子工单，字符串跳过全部 GitHub 查询；用现有 scorecard --record 存储自动关联每份精确名。
 review 带数字 --spec 时默认名 review-<S>，字符串时默认名 review-spec-id-<标识>；字符串（含数字开头）只按精确绑定采集。

@@ -1,5 +1,5 @@
 /**
- * 独立审查与巡检的受限席位调用：默认 Claude 参数保持原样，工具仅文件读取或空集。
+ * 独立审查的受限席位调用：默认 Claude 参数保持原样，工具仅文件读取。
  * pi 使用相同适配器的检测、事件与成败用量；受限调用不添加技能隔离参数。
  * 受限席位配了未提供受限调用的适配器时拒绝启动；可用框架与提示取自适配器登记。
  */
@@ -9,7 +9,7 @@ import type { SeatSettings } from "./dispatch/adapter.ts";
 import { loadSeatConfiguration, resolveSeat } from "./dispatch/settings.ts";
 import { runClaude, type ClaudeResult } from "./shared.ts";
 
-export const restrictedSeat = (seat: "spec-review" | "watch", cwd: string): SeatSettings =>
+export const restrictedSeat = (seat: "spec-review", cwd: string): SeatSettings =>
   resolveSeat(loadSeatConfiguration(cwd), seat)[0];
 
 export const callSeat = async (options: { settings: SeatSettings; prompt: string; tools: string[]; cwd: string }): Promise<ClaudeResult & { framework: string; actualModel: string | null }> => {

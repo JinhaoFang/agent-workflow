@@ -10,7 +10,7 @@
  * Kept-directory checks cover exact child ownership, file-count previews and
  * printing the full bounded plan before the first actual deletion.
  * Verify logs cover child ownership, main/other-spec retention and dry-run.
- * Watch/review-spec cleanup covers exact numeric owners, report sidecars and
+ * Review-spec cleanup covers exact numeric owners, report sidecars and
  * interrupted snapshot directories, retaining unrelated and default names.
  * Existing deletion cases explicitly bypass scorecards; scorecard.test.ts tests
  * the default gate against persisted fake GitHub comments and owned records.
@@ -200,31 +200,16 @@ process.stdout.write(JSON.stringify(response.value));
   };
 };
 
-test("cleanup lists and removes owned watch logs and review-spec outputs while preserving other and default names", () => {
+test("cleanup lists and removes owned review-spec outputs while preserving other and default names", () => {
   const f = fixture();
   try {
     const owned = [
-      "watch-17.log",
-      "watch-17-render.log",
-      "watch-1.log",
-      "watch-1-train.log",
-      "watch-2.log",
-      "watch-2-render.log",
       "review-spec-17-1.md",
       "review-spec-17-1.json",
       "review-spec-17-2.md",
       "review-spec-17-3.json",
     ];
     const unrelated = [
-      "watch-170-render.log",
-      "watch-12-train.log",
-      "watch-20.log",
-      "watch-17other.log",
-      "watch-17.other.log",
-      "watch-1700000000000-123.log",
-      "watch-20261029-123.log",
-      "watch-17.log.json",
-      "watch-17-render.md",
       "review-spec-170-1.md",
       "review-spec-170-1.json",
       "review-spec-17-note.md",
@@ -237,10 +222,7 @@ test("cleanup lists and removes owned watch logs and review-spec outputs while p
     const otherDirectories = [
       "review-spec-170-AbC123",
       "review-spec-17",
-      "watch-17-render.log",
     ];
-    rmSync(join(f.records, "watch-17-render.log"));
-    owned.splice(owned.indexOf("watch-17-render.log"), 1);
     for (const name of [...snapshots, ...otherDirectories]) {
       mkdirSync(join(f.records, name));
       writeFileSync(join(f.records, name, "input.md"), name);
@@ -278,11 +260,11 @@ test("cleanup lists and removes owned watch logs and review-spec outputs while p
     if (directory) {
       mkdirSync(directory, { recursive: true });
       writeFileSync(
-        join(directory, "cleanup-watch-review-spec.log"),
+        join(directory, "cleanup-review-spec.log"),
         result.stdout + result.stderr,
       );
       writeFileSync(
-        join(directory, "cleanup-watch-review-spec-dry-run.log"),
+        join(directory, "cleanup-review-spec-dry-run.log"),
         preview.stdout + preview.stderr,
       );
     }

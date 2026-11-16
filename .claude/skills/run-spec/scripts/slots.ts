@@ -1,7 +1,7 @@
 /**
  * 只读列出全局存活派发，按框架展示名字、开始时间、目录及生效并发名额。
  * 框架取派发席位、显式席位/框架配置与运行记录；仅 Codex 时保留原输出。
- * review-spec/watch 默认走工具裁剪调用，不额外引入 Claude 派发名额。
+ * review-spec 默认走工具裁剪调用，不额外引入 Claude 派发名额。
  * TODO(design): 核对多框架段标题及默认工具裁剪席位的展示说明。
  */
 import { adapterFor } from "./dispatch/adapters.ts";
@@ -31,7 +31,7 @@ export const slotsCommand: Command = {
       ...running.map(run => run.framework),
     ]);
     for (const seat of seatNames) {
-      if ((seat === "spec-review" || seat === "watch") && !seats.user.seats?.[seat] && !seats.repository.seats?.[seat]) continue;
+      if (seat === "spec-review" && !seats.user.seats?.[seat] && !seats.repository.seats?.[seat]) continue;
       for (const workType of ["default", ...Object.keys(seats.workTypes)])
         for (const settings of resolveSeat(seats, seat, workType))
           configured.add(settings.agent);
@@ -53,7 +53,7 @@ export const slotsCommand: Command = {
   },
   help: `${entry} slots
 只读按 Codex、Claude、pi、agy 分别列出全局记录中进程仍存活的派发（名字、开始时间、所在目录）及空余名额。
-显示派发席位所用、显式配置或正在运行的框架；review-spec/watch 默认工具裁剪调用不额外引入 Claude 名额；仅 Codex 时输出格式不变。
+显示派发席位所用、显式配置或正在运行的框架；review-spec 默认工具裁剪调用不额外引入 Claude 名额；仅 Codex 时输出格式不变。
 各框架并发上限取生效 agents.<框架>.concurrency（默认 2）；Codex 兼容 codexConcurrency，旧 DispatchDock 记录计入 Codex。
 优先级：RUN_SPEC_<框架大写>_CONCURRENCY 环境变量 > 仓库配置 > 用户席位配置 > 内置默认。
 按批审查使用 run；派发和排队仍由派发入口处理。`,

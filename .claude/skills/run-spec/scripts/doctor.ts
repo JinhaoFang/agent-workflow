@@ -8,7 +8,7 @@
  * symlinks and git probes;
  * artifact/record directories are real directories.
  * 技能隔离按已配置席位所用框架的适配器 isolationArgs 检查，不限制安装目录。
- * review-spec、watch 通过工具裁剪隔离，沿用现有调用方式。
+ * review-spec 通过工具裁剪隔离，沿用现有调用方式。
  * Missing prerequisites exit 1; unexpected probe/runtime errors exit 2.
  * Probe configured framework CLIs; optional config values show their source.
  * Invalid optional configuration exits 2, preserving existing prerequisite exits.
@@ -363,6 +363,11 @@ const doctor = async (values: Values): Promise<void> => {
   );
   if (config) {
     const seats = config.seatConfiguration;
+    for (const [layer, file] of [[seats.user, seats.userFile], [seats.repository, join(root, "docs/agents/run-spec.json")]] as const) {
+      if (Object.hasOwn(layer.seats ?? {}, "watch")) check(`已移除配置 ${file} 的 seats.watch`, `删除 ${file} 中的 seats.watch 配置。`, () => {
+        throw new CheckFailure("seats.watch 已移除，其他子命令忽略此项。");
+      });
+    }
     const used = new Map<string, SeatSettings>();
     const agyProfiles = new Map<string, SeatSettings>();
     const fallbacks = new Map<string, string[]>();
@@ -382,7 +387,7 @@ const doctor = async (values: Values): Promise<void> => {
           for (const [index, settings] of entries.entries()) {
             used.set(settings.agent, settings);
             if (settings.agent === "agy") agyProfiles.set(JSON.stringify([settings.model, settings.effort]), settings);
-            if (seat === "spec-review" || seat === "watch") check(`受限席位 ${seat}.${workType}`, "将此席位改为支持 restrictedCommand 的框架。", () => {
+            if (seat === "spec-review") check(`受限席位 ${seat}.${workType}`, "将此席位改为支持 restrictedCommand 的框架。", () => {
               const supported = Object.values(adapters).filter(adapter => adapter.restrictedCommand).map(adapter => adapter.id);
               requireCheck(!!adapterFor(settings.agent).restrictedCommand, `${settings.agent} 不支持受限调用；当前支持：${supported.join("、")}。`);
               return settings.agent;
@@ -472,7 +477,7 @@ const doctor = async (values: Values): Promise<void> => {
         requireCheck(Array.isArray(args) && args.length > 0 && args.every(arg => typeof arg === "string" && arg.trim().length > 0), "适配器 isolationArgs 未提供有效的技能隔离参数。");
         return "适配器 isolationArgs 提供 run-spec、setup-run-spec 屏蔽参数";
       });
-    console.log("技能隔离说明：review-spec、watch 通过工具裁剪隔离，不另加技能隔离开关。");
+    console.log("技能隔离说明：review-spec 通过工具裁剪隔离，不另加技能隔离开关。");
     check("兼容配置 codexSandbox/codexConcurrency", "权限建议迁到 seats.engineering.default.permission，并发迁到 agents.codex.concurrency。", () =>
       `codexSandbox=${config!.codexSandbox ?? "未配置，工程权限取席位配置"}（来源：仓库旧项，仅作工程 Codex 的兼容默认）；codexConcurrency=${config!.codexConcurrency}（来源：${frameworkSettings(seats, "codex").sources.concurrency}）；建议改用 seats/agents，新席位字段优先。`);
   }
@@ -621,7 +626,8 @@ export const doctorCommand: Command = {
 席位每个已配置的档（含 default、review 列表各项）一行，列出框架、模型、强度、权限；来源仅列非内置项，用参数、环境、仓库、用户层名。
 词表内未配档的席位按类型合并提示回落 default；框架路径、并发各展示一次，默认不展开席位 JSON。
 用户文件 $XDG_CONFIG_HOME/agent-workflow/seats.json（默认 ~/.config/agent-workflow/seats.json）不存在时提示创建路径并使用默认；格式错误退出 2。
-spec-review、watch 必须选择提供 restrictedCommand 的适配器；不支持时退出 1 并列出当前可用框架。
+已移除的席位配置会指出来源和删除位置，其他子命令忽略此项。
+spec-review 必须选择提供 restrictedCommand 的适配器；不支持时退出 1 并列出当前可用框架。
 使用 agy 的每组模型/强度通过 --output-format json -p /model、/effort 零配额查询校验，拒绝裸模型前缀与无效强度；
 根 AGENTS.md、GEMINI.md 和已安装 SKILL.md 单文件超过 24 KB（24000 字节）时提示截断风险，不判失败。
 优先级：参数 > 环境变量 > 仓库 > 用户 > 内置；空环境值视为未设置；框架路径和并发放 agents，报告各框架安装情况。
@@ -635,7 +641,7 @@ GitHub 的 role:engineering、role:design、ready-for-human 标签、只允许 m
 Matt 的工单约定和领域文档说明，安装 triage 时检查分诊标签说明；
 技能隔离逐个检查已配置席位所用框架的适配器 isolationArgs，须提供非空隔离参数以屏蔽 run-spec、setup-run-spec，缺少时报失败；
 两项技能装在 .claude/skills 或共享目录 .agents/skills 都正常，不按安装目录判定隔离；
-review-spec、watch 通过工具裁剪隔离，不另加技能隔离开关；
+review-spec 通过工具裁剪隔离，不另加技能隔离开关；
 执行配置完整；dispatchScript 不再使用，存在时提示可删除；验收产物目录、.codex-runs 目录和每个 worktree 软链接目录被 git 忽略；
 报告可选配置 codexConcurrency、prCheckCommand、verificationEnv、exclusiveVerification、disposableIgnored 的实际取值及来源；
 报告 staticCheckCommand（默认 null，未配置）、staticOnlyPaths（默认 []）的实际取值及来源；

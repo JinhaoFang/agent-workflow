@@ -13,7 +13,7 @@
 | 事项 | 决定 | 写在哪 |
 |---|---|---|
 | 仓库 | 方法层从 `JinhaoFang/video-studio` 带历史抽出，单独成仓库 `JinhaoFang/agent-workflow`（私有）；只放开发流程，视频的组件、风格、工具留在 video-studio；提交尾注改为 `Refs: JinhaoFang/video-studio#号`（用户 10-31） | `README.md` |
-| 开发流程 | 角色只写职责：设计负责人是和用户对话的主会话，工程负责人由它派发，用 `run-spec` 执行 spec。用哪个框架、模型、强度和权限按席位配置，可按工作类型分档；工作类型词表属于仓库，各档用什么属于个人。内置默认等于 v4（工程、审查、调研用 Codex，独立审查用 Claude，巡检用 haiku）；`run-spec` 自带派发层，不再需要 DispatchDock；v5 支持 Codex、Claude Code、pi（用户 11-05，spec #22），v6 加入 agy（用户 11-14，spec #50）；只给读文件工具或不给工具的两个席位（派发前审查、巡检）只能配 Claude 或 pi，`doctor` 当场检查 | `AGENTS.md`、`docs/roles/`、`setup-run-spec/seats.md` |
+| 开发流程 | 角色只写职责：设计负责人是和用户对话的主会话，工程负责人由它派发，用 `run-spec` 执行 spec。用哪个框架、模型、强度和权限按席位配置，可按工作类型分档；工作类型词表属于仓库，各档用什么属于个人。内置默认等于 v4（工程、审查、调研用 Codex，独立审查用 Claude）；`run-spec` 自带派发层，不再需要 DispatchDock；v5 支持 Codex、Claude Code、pi（用户 11-05，spec #22），v6 加入 agy（用户 11-14，spec #50）；只给读文件工具的派发前审查席位只能配 Claude 或 pi，`doctor` 当场检查 | `AGENTS.md`、`docs/roles/`、`setup-run-spec/seats.md` |
 | 借鉴 pstack | 按情况三选一：单一主题的技能原样安装；想法有用但绑定 Cursor 的改成自己的；和已定冲突的不用。本版做席位配置（spec #22）和验证技能（spec #23），playbook 等第一个对应的 spec 再改（用户 11-05） | `docs/research/pstack-notes.md` |
 | 汇报检查与验证入口 | 汇报交付前运行 `tickets.ts report-check`，随 run-spec 发布，所有使用仓库共用一个量法；想让【实测】有固定办法的仓库装可选技能 `verification`，生成物放 `docs/verification/<产物>/`，由 `AGENTS.md` 指向（spec #23） | `.claude/skills/verification/`、`run-spec/report.md` |
 | 版本 | 沿用 `workflow-v<N>` 的命名，旧版本 v1～v3.1 的 tag 一起带过来；拆分后的第一个版本是 `workflow-v4`（用户 10-31） | `README.md`，各版本的问题和改法见 `docs/research/run-spec-migration.md` |

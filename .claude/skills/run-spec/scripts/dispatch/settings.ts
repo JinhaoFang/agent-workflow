@@ -15,7 +15,7 @@ import { agentNames } from "./adapters.ts";
 
 export { agentNames } from "./adapters.ts";
 
-export const seatNames = ["engineering", "review", "spec-review", "research", "watch"] as const;
+export const seatNames = ["engineering", "review", "spec-review", "research"] as const;
 export class SeatConfigError extends Error {}
 type Profile = { agent?: string; model?: string | null; effort?: string | null; permission?: Permission };
 type Layer = {
@@ -55,6 +55,7 @@ const validate = (value: unknown, source: string, user: boolean): Layer => {
   if (value.seats !== undefined) {
     if (!object(value.seats)) fail("seats", "席位到分档的对象");
     for (const [seat, profiles] of Object.entries(value.seats)) {
+      if (seat === "watch") continue;
       if (!seatNames.includes(seat as typeof seatNames[number]) || !object(profiles)) fail(`seats.${seat}`, "已知席位的分档对象");
       for (const [name, profile] of Object.entries(profiles as object)) {
         if (!text(name) || name !== name.trim() || (!user && name !== "default" && !Object.hasOwn(value.workTypes ?? {}, name))) fail(`seats.${seat}.${name}`, "default 或仓库 workTypes 中的名称");
@@ -133,7 +134,7 @@ export const resolveSeat = (config: SeatConfiguration, seat = "engineering", wor
   if (!seatNames.includes(seat as typeof seatNames[number])) throw new Error(`未知席位：${seat}`);
   if (workType !== "default" && !Object.hasOwn(config.workTypes, workType)) throw new Error(`工作类型不在仓库 workTypes 词表中：${workType}`);
   for (const key of ["model", "effort"]) if (overrides[key] !== undefined && !text(overrides[key])) throw new Error(`命令参数 --${key} 必须是非空单行字符串`);
-  const builtin = { agent: ["spec-review", "watch"].includes(seat) ? "claude" : "codex", model: seat === "watch" ? "haiku" : null, effort: null, permission: seat !== "engineering" ? "read-only" : config.repository.codexSandbox ? "workspace-write" : undefined } as Profile;
+  const builtin = { agent: seat === "spec-review" ? "claude" : "codex", model: null, effort: null, permission: seat !== "engineering" ? "read-only" : config.repository.codexSandbox ? "workspace-write" : undefined } as Profile;
   type Item = { values: Profile; sources: Record<string, string> };
   const base: Item = { values: builtin, sources: Object.fromEntries(Object.keys(builtin).map(key => [key, "内置默认"])) };
   let items: Item[] = [base];

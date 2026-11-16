@@ -185,11 +185,6 @@ test("slots 已配席位：用户工作类型和 review 列表无运行也显示
     assert.equal(environment.stdout, "框架：Codex\n正在运行的派发：0\n空余名额：2/2\n框架：pi\n正在运行的派发：0\n空余名额：3/3\n");
     capture("slots-configured-env.log", environment);
     f.user({});
-    f.repository({ seats: { watch: { default: { model: "configured-watch" } } } });
-    const restricted = f.run();
-    assert.equal(restricted.status, 0, restricted.stderr);
-    assert.equal(restricted.stdout, "框架：Codex\n正在运行的派发：0\n空余名额：2/2\n框架：Claude\n正在运行的派发：0\n空余名额：2/2\n");
-    capture("slots-configured-watch.log", restricted);
     f.repository({ seats: {
       engineering: { default: { agent: "pi" } },
       review: { default: { agent: "pi" } },

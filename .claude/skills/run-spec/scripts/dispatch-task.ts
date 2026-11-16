@@ -7,7 +7,7 @@ import { run } from "./dispatch/run.ts";
 import { agentNames } from "./dispatch/adapters.ts";
 
 const help = `用法：node .claude/skills/run-spec/scripts/dispatch-task.ts <任务文件|任务文字> [补充说明]
-  [--role <角色文档名>] [--name <记录名>] [--seat <engineering|review|spec-review|research|watch>]
+  [--role <角色文档名>] [--name <记录名>] [--seat <engineering|review|spec-review|research>]
   [--work-type <工作类型>] [--agent <${agentNames().join("|")}>] [--permission <read-only|workspace-write|full>]
   [--model <模型>] [--effort <强度>] [--tier <档位>] [--sandbox <read-only|workspace-write|danger-full-access>]
 模型和强度未指定时沿用所选框架默认；过渡期兼容 CODEX_MODEL/CODEX_EFFORT/CODEX_TIER 和旧 config.json。
