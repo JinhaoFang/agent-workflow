@@ -464,7 +464,7 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
       client.close();
     }
     if (browser && browser.exitCode === null && browser.signalCode === null) {
-      browser.kill("SIGTERM");
+      if (!client) browser.kill("SIGTERM");
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([exited, new Promise<void>((resolveExit) => {
         timer = setTimeout(() => { browser?.kill("SIGKILL"); resolveExit(); }, 3000);
