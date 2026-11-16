@@ -218,7 +218,7 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
     writeFileSync(blank, '<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>');
     browser = spawn(program, [
       "--headless", "--no-sandbox", "--disable-dev-shm-usage", "--no-first-run",
-      "--no-default-browser-check", "--disable-background-networking",
+      "--no-default-browser-check", "--disable-background-networking", "--disable-component-update",
       "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
       `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"] });
