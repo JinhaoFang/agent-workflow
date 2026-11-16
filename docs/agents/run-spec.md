@@ -19,13 +19,13 @@
 | `acceptanceRoot` | `"out/qa"` | 验收产物不进 git。 |
 | `codexSandbox` | `"danger-full-access"` | 旧权限兼容项：工程席位需要联网、用 `gh` 读 issue；适用框架和映射见配置模板的 `seats.md`。 |
 | `workTypes` | `{"前端":"汇报模板等 HTML 页面"}` | HTML 页面工作的模型偏好与脚本不同，供工单选档；席位和模型由个人配置决定。 |
-| `prCheckCommand` | `["pnpm", "ci:local", "{pr}"]` | 私有仓库的 GitHub Actions 被计费挡住，启动不了；收尾时用本机 CI 代替：在 PR 的头提交上跑验证和提交信息检查。Actions 的设定不动。 |
+| `prCheckCommand` | `["pnpm", "ci:local", "{pr}"]` | 收尾用本机 CI：在 PR 的头提交上跑验证和提交信息检查。GitHub Actions 从 2026-11-05 起能启动，2026-11-16 起 verify 通过（spec #74），它的结果作参考，关卡仍是本机 CI；Actions 的设定不动。 |
 
 其余可选项都不写，取默认值：本仓库的验证一次只要几分钟，并发不互相干扰，也不留下大的副产物。
 
 ## 执行时要知道的其他值
 
 - **汇报目录**：`docs/reports/`。写法见 `run-spec` 技能里的 `report.md`。
-- **实测用时**：还没有本仓库的数据，第一个 spec 之后补。
+- **实测用时**：spec #74（6 张工单）：工程派发每张 15—31 分钟，完整验证约 2 分钟，按批审查约 10 分钟。
 - **独占资源**：无。
 - **常见的共享登记处**：工单脚本的子命令登记表（`tickets.ts`）、配置解析（`shared.ts`）、`doctor` 的检查项、派发层的适配器登记表与说明（`scripts/dispatch/adapters.ts`、`scripts/dispatch/README.md`）、席位配置说明（`setup-run-spec/seats.md`）。并行的工单都要往里加一项时，派发的补充说明写"只加自己那一项"。

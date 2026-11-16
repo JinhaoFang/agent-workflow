@@ -100,7 +100,7 @@ disable-model-invocation: true
 3. 告诉用户这两个技能固定在哪个版本、怎么升级：安装命令里 `#` 后面是版本（`JinhaoFang/agent-workflow` 的 tag），升级就换成新版本再运行
 
    ```bash
-   npx skills add JinhaoFang/agent-workflow#workflow-v6 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
+   npx skills add JinhaoFang/agent-workflow#workflow-v7 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
    ```
 
    `-a claude-code` 总要带（脚本路径以它为准）；主会话或席位用 Codex、pi 或 agy 的保留 `-a codex`（写入 `.agents/skills/`），只用 Claude Code 可去掉。派发层对执行者屏蔽这两个技能。更新完运行自检，并提交 `skills-lock.json` 里变了的两项哈希（否则 `land` 因工作区不干净拒绝合并）。
