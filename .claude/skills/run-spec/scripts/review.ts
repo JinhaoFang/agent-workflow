@@ -12,8 +12,7 @@
  * inherited session_id/session_meta. Root duration uses the dispatch footer;
  * children have no dispatch footer, so use their own completed task durations.
  * Missing or changed data yields a partial comment with reasons, not an error.
- * --session supports surviving session records after dispatch cleanup; dry-run
- * prints only the comment and performs no GitHub calls. No external dependencies.
+ * Dry-run prints only the comment and performs no GitHub calls. No external dependencies.
  * run 批次按 .batch.json 精确清单合计；非 Codex 使用最终汇总，不扫描 Codex 会话。
  */
 import { spawnSync } from "node:child_process";
@@ -249,7 +248,7 @@ const sessionUsage = (
   return usage;
 };
 
-const reviewUsage = (name: string, override: string | undefined, root: string) => {
+const reviewUsage = (name: string, root: string) => {
   const reasons: string[] = [];
   const scanReasons: string[] = [];
   const records = join(root, ".codex-runs", name);
@@ -284,15 +283,8 @@ const reviewUsage = (name: string, override: string | undefined, root: string) =
         .map((event) => event.thread_id as string),
     ),
   ];
-  if (
-    override !== undefined &&
-    (typeof override !== "string" || !/^[A-Za-z0-9_-]+$/.test(override))
-  )
-    throw usageError("--session 必须是会话 ID。", reviewCommand.help);
   if (ids.length > 1) reasons.push("派发日志包含多个会话，无法唯一定位审查");
-  const id = ids.length === 1 ? ids[0] : (override as string | undefined);
-  if (ids.length === 1 && override !== undefined && override !== id)
-    throw new Error("--session 与派发记录中的会话 ID 不一致");
+  const id = ids.length === 1 ? ids[0] : undefined;
   if (!id && !summary) reasons.push("派发日志缺少 thread.started 会话 ID");
   const progress = read(`${records}.progress.log`, reasons, "派发进度");
   const footer = progress.match(
@@ -360,9 +352,6 @@ const review = (values: Values, numbers: number[]): void => {
   if (typeof conclusionFile !== "string" || !conclusionFile.trim()) throw usageError("必须提供 --conclusion-file。", reviewCommand.help);
   const conclusion = readFileSync(conclusionFile, "utf8");
   if (!conclusion.trim()) throw new Error("审查结论不能为空");
-  const override = values.session;
-  if (override !== undefined && (typeof override !== "string" || !/^[A-Za-z0-9_-]+$/.test(override)))
-    throw usageError("--session 必须是会话 ID。", reviewCommand.help);
   const trees = spawnSync("git", ["worktree", "list", "--porcelain"], { encoding: "utf8" });
   const root = trees.status === 0 ? trees.stdout.split("\n")[0].slice(9) : process.cwd();
   const manifest = join(root, ".codex-runs", `${name}.batch.json`);
@@ -373,9 +362,8 @@ const review = (values: Values, numbers: number[]): void => {
       !Array.isArray(batch.records) || !batch.records.length || batch.records.some((item: unknown) => typeof item !== "string" || !new RegExp(`^${name}(?:-[A-Za-z0-9_-]+)?$`).test(item)) || new Set(batch.records).size !== batch.records.length)
       throw new Error("审查批次清单无效或不属于指定 spec。");
     names = batch.records;
-    if (names.length > 1 && override !== undefined) throw usageError("多份审查不能共用 --session。", reviewCommand.help);
   }
-  const results = names.map(record => reviewUsage(record, override as string | undefined, root));
+  const results = names.map(record => reviewUsage(record, root));
   const usages = results.flatMap(result => result.usages);
   const lines = results.flatMap(result => result.lines);
   const reasons = results.flatMap(result => result.reasons);
@@ -437,10 +425,9 @@ export const reviewCommand: Command = {
   options: {
     record: { type: "string" },
     "conclusion-file": { type: "string" },
-    session: { type: "string" },
   },
   execute: review,
-  help: `${entry} review <spec> --record <review-号-批次> --conclusion-file <结论文件> [--dry-run] [--session <会话ID>]
+  help: `${entry} review <spec> --record <review-号-批次> --conclusion-file <结论文件> [--dry-run]
 结论原文后附「用量」：审查和所有子代理的时长、输入（其中缓存）、输出与合计。
 --record 可给 run --seat review 生成的批次前缀，按 .batch.json 清单合计全部份数，每份列出实际模型；模型未记录时写未知。
 派发记录读取主工作区的 .codex-runs；审查时长取进度文件，token 优先取内置派发 .json，旧记录取本机会话。
@@ -451,7 +438,6 @@ export const reviewCommand: Command = {
 索引分块仅读首行元数据，关联审查及后代后才读取对应会话全文。
 相关数据缺失、损坏或重复标明「不完整」及原因，仍评论；不会关闭 spec。
 无法判断归属的元数据或目录读取异常单列「扫描限制」，合计标明已知部分、扫描受限；保留已关联用量，不保证没有遗漏会话。
---session 可在派发记录已清理时指定幸存会话，缺失的派发数据仍标明不完整。
 --dry-run 只打印完整评论内容，不调用 gh，不写 GitHub。
 评论通过临时 UTF-8 文件传给 gh --body-file，运行结束后删除。`,
 };

@@ -383,23 +383,6 @@ test("review missing dispatch or session records still posts with precise partia
   }
 });
 
-test("review salvages real sessions with --session after dispatch cleanup", () => {
-  const input = Object.fromEntries(
-    Object.entries(files()).filter(([file]) => !file.startsWith(".codex-runs")),
-  );
-  const result = run(
-    [...argumentsForReview, "--session", "root", "--dry-run"],
-    input,
-    [],
-  );
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(
-    result.stdout,
-    /合计（已知部分；不完整）：用时 2 分钟，输入 3,300（其中缓存 2,000），输出 170 tokens/,
-  );
-  assert.match(result.stdout, /派发进度缺少结束时长/);
-});
-
 test("review marks malformed records, missing token fields and interrupted children without stopping", () => {
   const scenarios = [
     { [`.codex-runs/${name}.progress.log`]: "changed footer" },
@@ -497,7 +480,6 @@ test("review help and parameter errors never call gh", () => {
       "conclusion.md",
     ],
     ["review", "17", "--record", name, "--conclusion-file", "missing.md"],
-    [...argumentsForReview, "--session", "different"],
   ]) {
     const result = run(args, files(), []);
     assert.equal(result.status, 2, result.stdout);

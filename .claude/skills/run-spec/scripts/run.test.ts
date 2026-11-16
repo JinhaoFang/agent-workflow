@@ -79,7 +79,7 @@ if (args.includes('--version')) { console.log('fixture pi'); process.exit(proces
 const prompt = fs.readFileSync(0, 'utf8');
 fs.appendFileSync(path.join(process.env.RUN_FIXTURE, 'agents.jsonl'), JSON.stringify({agent:'pi',args,prompt,cwd:process.cwd()}) + '\\n');
 if (args.includes('rpc')) process.exit(91);
-const text = args.includes('--no-tools') ? 'DONE: 作业完成' : '必须改：无';
+const text = '必须改：无';
 for (const event of [{type:'session',id:'fixture-pi'}, {type:'message_end',message:{role:'assistant',provider:'fixture',model:'pi',stopReason:'stop',content:[{type:'text',text}],usage:process.env.MISSING_PI_USAGE ? undefined : {input:20,cacheRead:5,cacheWrite:0,output:7}}}, {type:'agent_settled',aborted:false}]) console.log(JSON.stringify(event));
 if (process.env.FAIL_PI) { console.error('fixture failure'); process.exitCode = 7; }
 `);
@@ -95,7 +95,7 @@ if (process.env.FAIL_PI) { console.error('fixture failure'); process.exitCode = 
   return { base, root, tree, xdg, bin, env, run, calls, seats, cleanup: () => rmSync(base, { recursive: true, force: true }) };
 };
 
-for (const seat of ["engineering", "review", "research", "spec-review", "watch"]) {
+for (const seat of ["engineering", "review", "research", "spec-review"]) {
   test(`run 的 ${seat} 席位按约定告知角色并保存进度与登记`, () => {
     const f = fixture();
     try {
@@ -129,6 +129,24 @@ for (const seat of ["engineering", "review", "research", "spec-review", "watch"]
         mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
         writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, `run-role-${seat}.txt`), `${preview.stdout}\n进度头：${progress}\n登记：${JSON.stringify(start)}\n`);
       }
+    } finally { f.cleanup(); }
+  });
+}
+
+for (const absolute of [false, true]) {
+  test(`run 读取${absolute ? "工作仓库外的绝对路径" : "相对路径"}任务文件并启动派发`, () => {
+    const f = fixture();
+    try {
+      const file = absolute ? join(f.base, "外部任务 空格.md") : "任务 空格.md";
+      const task = "读取当前工作仓库的 git 状态。";
+      writeFileSync(absolute ? file : join(f.tree, file), task);
+      const result = f.run(["run", file, "--seat", "research", "--name", "file-task"]);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const [call] = f.calls("agents.jsonl");
+      assert.equal(f.calls("agents.jsonl").length, 1);
+      assert.equal(call.cwd, f.tree);
+      assert.ok(call.prompt.includes(`任务：\n${task}`), call.prompt);
+      assert.ok(existsSync(join(f.root, ".codex-runs/file-task.md")));
     } finally { f.cleanup(); }
   });
 }
@@ -234,23 +252,19 @@ test("run forwards one-shot overrides and keeps an unassociated run outside scor
   } finally { f.cleanup(); }
 });
 
-test("spec-review and watch use pi file-only/empty tools without skill discovery, isolation or persisted sessions", () => {
+test("spec-review uses pi file-only tools without skill discovery, isolation or persisted sessions", () => {
   const f = fixture();
   try {
     const profile = { agent: "pi", model: "fixture/pi", effort: "low", permission: "full" };
-    f.seats({ seats: { "spec-review": { default: profile }, watch: { default: profile } }, agents: { pi: { path: join(f.bin, "pi") } } });
+    f.seats({ seats: { "spec-review": { default: profile } }, agents: { pi: { path: join(f.bin, "pi") } } });
     writeFileSync(join(f.tree, "spec.md"), "审查材料");
     mkdirSync(join(f.tree, "drafts"));
     writeFileSync(join(f.tree, "drafts/ticket.md"), "子工单材料");
     const review = f.run(["review-spec", "22", "--spec-file", "spec.md", "--drafts", "drafts"]);
     assert.equal(review.status, 0, review.stderr);
-    writeFileSync(join(f.tree, "rules.md"), "作业完成时回复 DONE");
-    const watch = f.run(["watch", "--every", "1", "--rules", "rules.md", "--name", "22-pi", "--", process.execPath, "-e", "console.log('done')"]);
-    assert.equal(watch.status, 0, watch.stderr);
     const calls = f.calls("agents.jsonl");
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 1);
     assert.equal(calls[0].args[calls[0].args.indexOf("--tools") + 1], "read,grep,find,ls");
-    assert.ok(calls[1].args.includes("--no-tools"));
     for (const call of calls) {
       assert.ok(call.args.includes("--no-extensions"));
       assert.ok(call.args.includes("--no-mcp"));
@@ -304,18 +318,6 @@ test("受限调用的安装、失败、缺用量与拒绝提示取适配器名�
   } finally { f.cleanup(); }
 });
 
-test("restricted seats fail explicitly when their adapter cannot enforce the required tool set", () => {
-  const f = fixture();
-  try {
-    f.seats({ seats: { watch: { default: { agent: "codex", model: null } } } });
-    writeFileSync(join(f.tree, "rules.md"), "DONE");
-    const result = f.run(["watch", "--every", "1", "--rules", "rules.md", "--", process.execPath, "-e", "console.log('done')"]);
-    assert.equal(result.status, 2);
-    assert.match(result.stderr, /不能保证.*工具集.*拒绝启动/);
-    assert.deepEqual(f.calls("agents.jsonl"), []);
-  } finally { f.cleanup(); }
-});
-
 test("concurrent run calls reserve different batch prefixes without overwriting records", async () => {
   const f = fixture();
   try {
@@ -335,83 +337,5 @@ test("concurrent run calls reserve different batch prefixes without overwriting 
     assert.ok(existsSync(join(directory, "concurrent-2.json")));
     assert.deepEqual(JSON.parse(readFileSync(join(directory, "concurrent.batch.json"), "utf8")).records, ["concurrent"]);
     assert.deepEqual(JSON.parse(readFileSync(join(directory, "concurrent-2.batch.json"), "utf8")).records, ["concurrent-2"]);
-  } finally { f.cleanup(); }
-});
-
-test("数字开头字符串 spec 的 review 默认名可预览、派发与采集，数字规范名继续防误绑", () => {
-  const f = fixture();
-  try {
-    for (const spec of ["2026-audit", "2026-final"]) {
-      const args = ["run", "只读审查", "--seat", "review", "--spec", spec];
-      const preview = f.run([...args, "--dry-run"]);
-      assert.equal(preview.status, 0, preview.stderr);
-      assert.match(preview.stdout, new RegExp(`记录 review-spec-id-${spec}\\n`));
-      assert.ok(!existsSync(join(f.root, `.codex-runs/review-spec-id-${spec}.batch.json`)));
-      const result = f.run(args);
-      assert.equal(result.status, 0, result.stderr);
-      const scored = f.run(["scorecard", spec]);
-      assert.equal(scored.status, 0, scored.stderr);
-      const card = JSON.parse(scored.stdout);
-      assert.deepEqual(card.recordBindings, [`review-spec-id-${spec}`]);
-      assert.deepEqual(card.dispatches.value.map((item: { record: string; seat: string; category: { value: string } }) => [item.record, item.seat, item.category.value]), [[`review-spec-id-${spec}`, "review", "审查"]]);
-      if (process.env.RUN_SPEC_TEST_EVIDENCE) {
-        mkdirSync(process.env.RUN_SPEC_TEST_EVIDENCE, { recursive: true });
-        writeFileSync(join(process.env.RUN_SPEC_TEST_EVIDENCE, `${spec}-review.txt`), `${preview.stdout}\n${result.stdout}\n${scored.stdout}`);
-      }
-    }
-    assert.deepEqual(f.calls("gh.jsonl"), []);
-    const before = readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8");
-    const launches = f.calls("agents.jsonl").length;
-    for (const spec of ["50", "2026-audit"]) {
-      const conflict = f.run(["run", "只读审查", "--seat", "research", "--spec", spec, "--name", "review-12", "--dry-run"]);
-      assert.equal(conflict.status, 2, conflict.stdout + conflict.stderr);
-      assert.match(conflict.stderr, /规范归属冲突/);
-    }
-    assert.equal(readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8"), before);
-    assert.equal(f.calls("agents.jsonl").length, launches);
-  } finally { f.cleanup(); }
-});
-
-test("字符串 --spec 持久关联辅助派发、隔离数字归属且不查询 GitHub", () => {
-  const f = fixture();
-  try {
-    const args = ["run", "只读核对字符串专项", "--seat", "research", "--spec", "feishu-refactor", "--name", "audit-1"];
-    const preview = f.run([...args, "--dry-run"]);
-    assert.equal(preview.status, 0, preview.stderr);
-    assert.ok(!existsSync(join(f.root, ".codex-runs")));
-    const first = f.run(args);
-    assert.equal(first.status, 0, first.stderr);
-    const bindings = JSON.parse(readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8"));
-    assert.deepEqual(bindings.records.map((row: { spec: string; name: string }) => [row.spec, row.name]), [["feishu-refactor", "audit-1"]]);
-    const result = f.run(["scorecard", "feishu-refactor"]);
-    assert.equal(result.status, 0, result.stderr);
-    const card = JSON.parse(result.stdout);
-    assert.equal(card.spec, "feishu-refactor");
-    assert.deepEqual(card.recordBindings, ["audit-1"]);
-    assert.equal(card.dispatches.value[0].record, "audit-1");
-    assert.equal(card.dispatches.value[0].seat, "research");
-    const review = f.run(["run", "只读审查", "--seat", "review", "--spec", "feishu-refactor"]);
-    assert.equal(review.status, 0, review.stderr);
-    assert.match(review.stdout, /review-spec-id-feishu-refactor/);
-    const named = f.run(["run", "只读审查显式名称", "--seat", "review", "--spec", "feishu-refactor", "--name", "review-feishu-refactor-manual"]);
-    assert.equal(named.status, 0, named.stderr);
-    assert.match(named.stdout, /review-feishu-refactor-manual/);
-    const other = f.run(["run", "只读审查另一专项", "--seat", "review", "--spec", "feishu-refactor-extra"]);
-    assert.equal(other.status, 0, other.stderr);
-    const isolated = JSON.parse(f.run(["scorecard", "feishu-refactor"]).stdout);
-    assert.equal(isolated.dispatches.value.length, 3);
-    assert.ok(isolated.recordBindings.includes("review-feishu-refactor-manual"));
-    assert.ok(!isolated.recordBindings.includes("review-spec-id-feishu-refactor-extra"));
-    assert.deepEqual(f.calls("gh.jsonl"), []);
-    const before = readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8");
-    for (const spec of ["../bad", "bad_name", "0", "--bad", "1;echo"]) {
-      const invalid = f.run(["run", "task", "--seat", "research", "--spec", spec]);
-      assert.equal(invalid.status, 2, invalid.stderr);
-      assert.match(invalid.stderr, /^出错：/);
-    }
-    assert.equal(readFileSync(join(f.root, ".codex-runs/scorecard-records.json"), "utf8"), before);
-    const calls = f.calls("agents.jsonl").length;
-    assert.equal(f.run(["scorecard", "22", "--record", "audit-1"]).status, 2);
-    assert.equal(f.calls("agents.jsonl").length, calls);
   } finally { f.cleanup(); }
 });

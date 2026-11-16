@@ -108,12 +108,12 @@ export const pi: Adapter = {
     tools.clear();
     return { executable: launcher.executable, args, stdin: settings.permission === "read-only" ? `${prompt}\n\n只读权限：只允许读取文件、运行 git diff 等不改文件的命令；禁止写文件、修改配置或执行会产生文件改动的测试。bash 不受系统沙箱约束，请严格遵守。` : prompt };
   },
-  restrictedCommand({ prompt, settings, detection, env, tools: profile }) {
+  restrictedCommand({ prompt, settings, detection, env }) {
     const launcher = detection.launcher ?? resolveLauncher(env, settings.path);
     const args = [...launcher.args, "--mode", "json", "--approve", "--no-session", "--no-extensions", "--no-mcp"];
     if (settings.model !== null) args.push("--model", settings.model);
     if (settings.effort !== null) args.push("--thinking", settings.effort);
-    args.push(...(profile === "files" ? ["--tools", "read,grep,find,ls"] : ["--no-tools"]));
+    args.push("--tools", "read,grep,find,ls");
     tools.clear();
     return { executable: launcher.executable, args, stdin: prompt };
   },

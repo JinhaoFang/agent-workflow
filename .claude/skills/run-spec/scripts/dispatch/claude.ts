@@ -102,11 +102,11 @@ export const claude: Adapter = {
     args.push(...this.permissions[settings.permission].args, ...this.isolationArgs());
     return { executable: launcher.executable, args, stdin: prompt };
   },
-  restrictedCommand({ prompt, settings, detection, tools: profile }) {
+  restrictedCommand({ prompt, settings, detection }) {
     const launcher = detection.launcher ?? { executable: "claude", args: [] };
     return {
       executable: launcher.executable,
-      args: [...launcher.args, "-p", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config", "--tools", profile === "files" ? "Read,Glob,Grep" : "", ...(settings.model ? ["--model", settings.model] : []), ...(settings.effort ? ["--effort", settings.effort] : [])],
+      args: [...launcher.args, "-p", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config", "--tools", "Read,Glob,Grep", ...(settings.model ? ["--model", settings.model] : []), ...(settings.effort ? ["--effort", settings.effort] : [])],
       stdin: prompt,
     };
   },

@@ -11,7 +11,7 @@
 在目标仓库的根目录运行：
 
 ```bash
-npx skills add JinhaoFang/agent-workflow#workflow-v6 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
+npx skills add JinhaoFang/agent-workflow#workflow-v7 --skill run-spec --skill setup-run-spec -a claude-code -a codex -y
 ```
 
 然后由用户输入 `/setup-run-spec`，按它的步骤接入。
@@ -32,12 +32,24 @@ npx skills add JinhaoFang/agent-workflow#workflow-v6 --skill run-spec --skill se
 | `workflow-v4` | 从 video-studio 抽出后的第一版：收拢成五条思路，测试分层、验证台账、评分表，汇报模板按六点重做 | `docs/reports/spec-2-workflow-v4.html` |
 | `workflow-v5` | 按全流程核查修正授权边界和规则漂移；独立审查由用户选择；嵌套验证按实际执行统计，辅助派发显式关联，审查索引按需读取，派发明细可视化。角色与工具解绑：按席位和工作类型配置框架与模型，自带派发层支持 Codex、Claude Code、pi。汇报检查做成 `report-check` 命令；新增可选的 `verification` 技能 | `docs/reports/spec-16-workflow-v5.html`、`docs/reports/spec-22-agent-seats.html`、`docs/reports/spec-23-verification.html` |
 | `workflow-v6` | 派发层支持第四个框架 agy：席位可以配 agy，`doctor` 核对 agy 的模型名，评分表读 agy 的会话；只给读文件工具或不给工具的两个席位误配时 `doctor` 当场报错。评分表修正跨天、半途中断、纯主会话几种情况的统计。汇报改为可收起的目录加页签，用图比较时间和用量，`report-check` 逐个切换页签检查 | `docs/reports/spec-50-agy-integration.html`、`docs/reports/spec-51-report-v6.html` |
+| `workflow-v7` | 只删不加：删掉 `watch` 和巡检席位、评分表的子代理用量和批量折叠、字符串 spec 号、`review --session`；修 `run` 不认绝对路径和 `report-check` 在 GitHub Actions 上收尾不稳 | 观察记录第 144—148 条，spec #74 |
 
 v3.1 及以前的版本发布在 `JinhaoFang/video-studio`，同名 tag 两边都有，内容相同；已经从 video-studio 安装的仓库照常可用，换到本仓库只需要把命令里的仓库名改掉。
 
+## 从 v6 升级到 v7
+
+v7 只删不加：按 v5 期间的真实使用删掉没用上的功能，修两处缺陷。被删的都能从 `workflow-v6` tag 找回。
+
+1. **重装**：在目标仓库根目录运行上面的安装命令，跑 `doctor`，全部通过后提交 `skills-lock.json` 里变了的两项。
+2. **巡检没有了**：`watch` 子命令和巡检席位删除。个人或仓库的席位配置里写了 `watch` 的，`doctor` 会指出文件和位置，删掉那一项即可。
+3. **评分表升到第 3 版**：不再有子代理用量、子代理通知两项，也不再把同前缀的派发折叠成批次。旧评分表和旧汇报不受影响，`cleanup` 照旧认得。
+4. **spec 号只能是数字**：`run --spec` 和 `scorecard` 不再接受字符串标识；`review --session` 参数删除。
+5. **不用改的**：派发排队、验证锁、四个框架、`review-spec`、`report-check` 都没动。`run` 的任务文件现在可以用绝对路径。
+6. **两处不再有的提示和分支**：`doctor` 不再提示旧配置项 `dispatchScript`（五个仓库都已不写）；"不给工具"的受限调用随巡检一起删除，派发前审查照旧只给读文件工具。
+
 ## 从 v5 升级到 v6
 
-1. **重装**：在目标仓库根目录运行上面的 `#workflow-v6` 安装命令（主会话或席位用 Codex、pi、agy 的保留 `-a codex`），跑 `doctor`，全部通过后提交 `skills-lock.json` 里变了的两项。
+1. **重装**：在目标仓库根目录运行 `#workflow-v6` 的安装命令（主会话或席位用 Codex、pi、agy 的保留 `-a codex`），跑 `doctor`，全部通过后提交 `skills-lock.json` 里变了的两项。
 2. **想用 agy（可选）**：在个人 `~/.config/agent-workflow/seats.json` 里把工程、审查或调研席位配成 agy，写法见 `setup-run-spec` 的 `seats.md`，跑 `doctor` 核对。派发前审查和巡检两个席位不能配 agy。
 3. **评分表**：同一个会话跨了几个 spec 时，用 `scorecard` 的时间窗参数切开；agy 会话的记录里没有思考强度，用 `--main-effort` 补上。参数见 `scorecard --help`。
 4. **汇报**：新汇报用新版 `report-template.html`，按 `report.md` 填；已有的旧汇报是独立快照，不用重做，`report-check` 照旧能查。

@@ -2,7 +2,7 @@
  * scorecard <spec> 从只读本机记录生成过程数据 JSON；--session 可重复传四框架会话，
  * JSONL，--out 写文件，--post 用稳定标记创建或更新折叠评论。cleanup 共用归属
  * 和截点检查；只有显式 --no-scorecard 才绕过。所有缺数以 value:null 和中文
- * reason 表示，missing 汇总字段路径。保留 version:2 既有字段不变，主会话明细
+ * reason 表示，missing 汇总字段路径。version:3 移除子代理用量和通知汇总；主会话明细
  * 补充活跃时段 spans，并在顶层 cockpit 预计算全局与各角色（框架 · 模型 · 思考强度，cockpit.seats
  * 含合并有序区间 spans）的三项 Token、工具轮数、耗时、工作时间（重叠只算一次）activeMinutes、
  * 日历跨度 wallSpanMinutes 与全局/角色工单一次通过及返工统计 tickets。
@@ -13,7 +13,7 @@ import { dispatchSummary } from "./dispatch/summary.ts";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { CheckFailure, entry, gh, git, github, specIdentifier, type Command, type SpecId, type Values } from "./shared.ts";
+import { CheckFailure, entry, gh, github, type Command, type Values } from "./shared.ts";
 import { claudeTokens, codexSessions, codexTokens, inWindow, jsonLines, lane, loadSession, mainRoot, minutes, read, sessionTokens, sourceSnapshot, registerRecordBindings, span, sumTokens, timestamp, type CodexSession, type Json, type Span, type TimeWindow, type Tokens } from "./scorecard-records.ts";
 
 type Metric<T> = { value: T | null; reason: string | null };
@@ -181,15 +181,15 @@ const dispatchTurns = (
   }
   return null;
 };
-const marker = "<!-- run-spec-scorecard:v2 -->";
-const marked = (body: unknown): body is string => typeof body === "string" && /^<!-- run-spec-scorecard:v[12] -->/.test(body);
+const marker = "<!-- run-spec-scorecard:v3 -->";
+const marked = (body: unknown): body is string => typeof body === "string" && /^<!-- run-spec-scorecard:v[123] -->/.test(body);
 const comments = (endpoint: string): Json[] => JSON.parse(gh(["api", "--method", "GET", `${endpoint}/comments`, "--paginate", "--slurp"])).flat();
 const postedCards = (endpoint: string, spec: number): Json[] => comments(endpoint).flatMap((comment) => {
   if (!marked(comment.body)) return [];
   const json = comment.body.match(/```json\n([\s\S]*?)\n```/);
   try {
     const card = JSON.parse(json?.[1] ?? "");
-    return [1, 2].includes(card.version) && card.spec === spec && (card.cutoffAt === null || timestamp(card.cutoffAt)) ? [{ ...comment, card }] : [];
+    return [1, 2, 3].includes(card.version) && card.spec === spec && (card.cutoffAt === null || timestamp(card.cutoffAt)) ? [{ ...comment, card }] : [];
   } catch { return []; }
 });
 
@@ -362,7 +362,7 @@ const summarizeTickets = (dispatches: DispatchTicketItem[], zeroDispatch: boolea
 };
 
 
-const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: string[], bindings: ReturnType<typeof registerRecordBindings>, options: SessionOptions = {}) => {
+const collect = (root: string, spec: number, tickets: Set<number>, sessions: string[], bindings: ReturnType<typeof registerRecordBindings>, options: SessionOptions = {}) => {
   const missing: Missing[] = [];
   const metric = <T>(field: string, value: T | null, reason: string): Metric<T> => {
     if (value === null) missing.push({ field, reason });
@@ -444,12 +444,12 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       ...item.raw.filter((row) => row.type === "user" && !row.isCompactSummary && !row.isVisibleInTranscriptOnly).map((row) => userText(row.message?.content ?? row.content)),
     ];
     const prompts = promptParts.join("\n");
-    const category = item.kind === "review" || typeof spec === "string" && seat === "review" ? "审查" : item.kind === "auxiliary" ? "辅助" : /这是原地续做：|--resume 原地续做/.test(prompts) ? "续做" : /这是返工派发：/.test(prompts) ? "返工" : item.name === `gh-${item.ticket}` ? "首次" : null;
+    const category = item.kind === "review" ? "审查" : item.kind === "auxiliary" ? "辅助" : /这是原地续做：|--resume 原地续做/.test(prompts) ? "续做" : /这是返工派发：/.test(prompts) ? "返工" : item.name === `gh-${item.ticket}` ? "首次" : null;
     const usages = linked.map((session) => sessionTokens(session, window));
     const normalized = summary || "usage" in metadata;
     const tokens = normalized ? codexTokens(metadata.usage ? { input_tokens: metadata.usage.input, cached_input_tokens: metadata.usage.cached, output_tokens: metadata.usage.output } : undefined) : linked.length && usages.every((value) => value !== null) ? sumTokens(usages as Tokens[]) : null;
     const interval = span(item.start, item.end);
-    const readOnly = metadata.permission === "read-only" || ["review", "research", "spec-review", "watch"].includes(seat);
+    const readOnly = metadata.permission === "read-only" || ["review", "research", "spec-review"].includes(seat);
     const writeRows = savedRows.length ? [...savedRows] : transcriptRows.length ? [...transcriptRows] : [...item.raw];
     const unified = read(item.files.get(".events.jsonl") ?? "");
     const unifiedRows = item.ambiguity ? [] : jsonLines(unified.slice(0, unified.lastIndexOf("\n") + 1));
@@ -509,25 +509,8 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     record: JSON.parse(read(join(root, ".codex-runs", name))) as Json,
   })) : [];
   const reviews = reviewRecords.map(({ record }) => record.spec === spec ? claudeTokens(record.usage) : null);
-  const childUsages = children.map((session) => sessionTokens(session, window));
-  const childKnown = children.length > 0 && childUsages.every((usage) => usage !== null);
   const mainMissing = main.reason;
   const cutoffAt = options.cutoffAt ?? [sources.cutoffAt, main.cutoffAt].filter((at): at is string => typeof at === "string").sort().at(-1) ?? null;
-  const auxiliaryGroups = new Map<string, typeof dispatches>();
-  for (const item of dispatches.filter((item) => item.category.value === "辅助")) {
-    const prefix = item.record.replace(/-?\d+$/, "");
-    auxiliaryGroups.set(prefix, [...(auxiliaryGroups.get(prefix) ?? []), item]);
-  }
-  const batches = [...auxiliaryGroups].filter(([, group]) => group.length > 10).map(([prefix, group]) => {
-    const valid = group.filter((item) => item.usage.value !== null);
-    return { prefix, count: group.length, startedAt: group.map((item) => item.start.value).filter(Boolean).sort()[0] ?? null,
-      cutoffAt: group.map((item) => item.end.value).filter(Boolean).sort().at(-1) ?? null,
-      successRate: group.filter((item) => item.exitCode.value === 0).length / group.length,
-      minutes: group.reduce((sum, item) => sum + (item.minutes.value ?? 0), 0), usage: valid.length ? sumTokens(valid.map((item) => item.usage.value!)) : null,
-      complete: group.every((item) => item.minutes.value !== null && item.usage.value !== null),
-      anomalies: group.filter((item) => item.exitCode.value !== 0 || item.usage.value === null).map((item) => ({ record: item.record, reason: item.usage.reason ?? `派发退出码 ${item.exitCode.value ?? "未记录"}` })),
-      records: group.map((item) => item.record), representatives: [...new Set([group[0].record, group.at(-1)!.record, ...group.filter((item) => item.exitCode.value !== 0 || item.usage.value === null).map((item) => item.record)])] };
-  });
   const childDetails = children.map((session) => {
     const actual = sessionSettings(session.events, "codex", window);
     return { session: `codex:${session.id}`, ...attribution("subagent", "codex", { actualModel: actual.model, actualEffort: actual.effort }), usage: sessionTokens(session, window) };
@@ -603,7 +586,7 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
   });
   for (const failure of main.childFailures) globalExtraAnomalies.push({ source: "subagent", reason: failure });
   const { globalTickets, seatTickets } = summarizeTickets(dispatches, zeroDispatch);
-  const roleOrder: Record<string, number> = { design: 0, engineering: 1, review: 2, "spec-review": 3, research: 4, watch: 5, subagent: 6 };
+  const roleOrder: Record<string, number> = { design: 0, engineering: 1, review: 2, "spec-review": 3, research: 4, subagent: 5 };
   const seatGroups = new Map<string, CockpitRun[]>();
   for (const run of cockpitRuns) {
     const key = seatTupleKey(run);
@@ -749,8 +732,8 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     tickets: globalTickets,
     seats: cockpitSeats,
   };
-  return { version: 2, spec, startedAt: window.startedAt ?? main.startedAt, mainFrameworks: main.frameworks, mainSessions: main.sessions,
-    subagents: [...main.children, ...childDetails], subagentAnomalies: main.childFailures, batches,
+  return { version: 3, spec, startedAt: window.startedAt ?? main.startedAt, mainFrameworks: main.frameworks, mainSessions: main.sessions,
+    subagents: [...main.children, ...childDetails], subagentAnomalies: main.childFailures,
     dispatchLanes: metric("dispatchLanes", dispatchLanes.length || zeroDispatch ? dispatchLanes : null, "未记录：缺少派发记录"), ...(sources.recordBindings.length ? { recordBindings: sources.recordBindings } : {}), cutoffAt, collectedAt: new Date().toISOString(), verification, merges,
     dispatches: metric("dispatches", dispatches.length || zeroDispatch ? dispatches.map(({ overhead: _overhead, turns: _turns, ...item }) => item) : null, "未记录：缺少本 spec 派发记录"),
     time: {
@@ -772,18 +755,15 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       dispatches: metric("usage.dispatches", groupedUsage.length || zeroDispatch ? groupedUsage : null, "未记录：缺少派发用量分组"),
       mainSession: metric("usage.mainSession", main.mainUsage, main.usageReason),
       independentReview: metric("usage.independentReview", reviews.length && reviews.every((value) => value !== null) ? sumTokens(reviews as Tokens[]) : null, "未记录独立审查或 JSON 用量不完整"),
-      subagents: metric("usage.subagents", (children.length && !childKnown) || (main?.hasChildren && !main.childUsage) ? null : childKnown && main?.childUsage ? sumTokens([...(childUsages as Tokens[]), main.childUsage]) : childKnown ? sumTokens(childUsages as Tokens[]) : main?.childUsage ?? null, "未记录可关联的子代理完整用量"),
-      subagentNotifications: metric("usage.subagentNotifications", main?.notifiedTokens ?? null, "未提供 Claude 会话或任务通知没有 subagent_tokens"),
     },
     cockpit,
     missing };
 };
 
-const scorecard = (values: Values, _numbers: number[], args: string[]): void => {
-  const spec = specIdentifier(args[0]);
-  if (typeof spec === "string" && values.post) throw new Error("字符串 spec 没有 GitHub Issue，不能使用 --post。");
-  const api = typeof spec === "number" ? github(true) : null;
-  const children = api ? JSON.parse(gh(["api", "--method", "GET", `${api.endpoint(spec as number)}/sub_issues`, "--paginate", "--slurp"])).flat() as Json[] : [];
+const scorecard = (values: Values, numbers: number[]): void => {
+  const spec = numbers[0];
+  const api = github(true);
+  const children = JSON.parse(gh(["api", "--method", "GET", `${api.endpoint(spec)}/sub_issues`, "--paginate", "--slurp"])).flat() as Json[];
   const root = mainRoot();
   const tickets = new Set<number>(children.map((child) => child.number));
   const options: SessionOptions = { mainModel: values["main-model"] as string | undefined, mainEffort: values["main-effort"] as string | undefined };
@@ -795,27 +775,16 @@ const scorecard = (values: Values, _numbers: number[], args: string[]): void => 
   for (const flag of ["main-model", "main-effort"]) if (values[flag] !== undefined && !(values[flag] as string).trim()) throw new Error(`--${flag} 不能为空。`);
   const bindings = registerRecordBindings(root, spec, tickets, (values.record as string[] | undefined) ?? [], Boolean(values["dry-run"]));
   const card = collect(root, spec, tickets, (values.session as string[] | undefined) ?? [], bindings, options);
-  if (typeof spec === "string") Object.assign(card, { branch: git(process.cwd(), ["branch", "--show-current"]), commits: git(process.cwd(), ["log", "-30", "--format=%H %cI %s"]).split("\n") });
   const json = JSON.stringify(card, null, 2) + "\n";
   if (values.out && !values["dry-run"]) {
     mkdirSync(dirname(resolve(values.out as string)), { recursive: true });
     writeFileSync(values.out as string, json);
   } else process.stdout.write(json);
-  if (!values.post || !api) return;
+  if (!values.post) return;
   const endpoint = api.endpoint;
-  const existing = comments(endpoint(spec as number)).filter((comment) => marked(comment.body));
+  const existing = comments(endpoint(spec)).filter((comment) => marked(comment.body));
   if (existing.length > 1) throw new CheckFailure("spec 上有多条评分表评论，请设计负责人先合并重复评论。");
-  const batchSummary = card.batches.length ? [
-    "批次摘要（完整明细见下方评分表）", "",
-    "| 前缀 | 条数 | 起止 | 成功率 | 总分钟 | 总 Token（输入/缓存/输出） | 异常记录 |",
-    "| --- | ---: | --- | ---: | ---: | --- | --- |",
-    ...card.batches.map((batch) => {
-      const tokens = batch.usage ? `${batch.usage.inputTokens}/${batch.usage.cachedInputTokens}/${batch.usage.outputTokens}` : "缺失";
-      const anomalies = batch.anomalies.map((item) => item.record).join("、") || "无";
-      return `| ${batch.prefix} | ${batch.count} | ${batch.startedAt ?? "缺失"} ～ ${batch.cutoffAt ?? "缺失"} | ${(batch.successRate * 100).toFixed(1)}% | ${batch.minutes} | ${tokens}${batch.complete ? "" : "（已知部分）"} | ${anomalies} |`;
-    }), "", "",
-  ].join("\n") : "";
-  const body = `${marker}\n${batchSummary}<details>\n<summary>spec #${spec} 过程评分表（截点：${card.cutoffAt ?? "未记录"}）</summary>\n\n\x60\x60\x60json\n${json.trimEnd()}\n\x60\x60\x60\n</details>`;
+  const body = `${marker}\n<details>\n<summary>spec #${spec} 过程评分表（截点：${card.cutoffAt ?? "未记录"}）</summary>\n\n\x60\x60\x60json\n${json.trimEnd()}\n\x60\x60\x60\n</details>`;
   if (values["dry-run"]) {
     console.error(`评分表评论预览：${existing.length ? "更新" : "新建"} spec #${spec}；不写 GitHub。\n${body}`);
     return;
@@ -824,7 +793,7 @@ const scorecard = (values: Values, _numbers: number[], args: string[]): void => 
   try {
     const file = join(directory, "comment.json");
     writeFileSync(file, JSON.stringify({ body }));
-    const issue = endpoint(spec as number);
+    const issue = endpoint(spec);
     const path = existing.length ? `repos/${issue.split("/")[1]}/${issue.split("/")[2]}/issues/comments/${existing[0].id}` : `${issue}/comments`;
     gh(["api", "--method", existing.length ? "PATCH" : "POST", path, "--input", file], () => {
       const found = comments(issue).find((comment) => comment.body === body);
@@ -837,7 +806,6 @@ const scorecard = (values: Values, _numbers: number[], args: string[]): void => 
 export const scorecardCommand: Command = {
   options: { record: { type: "string", multiple: true }, session: { type: "string", multiple: true }, out: { type: "string" }, post: { type: "boolean" }, "main-model": { type: "string" }, "main-effort": { type: "string" }, "started-at": { type: "string" }, "cutoff-at": { type: "string" } },
   positionals: 1,
-  textPositionals: true,
   execute: scorecard,
   help: `${entry} scorecard <spec> [--record <精确记录名>…] [--session <主会话.jsonl>…] [--out <文件>] [--post] [--dry-run]
 采集过程数据 JSON；默认标准输出，--out 写 UTF-8 文件，--session 可重复（包括写 spec 的会话）。
@@ -845,11 +813,11 @@ export const scorecardCommand: Command = {
 --record 可重复，只接受不含路径、扩展名或通配符的精确派发名；正常调用持久登记到主工作区
 .codex-runs/scorecard-records.json，重复登记幂等，跨 spec 或规范归属冲突拒绝；重跑和 cleanup 自动读取。
 --dry-run 仅预览关联，不持久登记；缺失记录保留占位和 missing，不搜索任意外部目录。
-JSON version=2，评论标记 run-spec-scorecard:v2（cleanup 同时接受 v1/v2）；recordBindings 可选，列出本次覆盖的显式关联精确名；计算指标为 {value,reason}，缺数 value=null、中文 reason；missing 列字段路径，未记录的派发模型/强度等元数据为 null。
+JSON version=3，评论标记 run-spec-scorecard:v3（cleanup 同时接受 v1/v2/v3）；recordBindings 可选，列出本次覆盖的显式关联精确名；计算指标为 {value,reason}，缺数 value=null、中文 reason；missing 列字段路径，未记录的派发模型/强度等元数据为 null。
 startedAt/cutoffAt 是采集窗边界；cutoffAt 优先显式封账时间，再取本地源记录截点，无本地截点时取会话末尾（无记录为 null）；collectedAt 是采集时间。
 输入：主工作区 .codex-runs/verification.jsonl；主工作区及直接子工单 worktree 的派发文件，
 内置派发层及旧 DispatchDock runs.jsonl（CODEX_DISPATCH_HOME 或默认配置目录），CODEX_HOME/sessions（默认 ~/.codex/sessions）。
-台账收 branch=spec/<号>-… 或直接子工单 ticket/<号>；字符串标识只收 branch=<标识> 或 spec/<标识>，不按前缀猜其他专项；派发默认收 gh-<子工单> 和 review-<spec> 的精确编号及 - 后缀，字符串派发只按精确绑定采集。
+台账收 branch=spec/<号>-… 或直接子工单 ticket/<号>；派发默认收 gh-<子工单> 和 review-<spec> 的精确编号及 - 后缀。
 显式关联额外精确纳入辅助派发；同名派发副本合并，每种文件取修改时间最新者，多次实际运行歧义写缺数。
 会话优先按唯一 thread.started ID 对应并保留真实 cwd；ID 缺失时要求原有 cwd 与开始时间严格相等。
 verification：在完整台账按 invocationId/parentInvocationId 建关系，只计无子调用且 verification 非 null 的实际执行节点；
@@ -859,7 +827,7 @@ fullCount/fullMinutes 只汇总 full，staticCount 只汇总 static；缺台账�
 merges：landCount 计全部 land 调用；fullVerificationFailures 只计 caller=land 的 full 验证非零退出；verify、pr-check 不计入该项。
 stops 按 land 的 step 分 rebaseConflict、installFailure、verificationFailure、pushFailure、other。
 dispatches：每次给工单、席位 seat、工作类型 workType、框架 framework、配置 model/effort、permission、实际 actualModel/actualEffort，以及类别、起止、分钟、退出码、用量；起止优先生命周期，旧记录退到进度头尾或 raw._at。
-类别：显式辅助名为辅助（ticket=null），review 名及字符串 spec 的 review 席位为审查；从已关联 Codex 会话、agy transcript USER_INPUT、pi 保存会话或原始日志用户消息读取初始指令，明确“这是原地续做”为续做、“这是返工派发”为返工；基础 gh-<号> 为首次；其余 null。
+类别：显式辅助名为辅助（ticket=null），review 名为审查；从已关联 Codex 会话、agy transcript USER_INPUT、pi 保存会话或原始日志用户消息读取初始指令，明确“这是原地续做”为续做、“这是返工派发”为返工；基础 gh-<号> 为首次；其余 null。
 time：dispatchSlots=全部派发运行；dispatchLanes 按 framework 分泳道；verification=实际验证；queue=全部原始调用验证开始前 queuedMinutes 那一段，包装调用排队保留。
 --session 自动识别 Claude、Codex、pi、agy JSONL；agy 也接受会话 ID 或会话目录，根目录用 AGY_BRAIN_DIR 覆盖（默认 ~/.gemini/antigravity-cli/brain）。
 agy 只认 USER_EXPLICIT/USER_INPUT 人工输入、MODEL/PLANNER_RESPONSE 模型步骤和 GENERIC 工具结果；invoke_subagent 之后的工具返回 conversationId 关联同 brain 子会话，去重且不计入主会话用量。
@@ -877,7 +845,7 @@ time.longPause 单列超过 45 分钟的停顿次数 count、并集 minutes/span
 每类 {spans:[{start,end}],minutes}；同类重叠/相接取并集，合计等于时段之和；类别之间可重叠，不跨会话连线。
 缺会话、未知格式或缺少可解析事件时后两类和 userInterventions 为 null，写明原因；按框架、会话和消息 ID 去重，不含 Claude isSidechain。
 overhead：派发开始到首次写改工具调用；Codex 取首次成功 apply_patch（含 tools.apply_patch），pi 取 edit/write，agy 取 edit_file/write_file，Claude 取 Edit/Write/MultiEdit；
-permission=read-only 或 review/research/spec-review/watch 席位固定 null，reason 说明不适用，不写 missing。
+permission=read-only 或 review/research/spec-review 席位固定 null，reason 说明不适用，不写 missing。
 输入 token 取首次改文件前累计输入，Claude 同 message.id 的流分片只累计一份响应用量；失败 Codex patch 和只读命令不计，shell 改文件无法可靠识别时写 null。
 Codex 将 response_item 消息、调用和结果映射到同一口径；AGENTS/环境注入、摘要、reasoning 不算用户输入；
 request_user_input 的非空 answers 算人工回答，异步提问只在后续用户消息到达时计介入。缺少 response_item 不从工具日志猜人工输入。
@@ -891,18 +859,15 @@ usage.dispatches 按 seat/framework 分组，逐组给 {seat,framework,usage:{va
 新派发优先取 .json 或生命周期统一 usage，缺数不估算；旧记录无框架按 codex、无席位按工单 engineering/审查 review/辅助 research，取关联会话最后累计 token_count。
 同席位某次缺汇总或中断不清空其余有效统计，usage.dispatches 和 dispatchLanes 另列 anomalies；complete=false 表示已知部分，逐条 missing 保留。
 零派发但有有效主会话时，派发、泳道和用量组为 []，派发耗时与失败数为 0，不报派发缺数。
-辅助派发去末尾数字序号后同前缀超过 10 条时，batches 给条数、起止、成功率、总分钟、总 Token、异常、首尾代表项；dispatches 保留全部明细。
 主会话：Claude 按 message.id 去重累加 usage；Codex 取窗内最后累计 token_count 或 thread_token_usage 并扣窗前基线；pi 按 message.id 去重累加 assistant usage；agy 累加每步 input_tokens + cache_read_tokens（总输入）、cache_read_tokens（缓存重读）及 output_tokens（输出）。
 独立审查取 review-spec-<号>-<序号>.json；子代理取关联 Codex 后代、给定 Claude sidechain 及 agy invoke_subagent 原生子会话的窗内完整 usage。
-subagentNotifications 读取给定会话任务通知的 subagent_tokens 总数，按 task-id/uuid 去重；
-这是只有总 token 的另一种来源，可能与子代理会话重叠，不与 subagents 相加，不能拆分的输入/输出不估算。
 inputTokens 包含缓存输入；Claude 包含 cache_read 和 cache_creation，pi 包含 cacheRead 和 cacheWrite；cachedInputTokens 只计缓存重读，outputTokens 为输出。
-主会话或子代理任一关联用量不完整时对应汇总为 null；派发组累计有效记录并列异常，不完整的审查/子代理不推成 0。
-cockpit：保持 version:2 既有字段不变，顶层新增 {totals,activeMinutes,wallSpanMinutes,tickets,seats} 供汇报页面消费；三项 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
+主会话任一关联用量不完整时汇总为 null；派发组累计有效记录并列异常，不完整的审查/子代理不推成 0。
+cockpit：顶层 {totals,activeMinutes,wallSpanMinutes,tickets,seats} 供汇报页面消费；三项 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
 cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三项 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.activeMinutes 为全部角色已记录 spans 与验证时段 spans 并集（lane）的工作时间（重叠只算一次）总分钟数（排除 waitingUser、longPause 与排队；仅存在空/他分支验证台账而不含有效时段或主会话/零派发依据时仍为 null，缺部分时段或台账时保留已知部分并置 complete=false；派发前独立审查 review-spec-* 仅有总时长、缺少起止时段时无法并入，置 complete=false 并写入 anomalies 与为空时的 reason）；cockpit.wallSpanMinutes 为角色、验证、排队、等你确认及超过 45 分钟的停顿完整时段的最大结束减最小开始分钟数（仅单事件无间隔主会话为 0，缺完整起止为 null）；cockpit.tickets 汇总去重工程工单数 total、一次通过数 firstPass（严格要求该工单首条派发退出 0、起止完整、category="首次" 且之后没有返工或重派）、返工工单数 rework（含 category="返工" 派发的工单数）、仅重派工单数 redispatch（派发超过 1 次且不含返工）、含中断/歧义派发工单数 interrupted（包含缺退出码/结束时间与 category=null 的歧义派发）、工单派发总次数 dispatches 与返工派发次数 reworkDispatches（未知分类跟进派发不猜返工，计入 interrupted、置 complete=false 并记入 anomalies）；零派发但有有效主会话时各项计 0，缺全部派发来源时为 null。
 cockpit.seats 按角色（role/seat · agent/framework · actualModel??model · actualEffort??effort）聚合，逐项给角色字段、runs、spans（合并后的有序无重叠区间数组 [{start,end}]，无区间记录为 []）、activeMinutes（工作时间并集或累计有效活跃分钟）、medianFirstEditMinutes（可写角色开始改文件前耗时中位数，只读角色或无数据为 null）、tickets（{value,reason,complete,anomalies}：该角色关联工单的上述分项，按与全局一致的口径统计 interrupted/firstPass/complete/anomalies，其中 firstPass 只计全局一次通过且唯一派发落在此角色的工单，未知分类同时计入该角色 anomalies 与 complete；无工单派发的角色为 null 并写明原因，complete=true、anomalies=[]）、usage、complete 与 anomalies。
 cleanup 要求已发布评分表覆盖当前全部显式关联集合，不能只比较时间戳；不扩大原有删除范围。
 cleanup 新记录检查复用台账及派发归属，比较结构化时间及派发文件修改时间（也捕获补写汇报）；不因其他 spec 的记录变更而拦截。
-数字 spec 查询直接子工单；字符串 spec 只含字母、数字、连字符，跳过 GitHub，读取本地台账、绑定与当前分支最近 30 条提交，不能 --post。
+spec 接受正整数 Issue 号，查询直接子工单。
 退出码：0 采集成功（可含缺数），1 评分表检查未通过，2 参数错误、记录损坏或运行出错。`,
 };

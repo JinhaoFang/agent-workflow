@@ -1,0 +1,1651 @@
+<!DOCTYPE html>
+<!--
+spec 汇报模板：单文件零外部依赖，离线直接打开。
+用法见同目录 report.md：只替换 data-slot="data" 的 JSON（{"report": ..., "scorecard": tickets.ts scorecard --out 原样输出}）。
+自动响应系统浅色/深色主题并支持手动切换；含可收起目录（快捷键 [）、交付与代价与时间页签、全部展开、截图放大查看与历史评分表降级兼容。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spec #74 汇报 · 只删不加的一版</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f3f3ee;
+  --bg-accent: radial-gradient(1100px 420px at 18% -6%, rgba(37, 99, 235, 0.08), transparent 65%),
+               radial-gradient(900px 360px at 88% -4%, rgba(13, 148, 136, 0.07), transparent 60%);
+  --surface: #ffffff;
+  --surface2: #f9f9f6;
+  --surface-glass: rgba(255, 255, 255, 0.90);
+  --ink: #141518;
+  --ink2: #3b3e47;
+  --muted: #666b77;
+  --border: #e2e2dc;
+  --border-strong: #cfcfc6;
+  --grid: #ecece6;
+  --wash: #efefe9;
+  --wash2: #e4e4dc;
+  --axis: #9ca3af;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.035);
+  --shadow-md: 0 10px 30px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --good: #15803d;
+  --good-bg: #ecfdf3;
+  --good-bd: rgba(21, 128, 61, 0.25);
+  --warning: #b45309;
+  --warning-bg: #fffbeb;
+  --serious: #c2410c;
+  --serious-bg: #fff4ed;
+  --critical: #b91c1c;
+  --critical-bg: #fef2f2;
+  --agy: #2563eb;
+  --agy-soft: rgba(37, 99, 235, 0.14);
+  --pi: #0d9488;
+  --pi-soft: rgba(13, 148, 136, 0.14);
+  --claude: #ea580c;
+  --claude-soft: rgba(234, 88, 12, 0.14);
+  --codex: #4f46e5;
+  --codex-soft: rgba(79, 70, 229, 0.14);
+  --design: #d97706;
+  --verify: #7c3aed;
+  --wait: #db2777;
+  --pause: #94a3b8;
+  --out: #16a34a;
+  --info-bg: #eff6ff;
+  --info-bd: #bfdbfe;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0f13;
+    --bg-accent: radial-gradient(1100px 420px at 18% -6%, rgba(59, 130, 246, 0.14), transparent 65%),
+                 radial-gradient(900px 360px at 88% -4%, rgba(45, 212, 191, 0.10), transparent 60%);
+    --surface: #161920;
+    --surface2: #1c2029;
+    --surface-glass: rgba(22, 25, 32, 0.92);
+    --ink: #f3f4f6;
+    --ink2: #d1d5db;
+    --muted: #9ca3af;
+    --border: #282d39;
+    --border-strong: #373e4f;
+    --grid: #222631;
+    --wash: #202530;
+    --wash2: #2b3140;
+    --axis: #6b7280;
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+    --shadow-md: 0 14px 36px rgba(0, 0, 0, 0.48);
+    --good: #4ade80;
+    --good-bg: rgba(20, 83, 45, 0.35);
+    --good-bd: rgba(74, 222, 128, 0.28);
+    --warning: #fbbf24;
+    --warning-bg: rgba(120, 53, 15, 0.30);
+    --serious: #fb923c;
+    --serious-bg: rgba(124, 45, 18, 0.32);
+    --critical: #f87171;
+    --critical-bg: rgba(127, 29, 29, 0.32);
+    --agy: #60a5fa;
+    --agy-soft: rgba(96, 165, 250, 0.18);
+    --pi: #2dd4bf;
+    --pi-soft: rgba(45, 212, 191, 0.18);
+    --claude: #fb923c;
+    --claude-soft: rgba(251, 146, 60, 0.18);
+    --codex: #818cf8;
+    --codex-soft: rgba(129, 140, 248, 0.18);
+    --design: #f59e0b;
+    --verify: #a78bfa;
+    --wait: #f472b6;
+    --pause: #64748b;
+    --out: #4ade80;
+    --info-bg: rgba(30, 58, 138, 0.28);
+    --info-bd: rgba(96, 165, 250, 0.32);
+  }
+}
+html[data-theme="dark"] {
+  --bg: #0d0f13;
+  --bg-accent: radial-gradient(1100px 420px at 18% -6%, rgba(59, 130, 246, 0.14), transparent 65%),
+               radial-gradient(900px 360px at 88% -4%, rgba(45, 212, 191, 0.10), transparent 60%);
+  --surface: #161920;
+  --surface2: #1c2029;
+  --surface-glass: rgba(22, 25, 32, 0.92);
+  --ink: #f3f4f6;
+  --ink2: #d1d5db;
+  --muted: #9ca3af;
+  --border: #282d39;
+  --border-strong: #373e4f;
+  --grid: #222631;
+  --wash: #202530;
+  --wash2: #2b3140;
+  --axis: #6b7280;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 14px 36px rgba(0, 0, 0, 0.48);
+  --good: #4ade80;
+  --good-bg: rgba(20, 83, 45, 0.35);
+  --good-bd: rgba(74, 222, 128, 0.28);
+  --warning: #fbbf24;
+  --warning-bg: rgba(120, 53, 15, 0.30);
+  --serious: #fb923c;
+  --serious-bg: rgba(124, 45, 18, 0.32);
+  --critical: #f87171;
+  --critical-bg: rgba(127, 29, 29, 0.32);
+  --agy: #60a5fa;
+  --agy-soft: rgba(96, 165, 250, 0.18);
+  --pi: #2dd4bf;
+  --pi-soft: rgba(45, 212, 191, 0.18);
+  --claude: #fb923c;
+  --claude-soft: rgba(251, 146, 60, 0.18);
+  --codex: #818cf8;
+  --codex-soft: rgba(129, 140, 248, 0.18);
+  --design: #f59e0b;
+  --verify: #a78bfa;
+  --wait: #f472b6;
+  --pause: #64748b;
+  --out: #4ade80;
+  --info-bg: rgba(30, 58, 138, 0.28);
+  --info-bd: rgba(96, 165, 250, 0.32);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background-color: var(--bg); color: var(--ink); max-width: 100%; overflow-x: hidden; }
+body {
+  background-image: var(--bg-accent);
+  background-attachment: fixed;
+  font: 14px/1.6 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+  padding-bottom: 48px;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+a { color: var(--agy); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.num { font-variant-numeric: tabular-nums; }
+.shell { max-width: 1380px; margin: 0 auto; padding: 18px 20px 28px; }
+.cockpit-grid { display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: 18px; align-items: start; }
+.cockpit-grid.collapsed { grid-template-columns: minmax(0, 1fr); }
+.cockpit-grid > * { min-width: 0; }
+.cockpit-side {
+  position: sticky; top: 14px; background: var(--surface-glass); backdrop-filter: blur(14px);
+  border: 1px solid var(--border); border-radius: 14px; padding: 14px;
+  box-shadow: var(--shadow-sm); display: grid; gap: 13px;
+}
+.cockpit-side[hidden] { display: none !important; }
+.side-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pr-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  font-weight: 600; font-size: 12px; background: var(--good-bg); color: var(--good); border: 1px solid var(--good-bd);
+}
+.pr-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.icon-btn {
+  border: 1px solid var(--border); background: var(--surface2); color: var(--ink2);
+  border-radius: 8px; padding: 4px 9px; font-size: 12px; font-weight: 500;
+  cursor: pointer; font-family: inherit; white-space: nowrap; transition: border-color .15s, color .15s, background .15s;
+}
+.icon-btn:hover { border-color: var(--agy); color: var(--ink); }
+.icon-btn.on { background: var(--agy-soft); border-color: var(--agy); color: var(--agy); font-weight: 600; }
+.expand-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 8px 12px; border-radius: 12px;
+  background: var(--surface-glass); border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+}
+.side-nav-label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 5px; }
+.side-nav { display: grid; gap: 4px; }
+.nav-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; text-align: left; padding: 7px 10px; border-radius: 9px;
+  border: 1px solid transparent; background: transparent; color: var(--ink2);
+  font: 500 13px/1.35 inherit; cursor: pointer; transition: background .15s, color .15s;
+}
+.nav-btn:hover { background: var(--wash); color: var(--ink); }
+.nav-btn.active { background: var(--agy-soft); color: var(--agy); border-color: rgba(37, 99, 235, 0.25); font-weight: 600; }
+.nav-count { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--wash); color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+.nav-btn.active .nav-count { background: var(--agy); color: #fff; }
+.roster-list { display: grid; gap: 6px; }
+.roster-card {
+  display: grid; gap: 3px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--ink);
+  cursor: pointer; font-family: inherit; transition: border-color .15s, background .15s;
+}
+.roster-card:hover { border-color: var(--border-strong); }
+.roster-card.active { border-color: var(--agy); background: var(--agy-soft); box-shadow: 0 0 0 1px var(--agy); }
+.roster-row1 { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.actor-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+.effort-pill {
+  padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 700;
+  background: var(--wash2); color: var(--ink2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap;
+}
+.model-line { font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.hero-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 15px;
+  padding: 18px 22px; box-shadow: var(--shadow-sm); margin-bottom: 14px;
+}
+.hero-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.top-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.hero-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+h1 { font-size: clamp(19px, 2.1vw, 24px); line-height: 1.3; margin: 7px 0 6px; font-weight: 750; letter-spacing: -0.015em; overflow-wrap: anywhere; }
+.lead { font-size: 14.5px; color: var(--ink2); margin: 0 0 14px; max-width: 94ch; overflow-wrap: anywhere; }
+.ask-banner {
+  margin: 0 0 14px; padding: 13px 16px; border-radius: 12px;
+  background: var(--serious-bg); border: 1px solid rgba(194, 65, 12, 0.38); display: grid; gap: 8px;
+}
+.ask-banner[hidden] { display: none !important; }
+.ask-head { font-weight: 700; font-size: 13.5px; color: var(--serious); display: flex; align-items: center; gap: 6px; }
+.ask-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.ask-box { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+.kpi-card {
+  position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  background: var(--surface2); display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0;
+}
+.kpi-val { font-size: 20px; font-weight: 760; line-height: 1.2; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.kpi-lbl { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-top: 3px; }
+.kpi-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; line-height: 1.35; overflow-wrap: anywhere; }
+.kpi-ring { width: 46px; height: 46px; flex: none; }
+.deck {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 15px;
+  padding: 16px 20px 20px; box-shadow: var(--shadow-sm); margin-bottom: 14px; min-width: 0;
+}
+.deck-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding-bottom: 12px; margin-bottom: 14px; border-bottom: 1px solid var(--grid);
+}
+.deck-title { font-size: 15.5px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.seg-tabs {
+  display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 11px;
+  background: var(--wash); border: 1px solid var(--border); max-width: 100%;
+}
+.seg-tab {
+  padding: 6px 12px; border-radius: 8px; border: 0; background: transparent; color: var(--ink2);
+  font: 600 12.5px/1.3 inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  transition: background .15s, color .15s;
+}
+.seg-tab:hover { color: var(--ink); }
+.seg-tab.active { background: var(--surface); color: var(--agy); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); }
+.tab-badge { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--wash2); color: var(--ink2); }
+.seg-tab.active .tab-badge { background: var(--agy-soft); color: var(--agy); }
+.tabpanel[hidden] { display: none !important; }
+.tabpanel + .tabpanel:not([hidden]) { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--border); }
+.story-compare { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.35fr); gap: 12px; margin-bottom: 14px; }
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+.story-pane { border-radius: 11px; padding: 13px 15px; border: 1px solid var(--border); background: var(--surface2); min-width: 0; overflow-wrap: anywhere; }
+.story-pane.before { border-left: 3.5px solid var(--serious); }
+.story-pane.after { border-left: 3.5px solid var(--good); }
+.pane-kicker { font-size: 12px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.step-pills { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.step-pills li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 13px; color: var(--ink2); }
+.step-num {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--good-bg); color: var(--good);
+  font-weight: 700; font-size: 11.5px; display: grid; place-items: center; margin-top: 1px; border: 1px solid var(--good-bd);
+}
+.arch-card { border: 1px solid var(--border); border-radius: 11px; padding: 12px 14px; background: var(--surface2); margin-bottom: 14px; overflow: hidden; }
+.arch-node { cursor: pointer; }
+.arch-node:hover rect { stroke-width: 2.3px; }
+.module-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.module-card { border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; background: var(--surface2); min-width: 0; overflow-wrap: anywhere; }
+.module-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.ticket-tag {
+  font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 5px;
+  background: var(--wash); color: var(--ink2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; display: inline-block;
+}
+.goal-cards { display: grid; gap: 10px; margin-bottom: 14px; }
+.goal-card {
+  display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(0, 0.82fr); gap: 14px;
+  padding: 13px 15px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface2); min-width: 0;
+}
+.delta-pill {
+  display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; max-width: 100%;
+  padding: 4px 10px; border-radius: 7px; background: var(--surface); border: 1px solid var(--border);
+  font-size: 12.5px; margin: 6px 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+pre.proof {
+  margin: 4px 0 0; padding: 9px 11px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
+}
+.browser-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+.browser-frame { border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow-sm); min-width: 0; }
+.browser-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--wash); border-bottom: 1px solid var(--border); min-width: 0; }
+.traffic { display: inline-flex; gap: 5px; flex: none; }
+.traffic i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.url-pill {
+  flex: 1; min-width: 0; padding: 2px 9px; border-radius: 6px; background: var(--surface);
+  font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid var(--border);
+}
+.browser-canvas { padding: 10px; background: var(--surface2); cursor: zoom-in; }
+.browser-canvas img { display: block; width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); }
+.browser-foot { padding: 10px 13px; border-top: 1px solid var(--border); font-size: 12.5px; overflow-wrap: anywhere; }
+.takeaway-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.takeaway-card {
+  padding: 10px 12px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border);
+  border-top: 3px solid var(--agy); font-size: 12.5px; color: var(--ink2); line-height: 1.5; min-width: 0; overflow-wrap: anywhere;
+}
+.takeaway-card:nth-child(2) { border-top-color: var(--pi); }
+.takeaway-card:nth-child(3) { border-top-color: var(--design); }
+.takeaway-card b { color: var(--ink); display: block; margin-bottom: 3px; font-size: 13px; }
+.timeline-box { padding: 11px 13px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface2); margin-bottom: 14px; overflow: hidden; }
+[data-slot="timeline"] { width: 100%; max-width: 100%; overflow: hidden; }
+.tl-span { cursor: pointer; transition: filter .15s; }
+.tl-span:hover { filter: brightness(1.12); }
+.chart-split { display: grid; grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.14fr); gap: 14px; align-items: stretch; }
+.chart-card {
+  border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface2);
+  display: flex; flex-direction: column; justify-content: space-between; min-width: 0; overflow: hidden;
+}
+.chart-title { font-size: 13.5px; font-weight: 700; margin-bottom: 2px; color: var(--ink); }
+.chart-sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; overflow-wrap: anywhere; }
+.time-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.time-stat {
+  padding: 9px 11px; border-radius: 9px; background: var(--surface); border: 1px solid var(--border);
+  min-width: 0; overflow-wrap: anywhere;
+}
+.time-stat-val { font-size: 18px; font-weight: 750; line-height: 1.15; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.time-stat-lbl { font-size: 12px; font-weight: 600; color: var(--ink2); margin-top: 3px; }
+.time-stat-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.time-rows { display: grid; gap: 6px; margin: auto 0; }
+.time-row {
+  display: grid; gap: 4px; padding: 6px 9px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--grid); min-width: 0;
+}
+.time-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; font-size: 12.5px; }
+.time-bar-track { height: 5px; border-radius: 999px; background: var(--wash); overflow: hidden; }
+.time-bar-fill { height: 100%; border-radius: 999px; }
+.story-compare > *, .two-col > *, .module-grid > *, .goal-card > *, .browser-grid > *, .chart-split > * { min-width: 0; }
+.donut-wrap { display: grid; grid-template-columns: 148px minmax(0, 1fr); gap: 12px; align-items: center; margin: auto 0; }
+.donut-slice { cursor: pointer; transition: stroke-width .16s; }
+.donut-slice:hover { stroke-width: 26px; }
+.donut-legend { display: grid; gap: 6px; font-size: 12px; min-width: 0; }
+.legend-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 4px 7px; border-radius: 6px; cursor: pointer; min-width: 0;
+}
+.legend-item:hover { background: var(--wash); }
+.swatch { width: 9px; height: 9px; border-radius: 2.5px; display: inline-block; flex: none; }
+.bar-chart-row { cursor: pointer; transition: opacity .15s; }
+.bar-chart-row:hover rect.bar-bg { fill: var(--wash2); }
+.bar-chart-row.dimmed { opacity: 0.25; }
+.tw { overflow-x: auto; max-width: 100%; }
+table.clean { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.clean th, table.clean td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+table.clean th { color: var(--muted); font-weight: 600; font-size: 11.5px; white-space: nowrap; }
+table.clean tbody tr:hover { background: var(--wash); }
+table.clean tr:last-child td { border-bottom: 0; }
+.mini-bar { height: 9px; border-radius: 999px; background: var(--wash2); overflow: hidden; display: flex; min-width: 96px; }
+.wf-list { display: grid; gap: 7px; }
+.wf-row {
+  display: grid; grid-template-columns: minmax(165px, 210px) minmax(130px, 0.9fr) minmax(180px, 1.25fr) minmax(105px, 138px);
+  gap: 10px; align-items: center; padding: 8px 11px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--surface2); font-size: 12.5px; min-width: 0; overflow-wrap: anywhere;
+}
+.wf-row:hover { border-color: var(--agy); }
+.wf-row.dimmed { opacity: 0.25; }
+.wf-axis-track { position: relative; height: 14px; background: var(--wash); border-radius: 999px; overflow: hidden; }
+.wf-bar { position: absolute; top: 2px; height: 10px; border-radius: 999px; min-width: 6px; }
+.wf-bar.aborted { background: none !important; border: 1.6px dashed var(--critical); }
+.risk-grid { display: grid; gap: 9px; }
+.risk-card { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); display: grid; gap: 4px; overflow-wrap: anywhere; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.badge.good { background: var(--good-bg); color: var(--good); }
+.badge.warn { background: var(--warning-bg); color: var(--warning); }
+.badge.crit { background: var(--critical-bg); color: var(--critical); }
+.badge.info { background: var(--info-bg); color: var(--agy); }
+.fold-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; min-width: 0; overflow: hidden; }
+.fold-box > summary { cursor: pointer; font-weight: 700; font-size: 13.5px; color: var(--ink); }
+svg.viz { display: block; width: 100%; max-width: 100%; height: auto; overflow: hidden; }
+svg.viz text { fill: var(--ink2); font-size: 11.5px; font-family: inherit; }
+.muted { color: var(--muted); font-size: 12px; }
+.floating-tip {
+  position: fixed; z-index: 95; pointer-events: none; max-width: 310px; padding: 9px 12px; border-radius: 10px;
+  background: rgba(20, 22, 28, 0.94); color: #f8fafc; border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35); font-size: 12px; line-height: 1.5; white-space: pre-line;
+}
+.floating-tip[hidden] { display: none !important; }
+.lightbox {
+  position: fixed; inset: 0; z-index: 90; background: rgba(9, 11, 16, 0.82);
+  display: grid; place-items: center; padding: 20px; backdrop-filter: blur(6px);
+}
+.lightbox[hidden] { display: none !important; }
+.lightbox-inner {
+  max-width: 1020px; width: 100%; max-height: 92vh; overflow: auto; background: var(--surface);
+  border-radius: 14px; padding: 18px; border: 1px solid var(--border-strong); box-shadow: var(--shadow-md);
+}
+.lightbox-inner img { display: block; max-width: 100%; height: auto; margin: 0 auto; border-radius: 8px; border: 1px solid var(--border); }
+footer { color: var(--muted); font-size: 12px; padding: 4px 2px; overflow-wrap: anywhere; }
+@media (max-width: 980px) {
+  .cockpit-grid, .chart-split, .two-col, .story-compare, .browser-grid, .module-grid, .goal-card { grid-template-columns: 1fr; }
+  .cockpit-side { position: static; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .takeaway-strip { grid-template-columns: 1fr; }
+  .wf-row { grid-template-columns: 1fr; gap: 6px; }
+  .donut-wrap { grid-template-columns: 1fr; justify-items: center; }
+}
+@media (max-width: 560px) {
+  .shell { padding: 10px 10px 28px; }
+  .hero-card, .deck, .fold-box { padding: 13px 12px; border-radius: 12px; }
+  .ask-banner { padding: 11px 11px; }
+  .ask-grid, .kpi-grid, .time-summary { grid-template-columns: 1fr; }
+  .seg-tabs { display: grid; grid-template-columns: 1fr; width: 100%; }
+  .seg-tab { width: 100%; justify-content: space-between; white-space: normal; text-align: left; }
+  .icon-btn { white-space: normal; text-align: left; }
+}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div class="floating-tip" id="floating-tip" hidden></div>
+<div class="lightbox" id="lightbox" hidden>
+  <div class="lightbox-inner" id="lightbox-body"></div>
+</div>
+<script type="application/json" data-slot="data">{"report": {"spec": 74, "title": "只删不加的一版：按真实使用删掉没用上的功能", "date": "2026-11-16", "timezone": "Asia/Shanghai", "repo": "JinhaoFang/agent-workflow", "pr": {"number": 81, "state": "本机 CI 通过，已授权合并"}, "result": "五个体量数第一次都比上一版小（脚本少 303 行、测试少 679 行、模板少 3,991 字节），七项删除各有使用证据；幅度只有百分之三四，评分表和模板的主体要等下个版本。数据截至收尾检查。", "asks": [], "story": {"before": "你担心这套流程越做越重。核查发现规则文字从 v3.1 起没再长，长的是脚本和汇报模板；而 v5 期间 8 个真实业务 spec 每个只派 0 到 7 张工单，有些功能一次都没人用过。之前每个版本都只加不删，因为欠着的用后评估一直没做，没有删的依据。", "afterSteps": ["先清点：让调研席位把四种框架的主会话记录都数一遍，v4 以来真实执行的命令 783 次，每个子命令、参数、配置项、评分表字段各用过几次、谁用的。", "再按证据删：巡检命令和席位、评分表里 8 份全缺的两个字段、没人用过的字符串 spec 号和批量折叠等七项。", "拿不准的不删：对旧 DispatchDock 的兼容、只在本仓库自己用过的参数，等消费仓库用过 v6 再看。", "顺带修两处缺陷，GitHub Actions 的检查从 v5 以来第一次通过。"]}, "delivered": [{"what": "清点真实使用，补上 v4 欠着的六项用后评估，定删除清单", "tickets": [75], "meaning": "以后增删有了依据。清点还纠正了核查里的两处错判：派发排队其实触发过，派发登记处是现行机制，都不能删。"}, {"what": "删掉巡检命令和巡检席位", "tickets": [76], "meaning": "少一个没人调用的席位。配置里还写着它的，自检会告诉你删哪一行。"}, {"what": "评分表不再输出子代理用量、子代理通知", "tickets": [77], "meaning": "评分表的缺数清单短了两项。旧评分表和旧汇报不受影响。"}, {"what": "删掉字符串 spec 号、批量折叠、一个没人用的参数、一条旧配置提示、巡检专用的受限调用", "tickets": [78], "meaning": "这几项真实调用都是 0 次。再传被删的参数会得到明确的参数错误。"}, {"what": "辅助派发的任务文件认绝对路径；汇报检查收尾不再和浏览器抢删目录", "tickets": [80], "meaning": "跨仓库派发不用绕路；GitHub Actions 的检查转绿。"}, {"what": "升级须知、约定、路线图和观察记录", "tickets": [79], "meaning": "README 有从 v6 升级到 v7 的六条说明，逐项对应删除清单。"}], "goals": [{"name": "脚本（不含测试）", "unit": "行", "before": 9247, "after": 8944, "target": 9247, "status": "good", "statusText": "少 303 行", "method": "三个技能目录下的 .ts、.mjs、.sh，去掉测试和样本，数换行。收尾审查独立复算一致。", "evidence": {"output": "8,944 < 9,247"}}, {"name": "测试和样本", "unit": "行", "before": 15925, "after": 15246, "target": 15925, "status": "good", "statusText": "少 679 行", "method": "同上目录的 *.test.ts 和 fixtures/。", "evidence": {"output": "15,246 < 15,925"}}, {"name": "汇报模板", "unit": "字节", "before": 113972, "after": 109981, "target": 113972, "status": "good", "statusText": "少 3,991 字节", "method": "report-template.html 的字节数。", "evidence": {"output": "109,981 < 113,972"}}, {"name": "必读说明", "unit": "字节", "before": 50614, "after": 50595, "target": 50614, "status": "good", "statusText": "少 19 字节", "method": "路线图口径的七份文档字节之和。", "evidence": {"output": "50,595 <= 50,614"}}, {"name": "子命令", "unit": "个", "before": 15, "after": 14, "target": 15, "status": "good", "statusText": "少 1 个", "method": "run-spec 正文子命令表的行数。", "evidence": {"output": "14 < 15"}}, {"name": "每项删除都有使用证据", "unit": "项", "before": 0, "after": 7, "target": 7, "status": "good", "statusText": "7 项都有", "method": "删除清单每项对照清点报告里的调用次数；清单在 spec #74 正文。", "evidence": {"output": "巡检 0 次 · 两个字段 8 份全缺 · 字符串 spec 号 0 次 · 批量折叠触发 0 次 · review --session 0 次 · dispatchScript 五仓都不写 · 不给工具的受限调用无调用方", "link": "https://github.com/JinhaoFang/agent-workflow/issues/74"}}], "evidence": [{"claim": "合并前的全套验证通过", "value": "619 个测试，0 失败", "output": "本机 CI：验证通过；10 个提交的信息检查通过", "link": "https://github.com/JinhaoFang/agent-workflow/pull/81"}, {"claim": "GitHub Actions 的检查第一次通过", "value": "verify 成功", "output": "修之前 638 个测试里 14 个失败（浏览器后台下载组件留下临时目录）", "link": "https://github.com/JinhaoFang/agent-workflow/actions/runs/43882217523"}, {"claim": "保留的机制没被动到", "value": "登记处、排队、验证锁的测试文件未改", "output": "收尾审查静态核对：四个框架仍全部登记；派发前审查仍只给读文件工具", "link": "https://github.com/JinhaoFang/agent-workflow/issues/74#issuecomment-6919867017"}], "risks": [{"level": "warning", "what": "这一版减的量不大，评分表和汇报模板的主体没动", "impact": "脚本少 3%，模板少 3.5%。评分表和模板仍占脚本加模板的四成左右。", "next": "等消费仓库用 v6 的模板和评分表跑过真实 spec，下个版本按数据再删。路线图「下一步」已写。"}, {"level": "warning", "what": "对旧 DispatchDock 的兼容还留着", "impact": "三个仓库的工作区里还有旧技能，登记处的格式和它共用，现在拆不干净。", "next": "先清掉旧技能的残留安装，下个版本再看。"}, {"level": "good", "what": "清点只覆盖这台机器保留的记录", "impact": "PathJX 产品线那台机器的会话没有计入。被删的功能都能从 workflow-v6 取回。", "next": "升级后有人找被删的功能，就记成观察。"}], "takeaways": [{"title": "时间花在哪", "body": "从写完 spec 到开 PR 约 96 分钟。四张工程工单并行派给 pi，全部一次通过；清点交给 Codex 调研席位。"}, {"title": "用量花在哪", "body": "全部约 6,600 万 token 读入，其中九成以上是缓存重读。工程派发占三分之一，清点调研连同它的子代理占四成多。"}], "findings": ["删除类工单的验收标准要写明历史记录不动：#76 的标准写了「仓库里搜不到巡检」，执行者把 README 的版本表也改了，设计负责人恢复。", "挑删除候选要先量大小：按「8 份评分表全缺」挑的两个字段，删完只少 15 行。", "收尾审查查出的 3 处都是设计负责人自己在文字收口里出的错（冲掉一个标题、须知漏两项、路线图留了一句过时的话），已改。", "设计负责人把后台输出存成 review-74-*.bg.log，被评分表当成两次审查派发；删掉后重采。临时文件不要起和派发记录同前缀的名字。"], "notes": [{"item": "评分表的时间窗", "note": "从 spec #74 发出（11-16 21:18）算起；之前同一个会话里做的核查和复盘不计入。"}, {"item": "设计负责人改了一处工程的脚本", "note": "汇报检查的一个浏览器启动参数。只能靠 GitHub Actions 验证，再派一轮要半小时，所以直接改了。"}], "dispatchNotes": {"gh-76": "删巡检命令和席位，一次通过", "gh-77": "评分表删两个字段，一次通过", "gh-80": "修两处缺陷；Actions 仍红，设计负责人补了一个启动参数后转绿", "gh-78": "按清单删五项，一次通过", "inventory-74": "清点真实使用（只读调研）", "review-74-1": "第一批审查：0 项", "review-74-final": "收尾审查：3 项文档问题，已改"}}, "scorecard": {"version": 3, "spec": 74, "startedAt": "2026-11-16T13:18:59.000Z", "mainFrameworks": ["claude"], "mainSessions": [{"session": "claude:0f40a309-f5fb-4ee1-bdab-fd260aa081f2", "path": "/home/jh1/.claude/projects/-root-project-agent-workflow/0f40a309-f5fb-4ee1-bdab-fd260aa081f2.jsonl", "role": "design", "seat": "design", "agent": "claude", "framework": "claude", "model": null, "actualModel": "claude-fable-5-2", "effort": null, "actualEffort": "medium", "sources": {"actualModel": "session", "actualEffort": "session"}, "usage": {"inputTokens": 13674545, "cachedInputTokens": 13542538, "outputTokens": 52153}, "child": false, "startedAt": "2026-11-16T13:19:37.139Z", "cutoffAt": "2026-11-16T14:58:01.713Z", "spans": [{"start": "2026-11-16T13:19:37.139Z", "end": "2026-11-16T13:34:36.417Z"}, {"start": "2026-11-16T13:47:30.848Z", "end": "2026-11-16T14:24:22.700Z"}, {"start": "2026-11-16T14:39:23.721Z", "end": "2026-11-16T14:58:01.713Z"}]}], "subagents": [{"session": "codex:01a1e48f-65f3-7de0-8814-f84e6f5261ed", "role": "subagent", "seat": "subagent", "agent": "codex", "framework": "codex", "model": null, "actualModel": "gpt-6.1-sol", "effort": null, "actualEffort": "xhigh", "usage": {"inputTokens": 9890308, "cachedInputTokens": 9518080, "outputTokens": 39930}}, {"session": "codex:01a1e48f-934e-73d3-aba1-d6aa2f739bc0", "role": "subagent", "seat": "subagent", "agent": "codex", "framework": "codex", "model": null, "actualModel": "gpt-6.1-sol", "effort": null, "actualEffort": "xhigh", "usage": {"inputTokens": 5897524, "cachedInputTokens": 5706240, "outputTokens": 25199}}, {"session": "codex:01a1e48f-c08d-78b1-ab3f-525e02e2e581", "role": "subagent", "seat": "subagent", "agent": "codex", "framework": "codex", "model": null, "actualModel": "gpt-6.1-sol", "effort": null, "actualEffort": "xhigh", "usage": {"inputTokens": 3510540, "cachedInputTokens": 3374336, "outputTokens": 23968}}], "subagentAnomalies": [], "dispatchLanes": {"value": [{"framework": "codex", "anomalies": [], "time": {"value": {"spans": [{"start": "2026-11-16T13:32:18.104Z", "end": "2026-11-16T14:16:56.375Z"}], "minutes": 44.63785}, "reason": null}}, {"framework": "pi", "anomalies": [], "time": {"value": {"spans": [{"start": "2026-11-16T13:32:34.306Z", "end": "2026-11-16T14:03:48.263Z"}, {"start": "2026-11-16T14:19:38.090Z", "end": "2026-11-16T14:39:19.094Z"}, {"start": "2026-11-16T14:46:34.440Z", "end": "2026-11-16T14:51:21.559Z"}], "minutes": 55.70133333333333}, "reason": null}}], "reason": null}, "recordBindings": ["inventory-74", "review-74-1", "review-74-final"], "cutoffAt": "2026-11-16T14:59:56.560Z", "collectedAt": "2026-11-16T15:00:03.828Z", "verification": {"value": {"runs": [{"layer": "full", "target": {"kind": "ticket", "number": 76}, "caller": "land", "branch": "ticket/76", "start": "2026-11-16T13:48:11.489Z", "end": "2026-11-16T13:50:08.055Z", "queuedMinutes": 0, "minutes": 1.9427666666666668, "exitCode": 0}, {"layer": "full", "target": {"kind": "ticket", "number": 77}, "caller": "land", "branch": "ticket/77", "start": "2026-11-16T13:51:52.767Z", "end": "2026-11-16T13:53:44.772Z", "queuedMinutes": 0, "minutes": 1.86675, "exitCode": 0}, {"layer": "full", "target": {"kind": "ticket", "number": 80}, "caller": "land", "branch": "ticket/80", "start": "2026-11-16T14:14:41.997Z", "end": "2026-11-16T14:16:25.041Z", "queuedMinutes": 0, "minutes": 1.7174, "exitCode": 0}, {"layer": "static", "target": {"kind": "main"}, "caller": "verify", "branch": "spec/74-subtract", "start": "2026-11-16T14:18:30.513Z", "end": "2026-11-16T14:18:34.151Z", "queuedMinutes": 0, "minutes": 0.06063333333333333, "exitCode": 0}, {"layer": "full", "target": {"kind": "ticket", "number": 78}, "caller": "land", "branch": "ticket/78", "start": "2026-11-16T14:39:41.144Z", "end": "2026-11-16T14:41:30.107Z", "queuedMinutes": 0, "minutes": 1.81605, "exitCode": 0}, {"layer": "full", "target": {"kind": "main"}, "caller": "verify", "branch": "spec/74-subtract", "start": "2026-11-16T14:43:35.963Z", "end": "2026-11-16T14:45:22.069Z", "queuedMinutes": 0, "minutes": 1.7684333333333333, "exitCode": 0}, {"layer": "static", "target": {"kind": "main"}, "caller": "verify", "branch": "spec/74-subtract", "start": "2026-11-16T14:52:42.461Z", "end": "2026-11-16T14:52:46.315Z", "queuedMinutes": 0, "minutes": 0.06423333333333334, "exitCode": 0}, {"layer": "full", "target": {"kind": "pr", "number": 81}, "caller": "pr-check", "branch": "spec/74-subtract", "start": "2026-11-16T14:53:50.126Z", "end": "2026-11-16T14:55:41.175Z", "queuedMinutes": 0, "minutes": 1.8508166666666668, "exitCode": 0}, {"layer": "full", "target": {"kind": "pr", "number": 81}, "caller": "pr-check", "branch": "spec/74-subtract", "start": "2026-11-16T14:58:08.114Z", "end": "2026-11-16T14:59:56.560Z", "queuedMinutes": 0, "minutes": 1.8074333333333332, "exitCode": 0}], "fullCount": 7, "fullMinutes": 12.76965, "staticCount": 2}, "reason": null}, "merges": {"value": {"landCount": 5, "fullVerificationFailures": 0, "stops": {"rebaseConflict": 1, "installFailure": 0, "verificationFailure": 0, "pushFailure": 0, "other": 0}}, "reason": null}, "dispatches": {"value": [{"record": "inventory-74", "ticket": null, "seat": "research", "workType": "default", "framework": "codex", "identity": {"role": "工程负责人", "seat": "research", "agent": "codex", "framework": "codex", "model": "gpt-6.1-sol", "actualModel": "gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh"}, "model": "gpt-6.1-sol", "effort": "xhigh", "permission": "read-only", "actualModel": "gpt-6.1-sol", "actualEffort": "xhigh", "category": {"value": "辅助", "reason": null}, "start": {"value": "2026-11-16T13:32:18.104Z", "reason": null}, "end": {"value": "2026-11-16T14:16:56.375Z", "reason": null}, "minutes": {"value": 44.63785, "reason": null}, "exitCode": {"value": 0, "reason": null}, "usage": {"value": {"inputTokens": 10471407, "cachedInputTokens": 10076544, "outputTokens": 52999}, "reason": null}}, {"record": "gh-76", "ticket": 76, "seat": "engineering", "workType": "default", "framework": "pi", "identity": {"role": "工程负责人", "seat": "engineering", "agent": "pi", "framework": "pi", "model": "openai/gpt-6.1-sol", "actualModel": "openai/gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh"}, "model": "openai/gpt-6.1-sol", "effort": "xhigh", "permission": "full", "actualModel": "openai/gpt-6.1-sol", "actualEffort": "xhigh", "category": {"value": "首次", "reason": null}, "start": {"value": "2026-11-16T13:32:34.306Z", "reason": null}, "end": {"value": "2026-11-16T13:47:26.969Z", "reason": null}, "minutes": {"value": 14.877716666666666, "reason": null}, "exitCode": {"value": 0, "reason": null}, "usage": {"value": {"inputTokens": 4740010, "cachedInputTokens": 4572288, "outputTokens": 19856}, "reason": null}}, {"record": "gh-80", "ticket": 80, "seat": "engineering", "workType": "default", "framework": "pi", "identity": {"role": "工程负责人", "seat": "engineering", "agent": "pi", "framework": "pi", "model": "openai/gpt-6.1-sol", "actualModel": "openai/gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh"}, "model": "openai/gpt-6.1-sol", "effort": "xhigh", "permission": "full", "actualModel": "openai/gpt-6.1-sol", "actualEffort": "xhigh", "category": {"value": "首次", "reason": null}, "start": {"value": "2026-11-16T13:32:38.811Z", "reason": null}, "end": {"value": "2026-11-16T14:03:48.263Z", "reason": null}, "minutes": {"value": 31.157533333333333, "reason": null}, "exitCode": {"value": 0, "reason": null}, "usage": {"value": {"inputTokens": 7038393, "cachedInputTokens": 6917248, "outputTokens": 25365}, "reason": null}}, {"record": "gh-77", "ticket": 77, "seat": "engineering", "workType": "default", "framework": "pi", "identity": {"role": "工程负责人", "seat": "engineering", "agent": "pi", "framework": "pi", "model": "openai/gpt-6.1-sol", "actualModel": "openai/gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh"}, "model": "openai/gpt-6.1-sol", "effort": "xhigh", "permission": "full", "actualModel": "openai/gpt-6.1-sol", "actualEffort": "xhigh", "category": {"value": "首次", "reason": null}, "start": {"value": "2026-11-16T13:32:44.622Z", "reason": null}, "end": {"value": "2026-11-16T13:48:41.365Z", "reason": null}, "minutes": {"value": 15.945716666666666, "reason": null}, "exitCode": {"value": 0, "reason": null}, "usage": {"value": {"inputTokens": 3249230, "cachedInputTokens": 3084544, "outputTokens": 21734}, "reason": null}}, {"record": "gh-78", "ticket": 78, "seat": "engineering", "workType": "default", "framework": "pi", "identity": {"role": "工程负责人", "seat": "engineering", "agent": "pi", "framework": "pi", "model": "openai/gpt-6.1-sol", "actualModel": "openai/gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh"}, "model": "openai/gpt-6.1-sol", "effort": "xhigh", "permission": "full", "actualModel": "openai/gpt-6.1-sol", "actualEffort": "xhigh", "category": {"value": "首次", "reason": null}, "start": {"value": "2026-11-16T14:19:38.090Z", "reason": null}, "end": {"value": "2026-11-16T14:39:19.094Z", "reason": null}, "minutes": {"value": 19.6834, "reason": null}, "exitCode": {"value": 0, "reason": null}, "usage": {"value": {"inputTokens": 7582570, "cachedInputTokens": 7387520, "outputTokens": 31768}, "reason": null}}, {"record": "review-74-1", "ticket": null, "seat": "review", "workType": "default", "framework": "pi", "identity": {"role": "工程负责人", "seat": "review", "agent": "pi", "framework": "pi", "model": "openai/gpt-6.1-sol", "actualModel": "openai/gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh"}, "model": "openai/gpt-6.1-sol", "effort": "xhigh", "permission": "read-only", "actualModel": "openai/gpt-6.1-sol", "actualEffort": "xhigh", "category": {"value": "审查", "reason": null}, "start": {"value": "2026-11-16T14:20:03.500Z", "reason": null}, "end": {"value": "2026-11-16T14:23:56.957Z", "reason": null}, "minutes": {"value": 3.89095, "reason": null}, "exitCode": {"value": 0, "reason": null}, "usage": {"value": {"inputTokens": 607387, "cachedInputTokens": 484992, "outputTokens": 7577}, "reason": null}}, {"record": "review-74-final", "ticket": null, "seat": "review", "workType": "default", "framework": "pi", "identity": {"role": "工程负责人", "seat": "review", "agent": "pi", "framework": "pi", "model": "openai/gpt-6.1-sol", "actualModel": "openai/gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh"}, "model": "openai/gpt-6.1-sol", "effort": "xhigh", "permission": "read-only", "actualModel": "openai/gpt-6.1-sol", "actualEffort": "xhigh", "category": {"value": "审查", "reason": null}, "start": {"value": "2026-11-16T14:46:34.440Z", "reason": null}, "end": {"value": "2026-11-16T14:51:21.559Z", "reason": null}, "minutes": {"value": 4.785316666666667, "reason": null}, "exitCode": {"value": 0, "reason": null}, "usage": {"value": {"inputTokens": 1235354, "cachedInputTokens": 1055360, "outputTokens": 8969}, "reason": null}}], "reason": null}, "time": {"dispatchSlots": {"value": {"spans": [{"start": "2026-11-16T13:32:18.104Z", "end": "2026-11-16T14:16:56.375Z"}, {"start": "2026-11-16T14:19:38.090Z", "end": "2026-11-16T14:39:19.094Z"}, {"start": "2026-11-16T14:46:34.440Z", "end": "2026-11-16T14:51:21.559Z"}], "minutes": 69.10656666666665}, "reason": null}, "verification": {"value": {"spans": [{"start": "2026-11-16T13:48:11.489Z", "end": "2026-11-16T13:50:08.055Z"}, {"start": "2026-11-16T13:51:52.767Z", "end": "2026-11-16T13:53:44.772Z"}, {"start": "2026-11-16T14:14:41.997Z", "end": "2026-11-16T14:16:25.041Z"}, {"start": "2026-11-16T14:18:30.513Z", "end": "2026-11-16T14:18:34.151Z"}, {"start": "2026-11-16T14:39:41.144Z", "end": "2026-11-16T14:41:30.107Z"}, {"start": "2026-11-16T14:43:35.963Z", "end": "2026-11-16T14:45:22.069Z"}, {"start": "2026-11-16T14:52:42.461Z", "end": "2026-11-16T14:52:46.315Z"}, {"start": "2026-11-16T14:53:50.126Z", "end": "2026-11-16T14:55:41.175Z"}, {"start": "2026-11-16T14:58:08.114Z", "end": "2026-11-16T14:59:56.560Z"}], "minutes": 12.894516666666668}, "reason": null}, "queue": {"value": {"spans": [], "minutes": 0}, "reason": null}, "designLead": {"value": {"spans": [{"start": "2026-11-16T13:19:37.139Z", "end": "2026-11-16T13:34:36.417Z"}, {"start": "2026-11-16T13:47:30.848Z", "end": "2026-11-16T14:24:22.700Z"}, {"start": "2026-11-16T14:39:23.721Z", "end": "2026-11-16T14:58:01.713Z"}], "minutes": 70.48536666666666}, "reason": null}, "waitingUser": {"value": {"spans": [], "minutes": 0}, "reason": null}, "longPause": {"value": {"count": 0, "spans": [], "minutes": 0, "intervals": []}, "reason": null}}, "overhead": {"value": [{"record": "inventory-74", "firstEditAt": {"value": null, "reason": "只读席位不统计首次编辑"}, "minutes": {"value": null, "reason": "只读席位不统计首次编辑"}, "inputTokens": {"value": null, "reason": "只读席位不统计首次编辑"}}, {"record": "gh-76", "firstEditAt": {"value": "2026-11-16T13:35:15.930Z", "reason": null}, "minutes": {"value": 2.6937333333333333, "reason": null}, "inputTokens": {"value": 1021036, "reason": null}}, {"record": "gh-80", "firstEditAt": {"value": "2026-11-16T13:35:38.490Z", "reason": null}, "minutes": {"value": 2.99465, "reason": null}, "inputTokens": {"value": 623840, "reason": null}}, {"record": "gh-77", "firstEditAt": {"value": "2026-11-16T13:35:56.383Z", "reason": null}, "minutes": {"value": 3.1960166666666665, "reason": null}, "inputTokens": {"value": 1375372, "reason": null}}, {"record": "gh-78", "firstEditAt": {"value": "2026-11-16T14:22:17.864Z", "reason": null}, "minutes": {"value": 2.6629, "reason": null}, "inputTokens": {"value": 1368564, "reason": null}}, {"record": "review-74-1", "firstEditAt": {"value": null, "reason": "只读席位不统计首次编辑"}, "minutes": {"value": null, "reason": "只读席位不统计首次编辑"}, "inputTokens": {"value": null, "reason": "只读席位不统计首次编辑"}}, {"record": "review-74-final", "firstEditAt": {"value": null, "reason": "只读席位不统计首次编辑"}, "minutes": {"value": null, "reason": "只读席位不统计首次编辑"}, "inputTokens": {"value": null, "reason": "只读席位不统计首次编辑"}}], "reason": null}, "userInterventions": {"value": 1, "reason": null}, "failures": {"dispatchWithoutReport": {"value": 0, "reason": null}, "landStops": {"value": 1, "reason": null}, "verificationLaunch": {"value": 0, "reason": null}}, "usage": {"dispatches": {"value": [{"seat": "engineering", "framework": "pi", "identities": [{"role": "工程负责人", "seat": "engineering", "agent": "pi", "framework": "pi", "model": "openai/gpt-6.1-sol", "actualModel": "openai/gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh"}], "anomalies": [], "usage": {"value": {"inputTokens": 22610203, "cachedInputTokens": 21961600, "outputTokens": 98723}, "reason": null}, "complete": true}, {"seat": "research", "framework": "codex", "identities": [{"role": "工程负责人", "seat": "research", "agent": "codex", "framework": "codex", "model": "gpt-6.1-sol", "actualModel": "gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh"}], "anomalies": [], "usage": {"value": {"inputTokens": 10471407, "cachedInputTokens": 10076544, "outputTokens": 52999}, "reason": null}, "complete": true}, {"seat": "review", "framework": "pi", "identities": [{"role": "工程负责人", "seat": "review", "agent": "pi", "framework": "pi", "model": "openai/gpt-6.1-sol", "actualModel": "openai/gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh"}], "anomalies": [], "usage": {"value": {"inputTokens": 1842741, "cachedInputTokens": 1540352, "outputTokens": 16546}, "reason": null}, "complete": true}], "reason": null}, "mainSession": {"value": {"inputTokens": 13674545, "cachedInputTokens": 13542538, "outputTokens": 52153}, "reason": null}, "independentReview": {"value": null, "reason": "未记录独立审查或 JSON 用量不完整"}}, "cockpit": {"totals": {"value": {"freshInput": 2177578, "output": 309518, "cachedReplay": 65719690, "input": 67897268, "turns": 721}, "reason": null, "complete": true, "anomalies": []}, "activeMinutes": {"value": 100.13988333333334, "reason": null, "complete": true, "anomalies": []}, "wallSpanMinutes": {"value": 100.32368333333334, "reason": null, "complete": true, "anomalies": []}, "tickets": {"value": {"total": 4, "firstPass": 4, "rework": 0, "redispatch": 0, "interrupted": 0, "dispatches": 4, "reworkDispatches": 0}, "reason": null, "complete": true, "anomalies": []}, "seats": [{"role": "design", "seat": "design", "agent": "claude", "framework": "claude", "model": "claude-fable-5-2", "actualModel": "claude-fable-5-2", "effort": "medium", "actualEffort": "medium", "runs": 1, "spans": [{"start": "2026-11-16T13:19:37.139Z", "end": "2026-11-16T13:34:36.417Z"}, {"start": "2026-11-16T13:47:30.848Z", "end": "2026-11-16T14:24:22.700Z"}, {"start": "2026-11-16T14:39:23.721Z", "end": "2026-11-16T14:58:01.713Z"}], "activeMinutes": 70.48536666666666, "medianFirstEditMinutes": null, "tickets": {"value": null, "reason": "非工程工单派发席位不统计工单一次通过率", "complete": true, "anomalies": []}, "usage": {"value": {"freshInput": 132007, "output": 52153, "cachedReplay": 13542538, "input": 13674545, "turns": 57}, "reason": null}, "complete": true, "anomalies": []}, {"role": "工程负责人", "seat": "engineering", "agent": "pi", "framework": "pi", "model": "openai/gpt-6.1-sol", "actualModel": "openai/gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh", "runs": 4, "spans": [{"start": "2026-11-16T13:32:34.306Z", "end": "2026-11-16T14:03:48.263Z"}, {"start": "2026-11-16T14:19:38.090Z", "end": "2026-11-16T14:39:19.094Z"}], "activeMinutes": 50.916016666666664, "medianFirstEditMinutes": 2.8441916666666667, "tickets": {"value": {"total": 4, "firstPass": 4, "rework": 0, "redispatch": 0, "interrupted": 0, "dispatches": 4, "reworkDispatches": 0}, "reason": null, "complete": true, "anomalies": []}, "usage": {"value": {"freshInput": 648603, "output": 98723, "cachedReplay": 21961600, "input": 22610203, "turns": 371}, "reason": null}, "complete": true, "anomalies": []}, {"role": "工程负责人", "seat": "review", "agent": "pi", "framework": "pi", "model": "openai/gpt-6.1-sol", "actualModel": "openai/gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh", "runs": 2, "spans": [{"start": "2026-11-16T14:20:03.500Z", "end": "2026-11-16T14:23:56.957Z"}, {"start": "2026-11-16T14:46:34.440Z", "end": "2026-11-16T14:51:21.559Z"}], "activeMinutes": 8.676266666666667, "medianFirstEditMinutes": null, "tickets": {"value": null, "reason": "非工程工单派发席位不统计工单一次通过率", "complete": true, "anomalies": []}, "usage": {"value": {"freshInput": 302389, "output": 16546, "cachedReplay": 1540352, "input": 1842741, "turns": 74}, "reason": null}, "complete": true, "anomalies": []}, {"role": "工程负责人", "seat": "research", "agent": "codex", "framework": "codex", "model": "gpt-6.1-sol", "actualModel": "gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh", "runs": 1, "spans": [{"start": "2026-11-16T13:32:18.104Z", "end": "2026-11-16T14:16:56.375Z"}], "activeMinutes": 44.63785, "medianFirstEditMinutes": null, "tickets": {"value": null, "reason": "非工程工单派发席位不统计工单一次通过率", "complete": true, "anomalies": []}, "usage": {"value": {"freshInput": 394863, "output": 52999, "cachedReplay": 10076544, "input": 10471407, "turns": 81}, "reason": null}, "complete": true, "anomalies": []}, {"role": "subagent", "seat": "subagent", "agent": "codex", "framework": "codex", "model": "gpt-6.1-sol", "actualModel": "gpt-6.1-sol", "effort": "xhigh", "actualEffort": "xhigh", "runs": 3, "spans": [{"start": "2026-11-16T13:32:45.445Z", "end": "2026-11-16T14:10:24.021Z"}], "activeMinutes": 37.64293333333333, "medianFirstEditMinutes": null, "tickets": {"value": null, "reason": "非工程工单派发席位不统计工单一次通过率", "complete": true, "anomalies": []}, "usage": {"value": {"freshInput": 699716, "output": 89097, "cachedReplay": 18598656, "input": 19298372, "turns": 138}, "reason": null}, "complete": true, "anomalies": []}]}, "missing": [{"field": "usage.independentReview", "reason": "未记录独立审查或 JSON 用量不完整"}]}}</script>
+<script>
+(() => {
+  "use strict";
+
+  const FW_META = {
+    agy: { solid: "var(--agy)", hex: "#2563eb", label: "agy" },
+    pi: { solid: "var(--pi)", hex: "#0d9488", label: "pi" },
+    claude: { solid: "var(--claude)", hex: "#ea580c", label: "Claude Code" },
+    codex: { solid: "var(--codex)", hex: "#4f46e5", label: "Codex" }
+  };
+  const SEAT_LABEL = {
+    director: "设计负责人",
+    design: "设计负责人",
+    main: "设计负责人",
+    subagent: "原生子代理",
+    engineering: "工程负责人",
+    review: "代码审查",
+    research: "调研与辅助",
+    "spec-review": "独立审查"
+  };
+
+  const val = (f) => (f && typeof f === "object" && "value" in f ? f.value : f);
+  const why = (f) => (f && typeof f === "object" && f.reason ? String(f.reason).replace(/^未记录[：:]\s*/, "") : "缺数");
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const numFmt = (n, d = 0) => (n === null || n === undefined || !Number.isFinite(Number(n)) ? "未记录" : Number(n).toLocaleString("zh-CN", { maximumFractionDigits: d }));
+  const fmtTok = (n) => {
+    if (n === null || n === undefined || !Number.isFinite(Number(n))) return "未记录";
+    const v = Number(n);
+    if (v >= 1e8) return `${(v / 1e8).toFixed(2)} 亿`;
+    if (v >= 1e4) return `${(v / 1e4).toFixed(v >= 1e6 ? 0 : 1).replace(/\.0$/, "")} 万`;
+    return numFmt(v);
+  };
+  const fmtMin = (m) => {
+    if (m === null || m === undefined || !Number.isFinite(Number(m))) return "未记录";
+    const v = Number(m);
+    if (v >= 60) {
+      const h = Math.floor(v / 60);
+      const r = Math.round(v % 60);
+      return r ? `${h}h ${r}m` : `${h}h`;
+    }
+    return `${v.toFixed(v < 10 && v > 0 ? 1 : 0)}m`;
+  };
+
+  const rawText = (document.querySelector('[data-slot="data"]') || {}).textContent || "{}";
+  const DATA = JSON.parse(rawText);
+  const R = DATA.report || {};
+  const S = DATA.scorecard || null;
+  const tz = R.timezone || undefined;
+
+  const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString("zh-CN", { timeZone: tz, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "未记录");
+  const fmtClock = (ms) => new Date(ms).toLocaleTimeString("zh-CN", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false });
+  const fwInfo = (fw) => FW_META[String(fw || "").toLowerCase()] || { solid: "var(--codex)", hex: "#4f46e5", label: fw || "未知框架" };
+  const issueHref = (t) => {
+    const s = String(t ?? "").replace(/^#/, "");
+    return R.repo && /^[1-9]\d*$/.test(s) ? `https://github.com/${R.repo}/issues/${s}` : null;
+  };
+  const normUsage = (u) => {
+    const x = val(u);
+    if (!x || typeof x !== "object") return null;
+    if (typeof x.freshInput === "number") {
+      return {
+        fresh: x.freshInput,
+        output: x.output ?? x.outputTokens ?? 0,
+        cached: x.cachedReplay ?? x.cachedInputTokens ?? 0,
+        input: x.input ?? x.inputTokens ?? (x.freshInput + (x.cachedReplay ?? 0)),
+        turns: typeof x.turns === "number" ? x.turns : null
+      };
+    }
+    if (typeof x.inputTokens === "number" || typeof x.input === "number") {
+      const inp = typeof x.inputTokens === "number" ? x.inputTokens : x.input;
+      const cached = typeof x.cachedInputTokens === "number" ? x.cachedInputTokens : (typeof x.cached === "number" ? x.cached : (typeof x.cachedReplay === "number" ? x.cachedReplay : 0));
+      const out = typeof x.outputTokens === "number" ? x.outputTokens : (typeof x.output === "number" ? x.output : 0);
+      return {
+        fresh: Math.max(0, inp - cached),
+        output: out,
+        cached,
+        input: inp,
+        turns: typeof x.turns === "number" ? x.turns : null
+      };
+    }
+    return null;
+  };
+
+  const dispatches = val(S && S.dispatches) || [];
+  const overheadList = val(S && S.overhead) || [];
+  const overheadMap = new Map(overheadList.map((o) => [o.record, o]));
+  const ver = val(S && S.verification);
+  const merges = val(S && S.merges);
+
+  const rawMissing = (S && Array.isArray(S.missing)) ? S.missing : [];
+  const findMissingReason = (prefix, fallback) => {
+    const hit = rawMissing.find((m) => m && typeof m.field === "string" && (m.field === prefix || m.field.startsWith(`${prefix}.`)));
+    return hit && hit.reason ? String(hit.reason).replace(/^未记录[：:]\s*/, "") : fallback;
+  };
+  const cockpitMissingReason = S ? "当前评分表缺少过程汇总统计" : "未提供评分表数据";
+  const cockpitSeatsReason = S && S.cockpit ? "尚无已记录角色运行时数据" : cockpitMissingReason;
+
+  const parseSpanArray = (rawSpans, defaultDesc) => {
+    if (!Array.isArray(rawSpans)) return null;
+    const out = [];
+    for (const s of rawSpans) {
+      const a = Date.parse(s && s.start);
+      const b = Date.parse(s && s.end);
+      if (Number.isFinite(a) && Number.isFinite(b) && b >= a) {
+        out.push({ a, b, kind: "ok", desc: (s && s.desc) || defaultDesc });
+      }
+    }
+    return out;
+  };
+
+  const formatSeatTicketSummary = (tMetric) => {
+    const t = val(tMetric);
+    if (!t) return null;
+    const parts = [`一次通过 ${t.firstPass}/${t.total}`];
+    if (t.rework > 0) parts.push(`返工 ${t.rework}`);
+    if (t.redispatch > 0) parts.push(`重派 ${t.redispatch}`);
+    if (t.interrupted > 0) parts.push(`中断或分类不明 ${t.interrupted}`);
+    return parts.join(" · ");
+  };
+
+  const buildActors = () => {
+    const cockpitSeats = val(S && S.cockpit && S.cockpit.seats);
+    if (!Array.isArray(cockpitSeats) || !cockpitSeats.length) return [];
+    return cockpitSeats.map((c, idx) => {
+      const fw = c.framework || c.agent || "codex";
+      const u = normUsage(c.usage);
+      const seatKey = c.seat || c.role || "engineering";
+      const roleLabel = SEAT_LABEL[seatKey] || c.role || seatKey;
+      const medEdit = val(c.medianFirstEditMinutes);
+      const model = c.actualModel || c.model || "默认模型";
+      const effort = c.actualEffort || c.effort || "默认";
+      const isDesign = seatKey === "director" || seatKey === "design" || seatKey === "main";
+      const rawSeatSpans = c && c.spans !== undefined ? val(c.spans) : undefined;
+      const actorSpans = parseSpanArray(rawSeatSpans, isDesign ? "设计负责人（主会话）工作与验收" : `${roleLabel} 活跃时段`);
+      const ticketSummary = formatSeatTicketSummary(c.tickets);
+      const anomCount = c.anomalies && c.anomalies.length ? c.anomalies.length : 1;
+      const statusText = c.complete === false || (c.anomalies && c.anomalies.length) ? `部分记录（异常 ${anomCount}）` : "记录完整";
+      const statusParts = [ticketSummary, statusText].filter(Boolean);
+      const editText = typeof medEdit === "number"
+        ? (typeof c.runs === "number" && c.runs > 1 ? `开始改文件前 ${fmtMin(medEdit)}（中位数）` : `开始改文件前 ${fmtMin(medEdit)}`)
+        : (isDesign ? "设计负责人（主会话）" : "只读或未统计");
+      const usageReasonNote = !u && c.usage && c.usage.reason ? `用量缺失：${why(c.usage)}` : null;
+      const anomNote = c.anomalies && c.anomalies.length ? c.anomalies.map((a) => `${a.source || a.record || ""}${a.source || a.record ? ": " : ""}${a.reason || a}`).join("；") : null;
+      return {
+        id: c.id || `actor-${idx}`,
+        seat: seatKey,
+        workType: c.workType || "default",
+        role: roleLabel + (c.workType && c.workType !== "default" ? `·${c.workType}` : ""),
+        fw,
+        model,
+        effort,
+        minutes: val(c.activeMinutes),
+        runsText: isDesign
+          ? (typeof c.runs === "number" && c.runs > 1 ? `${c.runs} 段主会话` : "主会话")
+          : (typeof c.runs === "number" ? `${c.runs} 次运行` : String(c.runs || "主会话")),
+        turns: u && u.turns !== null ? u.turns : (val(c.turns) ?? null),
+        fresh: u ? u.fresh : null,
+        output: u ? u.output : null,
+        cached: u ? u.cached : null,
+        spans: actorSpans,
+        readDoc: editText,
+        pass: statusParts.join(" · "),
+        note: anomNote || usageReasonNote
+      };
+    });
+  };
+
+  const ACTORS = buildActors();
+  const findActorForDispatch = (d) => {
+    const seat = d.seat || (d.ticket ? "engineering" : "review");
+    const wt = d.workType || "default";
+    const fw = d.framework || d.agent || "codex";
+    const model = d.actualModel || d.model || "默认模型";
+    const effort = d.actualEffort || d.effort || "默认";
+    const exact = ACTORS.find((a) => a.seat === seat && (a.workType || "default") === wt && a.fw === fw && a.model === model && a.effort === effort);
+    if (exact) return exact.id;
+    const sameTuple = ACTORS.find((a) => a.seat === seat && a.fw === fw && a.model === model && a.effort === effort);
+    return sameTuple ? sameTuple.id : "";
+  };
+
+  const cockpitTotalsWrap = S && S.cockpit && S.cockpit.totals ? S.cockpit.totals : null;
+  const cockpitTotals = val(cockpitTotalsWrap);
+  const cockpitTotalsReason = cockpitTotalsWrap && cockpitTotalsWrap.reason ? why(cockpitTotalsWrap) : cockpitMissingReason;
+  const totalFresh = cockpitTotals && typeof cockpitTotals.freshInput === "number" ? cockpitTotals.freshInput : null;
+  const totalOut = cockpitTotals && typeof cockpitTotals.output === "number" ? cockpitTotals.output : null;
+  const totalCached = cockpitTotals && typeof cockpitTotals.cachedReplay === "number" ? cockpitTotals.cachedReplay : null;
+  const totalInput = cockpitTotals && typeof cockpitTotals.input === "number" ? cockpitTotals.input : (totalFresh !== null && totalCached !== null ? totalFresh + totalCached : null);
+  const totalTurns = cockpitTotals && typeof cockpitTotals.turns === "number" ? cockpitTotals.turns : null;
+  const totalRealTok = totalFresh !== null && totalOut !== null ? totalFresh + totalOut : null;
+
+  const dLeadObj = val(S && S.time && S.time.designLead);
+  const dispSlotObj = val(S && S.time && S.time.dispatchSlots);
+  const verTimeObj = val(S && S.time && S.time.verification);
+  const queueTimeObj = val(S && S.time && S.time.queue);
+  const waitUserObj = val(S && S.time && S.time.waitingUser);
+  const longPauseObj = val(S && S.time && S.time.longPause) || null;
+  const dLeadMin = dLeadObj && typeof dLeadObj.minutes === "number" ? dLeadObj.minutes : null;
+  const dispSlotMin = dispSlotObj && typeof dispSlotObj.minutes === "number" ? dispSlotObj.minutes : null;
+  const verMin = verTimeObj && typeof verTimeObj.minutes === "number" ? verTimeObj.minutes : null;
+  const queueMin = queueTimeObj && typeof queueTimeObj.minutes === "number" ? queueTimeObj.minutes : null;
+  const waitUserMin = waitUserObj && typeof waitUserObj.minutes === "number" ? waitUserObj.minutes : null;
+  const longPauseMin = longPauseObj && typeof longPauseObj.minutes === "number" ? longPauseObj.minutes : null;
+
+  const shortSeat = { director: "设计", design: "设计", main: "设计", subagent: "子代理", engineering: "工程", review: "审查", research: "调研", "spec-review": "独立审查" };
+  const compactModel = (m) => {
+    const tail = String(m || "默认").split("/").pop().replace(/^gemini-4-/, "").replace(/^claude-/, "");
+    return tail.length > 16 ? `${tail.slice(0, 15)}…` : tail;
+  };
+
+  const collectAllSpans = () => {
+    const lanes = [];
+    const designActors = ACTORS.filter((a) => a.seat === "director" || a.seat === "design" || a.seat === "main");
+    for (const da of designActors) {
+      if (Array.isArray(da.spans) && da.spans.length) {
+        lanes.push({
+          actorId: da.id,
+          label: `设计·${fwInfo(da.fw).label}·${compactModel(da.model)}(${da.effort})`,
+          fullLabel: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model} · ${da.effort}`,
+          color: "var(--design)",
+          spans: da.spans.map((s) => ({
+            ...s,
+            desc: `设计负责人 · ${fwInfo(da.fw).label} · ${da.model}(${da.effort})`
+          }))
+        });
+      }
+    }
+    const subActors = ACTORS.filter((a) => a.seat === "subagent" && Array.isArray(a.spans) && a.spans.length);
+    for (const sa of subActors) {
+      lanes.push({
+        actorId: sa.id,
+        label: `子代理·${fwInfo(sa.fw).label}·${compactModel(sa.model)}(${sa.effort})`,
+        fullLabel: `原生子代理 · ${fwInfo(sa.fw).label} · ${sa.model} · ${sa.effort}`,
+        color: fwInfo(sa.fw).solid,
+        spans: sa.spans.map((s) => ({
+          ...s,
+          desc: `原生子代理 · ${fwInfo(sa.fw).label} · ${sa.model}(${sa.effort})`
+        }))
+      });
+    }
+    const byLane = new Map();
+    for (const d of dispatches) {
+      const st = Date.parse(val(d.start) || "");
+      const en = Date.parse(val(d.end) || "");
+      if (!Number.isFinite(st) || !Number.isFinite(en)) continue;
+      const fw = d.framework || d.agent || "codex";
+      const seat = d.seat || (d.ticket ? "engineering" : "review");
+      const wt = d.workType || "default";
+      const model = d.actualModel || d.model || "默认模型";
+      const effort = d.actualEffort || d.effort || "默认";
+      const key = `${seat}|${wt}|${fw}|${model}|${effort}`;
+      if (!byLane.has(key)) {
+        const sLbl = (shortSeat[seat] || SEAT_LABEL[seat] || seat) + (wt !== "default" ? `(${wt})` : "");
+        byLane.set(key, {
+          actorId: findActorForDispatch(d),
+          label: `${sLbl}·${fwInfo(fw).label}·${compactModel(model)}(${effort})`,
+          fullLabel: `${SEAT_LABEL[seat] || seat}${wt !== "default" ? `·${wt}` : ""} · ${fwInfo(fw).label} · ${model} · ${effort}`,
+          color: fwInfo(fw).solid,
+          spans: []
+        });
+      }
+      const u = normUsage(d.usage);
+      const exit = val(d.exitCode);
+      byLane.get(key).spans.push({
+        a: st,
+        b: Math.max(en, st + 15000),
+        kind: exit === 0 || exit === null ? "ok" : "aborted",
+        desc: `${d.record || "派发"}${d.ticket ? ` (#${d.ticket})` : ""} · ${val(d.category) || "执行"} · ${fmtMin(val(d.minutes))}${u ? ` · 首次读入 ${fmtTok(u.fresh)} / 输出 ${fmtTok(u.output)}` : ""}`
+      });
+    }
+    lanes.push(...byLane.values());
+    const vSpans = ((verTimeObj || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "ok", desc: "验证" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
+    if (vSpans.length) lanes.push({ actorId: "", label: "验证", color: "var(--verify)", spans: vSpans });
+    const wSpans = ((waitUserObj || {}).spans || []).map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end), kind: "wait", desc: "等你确认 (10~45m)" })).filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
+    if (wSpans.length) lanes.push({ actorId: "", label: "等你确认", color: "var(--wait)", spans: wSpans });
+    return lanes;
+  };
+
+  const TL_LANES = collectAllSpans();
+  const allPts = TL_LANES.flatMap((l) => l.spans);
+
+  const activeWrap = S && S.cockpit && S.cockpit.activeMinutes ? S.cockpit.activeMinutes : null;
+  const unionActiveMin = activeWrap ? val(activeWrap) : null;
+  const activeReason = activeWrap ? why(activeWrap) : cockpitMissingReason;
+  const wallWrap = S && S.cockpit && S.cockpit.wallSpanMinutes ? S.cockpit.wallSpanMinutes : null;
+  const wallMin = wallWrap ? val(wallWrap) : null;
+  const wallReason = wallWrap ? why(wallWrap) : cockpitMissingReason;
+
+  const goals = R.goals || [];
+  const judgedGoals = goals.filter((g) => g.status !== "info");
+  const metGoals = judgedGoals.filter((g) => g.status === "good" || g.status === "达成").length;
+  const ticketsWrap = S && S.cockpit && S.cockpit.tickets ? S.cockpit.tickets : null;
+  const ticketStats = val(ticketsWrap);
+  const ticketsReason = ticketsWrap ? why(ticketsWrap) : (S && S.cockpit ? findMissingReason("dispatches", cockpitMissingReason) : cockpitMissingReason);
+  const ticketTotal = ticketStats && typeof ticketStats.total === "number" ? ticketStats.total : null;
+  const firstPassCount = ticketStats && typeof ticketStats.firstPass === "number" ? ticketStats.firstPass : null;
+  const reworkCount = ticketStats && typeof ticketStats.rework === "number" ? ticketStats.rework : 0;
+  const redispatchCount = ticketStats && typeof ticketStats.redispatch === "number" ? ticketStats.redispatch : 0;
+  const interruptedCount = ticketStats && typeof ticketStats.interrupted === "number" ? ticketStats.interrupted : 0;
+  const passPct = ticketTotal && ticketTotal > 0 && firstPassCount !== null ? Math.round((firstPassCount / ticketTotal) * 100) : null;
+  const mergesText = merges && typeof merges.landCount === "number" ? `${merges.landCount} 次` : `未记录（${findMissingReason("merges", "缺少验证台账")}）`;
+
+  const KPIS = [
+    {
+      v: judgedGoals.length ? `${metGoals} / ${judgedGoals.length}` : `${(R.delivered || []).length} 项`,
+      k: judgedGoals.length ? "目标达成" : "改了什么",
+      n: judgedGoals.length
+        ? `环：已达成 / 判定目标（${metGoals}/${judgedGoals.length}）${goals.length > judgedGoals.length ? ` · 另 ${goals.length - judgedGoals.length} 项不判达成` : ""}`
+        : `改了 ${(R.delivered || []).length} 项 · 未设目标分母，无比例环`,
+      pct: judgedGoals.length ? Math.round((metGoals / judgedGoals.length) * 100) : null,
+      color: "var(--good)"
+    },
+    ticketStats === null
+      ? {
+        v: "未记录",
+        k: "工程工单一次通过数",
+        n: `未记录：${ticketsReason} · 合并 ${mergesText}`,
+        pct: null,
+        color: "var(--agy)"
+      }
+      : ticketTotal === 0
+        ? {
+          v: "0 张工单",
+          k: dispatches.length ? "非工单 / 辅助派发" : "纯主会话执行（0 张工单）",
+          n: `共 ${dispatches.length} 次派发 · 合并 ${mergesText} · 工单分母为 0，无比例环`,
+          pct: null,
+          color: "var(--agy)"
+        }
+        : {
+          v: `${firstPassCount} / ${ticketTotal}`,
+          k: `工程工单一次通过 ${passPct}%${ticketsWrap && ticketsWrap.complete === false ? "（数据不完整）" : ""}`,
+          n: `环：一次通过（第一次派发退出 0，之后没有返工或重派） / 总工单（${firstPassCount}/${ticketTotal}）· 返工 ${reworkCount} · 重派 ${redispatchCount}${interruptedCount ? ` · 中断或分类不明 ${interruptedCount}` : ""} · 合并 ${mergesText}`,
+          pct: passPct,
+          color: "var(--agy)"
+        },
+    unionActiveMin === null
+      ? {
+        v: "未记录",
+        k: "工作时间（重叠只算一次）",
+        n: `未记录：${activeReason} · 日历跨度 ${wallMin !== null ? fmtMin(wallMin) : `未记录（${wallReason}）`}`,
+        pct: null,
+        color: "var(--pi)"
+      }
+      : {
+        v: fmtMin(unionActiveMin),
+        k: `工作时间（重叠只算一次）${activeWrap && activeWrap.complete === false ? "（已知部分）" : ""}`,
+        n: wallMin !== null && wallMin > 0
+          ? `日历跨度 ${fmtMin(wallMin)}${longPauseMin && longPauseMin > 0 ? `（含超过 45 分钟的停顿 ${fmtMin(longPauseMin)}）` : ""} · 环：工作时间 / 日历跨度（${fmtMin(unionActiveMin)}/${fmtMin(wallMin)}）`
+          : wallMin === 0
+            ? "日历跨度 0m · 分母为 0，无比例环"
+            : `日历跨度未记录（${wallReason}）· 分母缺失，无比例环`,
+        pct: wallMin !== null && wallMin > 0 ? Math.round((unionActiveMin / wallMin) * 100) : null,
+        color: "var(--pi)"
+      },
+    totalRealTok === null
+      ? {
+        v: "未记录",
+        k: "首次读入 + 输出（Token）",
+        n: `未记录：${cockpitTotalsReason}`,
+        pct: null,
+        color: "var(--design)"
+      }
+      : {
+        v: fmtTok(totalRealTok),
+        k: `首次读入 + 输出（Token）${cockpitTotalsWrap && cockpitTotalsWrap.complete === false ? "（已知部分）" : ""}`,
+        n: totalInput !== null && totalInput > 0
+          ? `首次读入 ${fmtTok(totalFresh)} · 输出 ${fmtTok(totalOut)} · 缓存重读 ${fmtTok(totalCached)} · 环：缓存重读 / 总输入（${fmtTok(totalCached)}/${fmtTok(totalInput)}）`
+          : `首次读入 ${fmtTok(totalFresh)} · 输出 ${fmtTok(totalOut)} · 总输入为 0，无比例环`,
+        pct: totalCached !== null && totalInput !== null && totalInput > 0 ? Math.round((totalCached / totalInput) * 100) : null,
+        color: "var(--design)"
+      }
+  ];
+
+  const SHOTS = [
+    ...(R.shots || []),
+    ...(R.shots && R.shots.length ? [] : (R.evidence || []).filter((e) => e.image).map((e, i) => ({
+      title: e.claim || `实测截图 ${i + 1}`,
+      url: e.link || `spec-${R.spec}/evidence-${i + 1}`,
+      focus: e.value || e.output || "",
+      ref: "实测取证",
+      image: e.image,
+      imageAlt: e.imageAlt || e.claim || "实测截图"
+    })))
+  ];
+
+  const TAKEAWAYS = Array.isArray(R.takeaways) ? R.takeaways.filter((t) => t && (t.title || t.body)) : [];
+
+  const state = {
+    topTab: "overview",
+    costLens: "charts",
+    filterActor: null,
+    sidebarCollapsed: false,
+    expandAll: false
+  };
+
+  document.title = `spec #${R.spec} 汇报：${R.title || ""}`;
+
+  const renderKpiRing = (pct, color) => {
+    if (pct === null || pct === undefined || !Number.isFinite(Number(pct))) return "";
+    const r = 18, c = 2 * Math.PI * r;
+    const p = Math.max(0, Math.min(100, Math.round(Number(pct))));
+    const dash = (p / 100) * c;
+    return `<svg class="kpi-ring" viewBox="0 0 46 46" aria-hidden="true">
+      <circle cx="23" cy="23" r="${r}" fill="none" stroke="var(--wash2)" stroke-width="4.5"/>
+      ${p > 0 ? `<circle cx="23" cy="23" r="${r}" fill="none" stroke="${color}" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 23 23)"/>` : ""}
+      <text x="23" y="26.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--ink)">${p}%</text>
+    </svg>`;
+  };
+
+  const renderArchFlow = () => {
+    const nodes = R.archNodes || [];
+    if (!nodes.length) return "";
+    const n = Math.min(nodes.length, 4);
+    const W = 880, pad = 10, arrowW = n > 1 ? 66 : 0;
+    const boxW = Math.floor((W - pad * 2 - arrowW * (n - 1)) / n);
+    return `<div class="arch-card">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:12px" class="muted">
+        <span><b style="color:var(--ink)">运作流程</b>（悬停看说明）</span>
+        <span>改之后怎么运转</span>
+      </div>
+      <svg class="viz" viewBox="0 0 ${W} 82" role="img" aria-label="关键机制流转图">
+        ${nodes.slice(0, n).map((nd, i) => {
+          const x = pad + i * (boxW + arrowW);
+          const stroke = i === 0 ? "var(--axis)" : i === n - 1 ? "var(--verify)" : "var(--agy)";
+          const arrow = i < n - 1 ? `
+            <line x1="${x + boxW + 4}" y1="41" x2="${x + boxW + arrowW - 10}" y2="41" stroke="var(--agy)" stroke-width="2"/>
+            <polygon points="${x + boxW + arrowW - 10},37 ${x + boxW + arrowW - 2},41 ${x + boxW + arrowW - 10},45" fill="var(--agy)"/>
+          ` : "";
+          return `<g class="arch-node" data-tip="${esc(nd.tip || nd.sub || nd.title)}">
+            <rect x="${x}" y="12" width="${boxW}" height="58" rx="10" fill="var(--surface)" stroke="${stroke}" stroke-width="1.6"/>
+            <text x="${x + boxW / 2}" y="36" text-anchor="middle" font-weight="700" fill="var(--ink)">${esc(nd.title)}</text>
+            <text x="${x + boxW / 2}" y="55" text-anchor="middle" font-size="10.5" fill="var(--muted)">${esc(nd.sub || "")}</text>
+          </g>${arrow}`;
+        }).join("")}
+      </svg>
+    </div>`;
+  };
+
+  const renderDeliveryPanel = () => {
+    const story = R.story || null;
+    const delivered = R.delivered || [];
+    const storyHtml = story && (story.before || (story.afterSteps && story.afterSteps.length)) ? `
+      <div class="story-compare">
+        <div class="story-pane before">
+          <div class="pane-kicker" style="color:var(--serious)"><span>改之前卡在哪</span></div>
+          <div style="font-size:13px;color:var(--ink2);line-height:1.65">${esc(story.before || "见下方模块说明")}</div>
+        </div>
+        <div class="story-pane after">
+          <div class="pane-kicker" style="color:var(--good)"><span>改之后怎么运转</span></div>
+          <ol class="step-pills">
+            ${(story.afterSteps || []).map((s, i) => `<li><span class="step-num">${i + 1}</span><span>${esc(s)}</span></li>`).join("")}
+          </ol>
+        </div>
+      </div>` : "";
+    const modHtml = delivered.length ? `<div class="module-grid">
+      ${delivered.map((d) => `<div class="module-card">
+        <div class="module-top">
+          <b style="font-size:13.5px">${esc(d.what)}</b>
+          <span>${(d.tickets || []).map((t) => {
+            const href = issueHref(t);
+            const txt = String(t).startsWith("#") || !/^\d+$/.test(String(t)) ? String(t) : `#${t}`;
+            return href ? `<a class="ticket-tag" href="${esc(href)}">${esc(txt)}</a>` : `<span class="ticket-tag">${esc(txt)}</span>`;
+          }).join(" ")}</span>
+        </div>
+        <div style="font-size:12.5px;color:var(--ink2)">${esc(d.meaning || "")}</div>
+      </div>`).join("")}
+    </div>` : `<div class="muted">暂无交付模块明细。</div>`;
+    return storyHtml + renderArchFlow() + modHtml;
+  };
+
+  const badgeFor = (st, txt) => {
+    const cls = st === "good" || st === "达成" ? "good" : st === "info" ? "info" : st === "critical" ? "crit" : "warn";
+    const icon = cls === "good" ? "✓" : cls === "info" ? "i" : "!";
+    return `<span class="badge ${cls}">${icon} ${esc(txt || st || "核对")}</span>`;
+  };
+
+  const renderGoalsPanel = () => {
+    const goalHtml = goals.length ? `<div class="goal-cards">
+      ${goals.map((g) => {
+        const ev = g.evidence || {};
+        const proof = g.proof || ev.output || "";
+        const unit = g.unit ? ` ${g.unit}` : "";
+        const plain = ev.value || "";
+        const links = (g.links || []).map((l) => `<a href="${esc(l.href)}">${esc(l.text)}</a>`).join(" · ");
+        return `<div class="goal-card"${proof ? "" : " style=\"grid-template-columns:1fr\""}>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:13.5px">
+              <span>${esc(g.name)}</span>
+              ${badgeFor(g.status, g.statusText || g.status)}
+            </div>
+            <div class="delta-pill">
+              <span class="muted">改前</span> <b>${esc(g.before !== undefined ? `${g.before}${unit}` : "未知")}</b>
+              <span style="color:var(--agy);font-weight:700">→</span>
+              <span class="muted">改后</span> <b style="color:var(--good)">${esc(g.after !== undefined ? `${g.after}${unit}` : "未知")}</b>
+              ${g.target !== undefined ? `<span class="muted">（目标 ${esc(`${g.target}${unit}`)}）</span>` : ""}
+            </div>
+            ${plain ? `<div style="font-size:12.5px;color:var(--ink2);margin-bottom:3px"><b>实测：</b>${esc(plain)}</div>` : ""}
+            ${g.method ? `<div class="muted">怎么测：${esc(g.method)}</div>` : ""}
+            ${links ? `<div style="margin-top:4px;font-size:12px">${links}</div>` : ""}
+          </div>
+          ${proof ? `<div>
+            <div class="muted" style="margin-bottom:3px">输出摘要：</div>
+            <pre class="proof">${esc(proof)}</pre>
+          </div>` : ""}
+        </div>`;
+      }).join("")}
+    </div>` : `<div class="muted" style="margin-bottom:12px">问题陈述未列单独量化项，判断依据见「改了什么」。</div>`;
+
+    const shotsHtml = SHOTS.length ? `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 8px;flex-wrap:wrap;gap:8px">
+        <b style="font-size:13.5px">截图（点击放大）</b>
+        <span class="muted">共 ${SHOTS.length} 张截图</span>
+      </div>
+      <div class="browser-grid">
+        ${SHOTS.map((s, idx) => `<div class="browser-frame">
+          <div class="browser-bar">
+            <span class="traffic"><i style="background:#ef4444"></i><i style="background:#f59e0b"></i><i style="background:#22c55e"></i></span>
+            <span class="url-pill">${esc(s.url || `spec-${R.spec}`)}</span>
+            <span class="muted">${esc(s.ref || "实测")}</span>
+          </div>
+          <div class="browser-canvas" data-shot="${idx}" role="button" tabindex="0" aria-label="点击放大查看 ${esc(s.title)}">
+            ${s.image ? `<img src="${esc(s.image)}" alt="${esc(s.imageAlt || s.title)}">` : (s.svg || "")}
+          </div>
+          <div class="browser-foot">
+            <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+              <b>${esc(s.title)}</b>
+              <span style="color:var(--agy);font-weight:600;font-size:11.5px">点击放大</span>
+            </div>
+            ${s.focus ? `<div class="muted" style="margin-top:3px;color:var(--ink2)">${esc(s.focus)}</div>` : ""}
+          </div>
+        </div>`).join("")}
+      </div>` : "";
+
+    const extraEv = (R.evidence || []).filter((e) => !e.image || (R.shots && R.shots.length));
+    const evHtml = extraEv.length ? `
+      <div style="font-weight:700;font-size:13.5px;margin:10px 0 8px">证据</div>
+      <div class="goal-cards" style="margin-bottom:0">
+        ${extraEv.map((e) => `<div class="goal-card">
+          <div>
+            <b style="font-size:13px">${esc(e.claim)}</b>
+            ${e.value ? `<div style="margin-top:4px;font-weight:600;color:var(--good);font-size:12.5px">${esc(e.value)}</div>` : ""}
+            ${e.link ? `<div style="margin-top:4px;font-size:12px"><a href="${esc(e.link)}">${esc(e.linkText || "查看记录")}</a></div>` : ""}
+          </div>
+          <div><pre class="proof">${esc(e.output || e.value || "已核实")}</pre></div>
+        </div>`).join("")}
+      </div>` : "";
+    return goalHtml + shotsHtml + evHtml;
+  };
+
+  const renderRisksPanel = () => {
+    const risks = R.risks || [];
+    if (!risks.length) return `<div class="muted">本轮无未决风险或遗留项。</div>`;
+    const lvlMap = { good: ["good", "✓ 已解决"], warning: ["warn", "! 留意边界"], warn: ["warn", "! 留意边界"], serious: ["warn", "! 中风险"], critical: ["crit", "✕ 高风险"] };
+    return `<div class="risk-grid">
+      ${risks.map((r) => {
+        const [cls, txt] = lvlMap[r.level] || ["warn", "! 留意"];
+        return `<div class="risk-card">
+          <div><span class="badge ${cls}">${txt}</span> <b style="font-size:13.5px">${esc(r.what)}</b></div>
+          ${r.impact ? `<div style="font-size:13px;color:var(--ink2)"><b>影响与边界：</b>${esc(r.impact)}</div>` : ""}
+          ${r.next ? `<div class="muted"><b>下一步去向：</b>${esc(r.next)}</div>` : ""}
+        </div>`;
+      }).join("")}
+    </div>`;
+  };
+
+  const buildTimeAxis = () => {
+    if (!allPts.length) return null;
+    const sorted = [...allPts].sort((x, y) => x.a - y.a);
+    const GAP_MS = 45 * 60000;
+    const segs = [];
+    for (const sp of sorted) {
+      const last = segs[segs.length - 1];
+      if (last && sp.a - last[1] <= GAP_MS) last[1] = Math.max(last[1], sp.b);
+      else segs.push([sp.a, sp.b]);
+    }
+    const activeMs = segs.reduce((s, [a, b]) => s + Math.max(1000, b - a), 0) || 1;
+    return { segs, activeMs };
+  };
+  const AXIS = buildTimeAxis();
+
+  const renderTimelineBox = () => {
+    if (!AXIS || !TL_LANES.length) {
+      return `<div class="timeline-box"><div data-slot="timeline"><div class="muted">未记录：${esc(S && S.cockpit ? "评分表暂无可视化时段记录" : cockpitMissingReason)}</div></div></div>`;
+    }
+    const W = 920, LW = 216, RP = 14, PW = W - LW - RP, rowH = 26;
+    const gapCount = AXIS.segs.length - 1;
+    const gapPx = 22;
+    const usable = Math.max(120, PW - gapCount * gapPx);
+    const offsets = [];
+    let cur = LW;
+    for (const [a, b] of AXIS.segs) {
+      offsets.push(cur);
+      cur += (Math.max(1000, b - a) / AXIS.activeMs) * usable + gapPx;
+    }
+    const xOf = (t) => {
+      for (let i = 0; i < AXIS.segs.length; i += 1) {
+        const [a, b] = AXIS.segs[i];
+        if (t <= b || i === AXIS.segs.length - 1) {
+          const clamped = Math.max(a, Math.min(b, t));
+          return offsets[i] + ((clamped - a) / AXIS.activeMs) * usable;
+        }
+        if (t < AXIS.segs[i + 1][0]) {
+          const nextA = AXIS.segs[i + 1][0];
+          return offsets[i + 1] - gapPx + ((t - b) / Math.max(1, nextA - b)) * gapPx;
+        }
+      }
+      return W - RP;
+    };
+    const topPad = gapCount ? 22 : 8;
+    const H = topPad + TL_LANES.length * rowH + 22;
+    const foldedMin = AXIS.segs.slice(1).reduce((s, [a], i) => s + (a - AXIS.segs[i][1]) / 60000, 0);
+    const longPauseSpans = parseSpanArray(longPauseObj && longPauseObj.spans, "") || [];
+    const gapItems = AXIS.segs.slice(1).map(([a], i) => {
+      const gapStart = AXIS.segs[i][1];
+      const gapM = (a - gapStart) / 60000;
+      const recordedPause = longPauseMin !== null && longPauseMin > 0 && longPauseSpans.some((lp) => lp.a < a && lp.b > gapStart);
+      return { bx: offsets[i + 1] - gapPx, gapStart, gapEnd: a, gapM, recordedPause };
+    });
+    const recordedPauseInGaps = gapItems.some((g) => g.recordedPause);
+    const gapHeaderNote = foldedMin >= 45
+      ? (recordedPauseInGaps && longPauseMin !== null && longPauseMin > 0
+        ? ` · 已省略 ${fmtMin(foldedMin)}（含超过 45 分钟的停顿 ${fmtMin(longPauseMin)}）`
+        : ` · 已省略 ${fmtMin(foldedMin)}（没有记录到活动）`)
+      : "";
+
+    return `<div class="timeline-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:12px" class="muted">
+        <span><b style="color:var(--ink)">时间线（按角色）</b>（悬停色块查看时段、工单与 Token）</span>
+        <span>日历跨度 ${wallMin !== null ? fmtMin(wallMin) : `未记录（${esc(wallReason)}）`}${gapHeaderNote}</span>
+      </div>
+      <div data-slot="timeline">
+        <svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="时间线（按角色）">
+          ${gapItems.map((g) => {
+            const tipText = g.recordedPause
+              ? `超过 45 分钟的停顿 ${fmtMin(g.gapM)}（${fmtClock(g.gapStart)}–${fmtClock(g.gapEnd)}），不计入工作时间`
+              : `没有记录到活动 ${fmtMin(g.gapM)}（${fmtClock(g.gapStart)}–${fmtClock(g.gapEnd)}），未计入工作时间`;
+            return `<g data-tip="${esc(tipText)}">
+              <text x="${(g.bx + gapPx / 2).toFixed(1)}" y="12" text-anchor="middle" font-size="9.5">省略 ${fmtMin(g.gapM)}</text>
+              <rect x="${g.bx.toFixed(1)}" y="15" width="${gapPx}" height="${H - 35}" rx="3" fill="var(--wash2)"/>
+              <line x1="${(g.bx + gapPx / 2).toFixed(1)}" y1="16" x2="${(g.bx + gapPx / 2).toFixed(1)}" y2="${H - 21}" stroke="var(--axis)" stroke-dasharray="3 3"/>
+            </g>`;
+          }).join("")}
+          ${TL_LANES.map((lane, idx) => {
+            const y = topPad + idx * rowH;
+            const dim = state.filterActor && lane.actorId && state.filterActor !== lane.actorId ? 0.22 : 1;
+            return `<g opacity="${dim}" data-lane-actor="${esc(lane.actorId || "")}">
+              <text x="${LW - 8}" y="${y + 16}" text-anchor="end" font-size="10.5">${esc(lane.label)}</text>
+              <rect x="${LW}" y="${y + 4}" width="${PW}" height="16" rx="4" fill="var(--wash)"/>
+              ${lane.spans.map((sp) => {
+                const x1 = xOf(sp.a);
+                const x2 = Math.max(x1 + 3.5, Math.min(W - RP, xOf(sp.b)));
+                const tip = `${lane.fullLabel || lane.label}\n${fmtClock(sp.a)}–${fmtClock(sp.b)}（${fmtMin((sp.b - sp.a) / 60000)}）\n${sp.desc}`;
+                if (sp.kind === "aborted") {
+                  return `<rect class="tl-span" data-tip="${esc(tip)}" x="${x1.toFixed(1)}" y="${y + 4}" width="${(x2 - x1).toFixed(1)}" height="16" rx="3" fill="none" stroke="var(--critical)" stroke-width="1.6" stroke-dasharray="3 2"/>`;
+                }
+                return `<rect class="tl-span" data-tip="${esc(tip)}" x="${x1.toFixed(1)}" y="${y + 4}" width="${(x2 - x1).toFixed(1)}" height="16" rx="3" fill="${lane.color}"/>`;
+              }).join("")}
+            </g>`;
+          }).join("")}
+          <line x1="${LW}" y1="${H - 17}" x2="${W - RP}" y2="${H - 17}" stroke="var(--axis)"/>
+          <text x="${LW}" y="${H - 4}">${fmtClock(AXIS.segs[0][0])}</text>
+          <text x="${W - RP}" y="${H - 4}" text-anchor="end">${fmtClock(AXIS.segs[AXIS.segs.length - 1][1])}</text>
+        </svg>
+      </div>
+    </div>`;
+  };
+
+  const renderDonutSvg = (segments, centerTop, centerSub, unitFn) => {
+    const valid = segments.filter((s) => typeof s.val === "number" && s.val > 0);
+    if (!valid.length) return `<div class="muted">暂无分项构成数据。</div>`;
+    const total = valid.reduce((s, x) => s + x.val, 0) || 1;
+    const r = 60, cx = 84, cy = 84, circum = 2 * Math.PI * r;
+    let offset = 0;
+    const arcs = valid.map((seg) => {
+      const len = (seg.val / total) * circum;
+      const pct = Math.round((seg.val / total) * 100);
+      const tip = `${seg.label}：${unitFn(seg.val)}（占 ${pct}%）\n${seg.desc || ""}`;
+      const arc = `<circle class="donut-slice" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${seg.color}" stroke-width="21" stroke-dasharray="${Math.max(1.5, len - 1.2).toFixed(2)} ${circum.toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})" data-tip="${esc(tip)}" data-center-val="${esc(unitFn(seg.val))}" data-center-lbl="${esc(`${seg.label} (${pct}%)`)}"/>`;
+      offset += len;
+      return arc;
+    }).join("");
+    return `<div class="donut-wrap">
+      <svg viewBox="0 0 168 168" width="148" height="148" role="img" aria-label="${esc(centerSub)}">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--wash)" stroke-width="21"/>
+        ${arcs}
+        <text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="15" font-weight="750" fill="var(--ink)" class="donut-center-v">${esc(centerTop)}</text>
+        <text x="${cx}" y="${cy + 15}" text-anchor="middle" font-size="10" fill="var(--muted)" class="donut-center-k">${esc(centerSub)}</text>
+      </svg>
+      <div class="donut-legend">
+        ${valid.map((seg) => {
+          const pct = Math.round((seg.val / total) * 100);
+          return `<div class="legend-item" data-tip="${esc(`${seg.label}：${unitFn(seg.val)}（${pct}%）— ${seg.desc || ""}`)}">
+            <span style="display:inline-flex;align-items:center;gap:6px;min-width:0"><i class="swatch" style="background:${seg.color}"></i><span>${esc(seg.label)}</span></span>
+            <b class="num" style="white-space:nowrap">${esc(unitFn(seg.val))} <span class="muted">(${pct}%)</span></b>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  };
+
+  const renderGroupedBarSvg = () => {
+    if (!ACTORS.length) return `<div class="muted">未记录：${esc(cockpitSeatsReason)}</div>`;
+    const maxMin = Math.max(...ACTORS.map((a) => a.minutes || 0), 1);
+    const maxTok = Math.max(...ACTORS.map((a) => (a.fresh || 0) + (a.output || 0)), 1);
+    const W = 600, L = 142, Rpad = 196, PW = W - L - Rpad, rowH = 52, H = 12 + ACTORS.length * rowH;
+    return `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="各角色工作时间与首次读入 + 输出分组柱状图">
+      ${ACTORS.map((a, idx) => {
+        const fw = fwInfo(a.fw);
+        const y = 6 + idx * rowH;
+        const wMin = a.minutes ? Math.max(4, (a.minutes / maxMin) * PW) : 0;
+        const wFresh = a.fresh ? Math.max(4, (a.fresh / maxTok) * PW) : 0;
+        const wOut = a.output ? Math.max(3, (a.output / maxTok) * PW) : 0;
+        const dim = state.filterActor && state.filterActor !== a.id ? "dimmed" : "";
+        const tip = `${a.role} · ${fw.label} · ${a.model} (思考:${a.effort})\n时长：${fmtMin(a.minutes)}（${a.runsText}）\n首次读入：${fmtTok(a.fresh)} · 输出：${fmtTok(a.output)}`;
+        return `<g class="bar-chart-row ${dim}" data-tip="${esc(tip)}" data-actor="${esc(a.id)}">
+          <rect class="bar-bg" x="2" y="${y - 3}" width="${W - 4}" height="${rowH - 4}" rx="7" fill="transparent"/>
+          <text x="${L - 8}" y="${y + 13}" text-anchor="end" font-weight="600" fill="var(--ink)">${esc(a.role)}</text>
+          <text x="${L - 8}" y="${y + 28}" text-anchor="end" font-size="10.5" fill="var(--muted)">${esc(`${fw.label} · ${a.effort}`)}</text>
+          <rect x="${L}" y="${y + 3}" width="${PW}" height="12" rx="6" fill="var(--wash)"/>
+          ${wMin ? `<rect x="${L}" y="${y + 3}" width="${wMin.toFixed(1)}" height="12" rx="6" fill="${fw.hex}"/>` : ""}
+          <text x="${W - 6}" y="${y + 13}" text-anchor="end" font-weight="600" fill="var(--ink)">${esc(fmtMin(a.minutes))}</text>
+          <rect x="${L}" y="${y + 20}" width="${PW}" height="12" rx="6" fill="var(--wash)"/>
+          ${wFresh ? `<rect x="${L}" y="${y + 20}" width="${wFresh.toFixed(1)}" height="12" rx="6" fill="#3b82f6" opacity="0.84"/>` : ""}
+          ${wOut ? `<rect x="${(L + Math.min(PW - wOut, wFresh)).toFixed(1)}" y="${y + 20}" width="${wOut.toFixed(1)}" height="12" rx="4" fill="#16a34a"/>` : ""}
+          <text x="${W - 6}" y="${y + 30}" text-anchor="end" font-size="10.5" fill="var(--muted)">${esc(a.fresh !== null ? `首次读入 ${fmtTok(a.fresh)} · 输出 ${fmtTok(a.output)}` : "用量未记录")}</text>
+        </g>`;
+      }).join("")}
+    </svg>`;
+  };
+
+  const renderChartsLens = () => {
+    const timeItems = [
+      { label: "设计负责人（主会话）", val: dLeadMin, missingKey: "time.designLead", color: "#d97706", desc: "主会话记录到的设计、协调与验收活跃时段" },
+      { label: "派发（工程、审查等）", val: dispSlotMin, missingKey: "time.dispatchSlots", color: "#0d9488", desc: "各被派发角色按运行记录汇总的活跃时长" },
+      { label: "验证", val: verMin, missingKey: "time.verification", color: "#7c3aed", desc: "静态检查、完整验证与本机检查执行时长" },
+      { label: "验证排队等待", val: queueMin, missingKey: "time.queue", color: "#a855f7", desc: "台账记录的排队等待实际验证开始前时段" },
+      { label: "等你确认 (10~45m)", val: waitUserMin, missingKey: "time.waitingUser", color: "#db2777", desc: "等待人工反馈与确认的间隔" },
+      { label: "超过 45 分钟的停顿", val: longPauseMin, missingKey: "time.longPause", color: "#94a3b8", desc: "明确记录到的超过 45 分钟间隔，不计入工作时间" }
+    ];
+    const maxItemMin = Math.max(1, ...timeItems.map((it) => (typeof it.val === "number" && it.val > 0 ? it.val : 0)));
+    const activeNote = activeWrap && activeWrap.complete === false && activeWrap.anomalies && activeWrap.anomalies.length
+      ? `已知部分（${activeWrap.anomalies.length} 项缺数或进行中）`
+      : (unionActiveMin !== null ? "各角色与验证合并去重" : activeReason);
+    const wallNote = wallWrap && wallWrap.complete === false && wallWrap.anomalies && wallWrap.anomalies.length
+      ? `已知部分（${wallWrap.anomalies.length} 项缺数或进行中）`
+      : (wallMin !== null ? "首个记录起至最后结束" : wallReason);
+
+    return `<div class="chart-split">
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">时间</div>
+          <div class="chart-sub">上方为去重后工作时间与日历跨度；下方各分项仅显示分钟数，分项间可重叠，不作相加和百分比</div>
+        </div>
+        <div class="time-summary">
+          <div class="time-stat" data-tip="${esc(activeWrap && activeWrap.anomalies && activeWrap.anomalies.length ? activeWrap.anomalies.map((a) => `${a.source || ""}: ${a.reason || a}`).join("\n") : "各角色有活动的时段和验证时段合在一起，重叠只算一次")}">
+            <div class="time-stat-val">${esc(unionActiveMin !== null ? fmtMin(unionActiveMin) : "未记录")}</div>
+            <div class="time-stat-lbl">工作时间（重叠只算一次）${activeWrap && activeWrap.complete === false ? "（已知部分）" : ""}</div>
+            <div class="time-stat-sub">${esc(activeNote)}</div>
+          </div>
+          <div class="time-stat" data-tip="${esc(wallWrap && wallWrap.anomalies && wallWrap.anomalies.length ? wallWrap.anomalies.map((a) => `${a.source || ""}: ${a.reason || a}`).join("\n") : "有记录的最早开始到最晚结束")}">
+            <div class="time-stat-val">${esc(wallMin !== null ? fmtMin(wallMin) : "未记录")}</div>
+            <div class="time-stat-lbl">日历跨度${wallWrap && wallWrap.complete === false ? "（已知部分）" : ""}</div>
+            <div class="time-stat-sub">${esc(wallNote)}</div>
+          </div>
+        </div>
+        <div class="time-rows">
+          ${timeItems.map((it) => {
+            const hasVal = typeof it.val === "number";
+            const reason = hasVal ? null : findMissingReason(it.missingKey, "未记录");
+            const barW = hasVal && it.val > 0 ? Math.max(3, (it.val / maxItemMin) * 100) : 0;
+            return `<div class="time-row" data-tip="${esc(`${it.label}：${hasVal ? fmtMin(it.val) : `未记录（${reason}）`}\n${it.desc}`)}">
+              <div class="time-row-head">
+                <span style="display:inline-flex;align-items:center;gap:6px;min-width:0"><i class="swatch" style="background:${it.color}"></i><span>${esc(it.label)}</span></span>
+                ${hasVal ? `<b class="num" style="white-space:nowrap">${esc(fmtMin(it.val))}</b>` : `<span class="muted" style="white-space:nowrap">未记录</span>`}
+              </div>
+              ${hasVal
+                ? (barW > 0 ? `<div class="time-bar-track"><div class="time-bar-fill" style="width:${barW.toFixed(1)}%;background:${it.color}"></div></div>` : "")
+                : `<div class="muted" style="font-size:11px">${esc(reason)}</div>`}
+            </div>`;
+          }).join("")}
+        </div>
+      </div>
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">各角色工作时间与首次读入 + 输出</div>
+          <div class="chart-sub">上条 = 角色工作时间，下条 = 首次读入 + 输出（按各自最大值缩放）；点击行按角色筛选</div>
+        </div>
+        <div style="margin:auto 0">${renderGroupedBarSvg()}</div>
+      </div>
+    </div>`;
+  };
+
+  const renderTokensLens = () => {
+    const tokSegs = totalRealTok !== null && totalCached !== null ? [
+      { label: "首次读入", val: totalFresh, color: "#2563eb", desc: "首次读入上下文的代码、文档与测试输出" },
+      { label: "输出", val: totalOut, color: "#16a34a", desc: "模型思考链与产出的代码、审查和汇报" },
+      { label: typeof totalTurns === "number" ? `缓存重读 (${totalTurns}轮)` : "缓存重读 (轮数未记录)", val: totalCached, color: "#94a3b8", desc: "每轮工具调用重发的前文历史，命中缓存大幅打折" }
+    ] : [];
+    const palette = ["#2563eb", "#0d9488", "#ea580c", "#7c3aed", "#db2777", "#4f46e5"];
+    const seatSegs = ACTORS.filter((a) => typeof a.fresh === "number" && typeof a.output === "number").map((a, i) => ({
+      label: `${a.role} (${fwInfo(a.fw).label})`,
+      val: a.fresh + a.output,
+      color: palette[i % palette.length],
+      desc: `${a.model} · 思考:${a.effort}｜首次读入 ${fmtTok(a.fresh)} + 输出 ${fmtTok(a.output)}`
+    }));
+    const missingTokSeats = ACTORS.filter((a) => a.fresh === null || a.output === null).map((a) => a.role);
+    const maxReal = Math.max(...ACTORS.map((a) => (a.fresh || 0) + (a.output || 0)), 1);
+
+    return `<div class="two-col">
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">Token 由哪三项组成</div>
+          <div class="chart-sub">比例 = 各分项 / (首次读入 + 输出 + 缓存重读)；中心显示首次读入 + 输出</div>
+        </div>
+        ${tokSegs.some((s) => s.val > 0)
+          ? renderDonutSvg(tokSegs, fmtTok(totalRealTok), "首次读入 + 输出", fmtTok)
+          : `<div class="muted">未记录：${esc(cockpitTotalsReason)}</div>`}
+      </div>
+      <div class="chart-card">
+        <div>
+          <div class="chart-title">首次读入 + 输出按角色占比</div>
+          <div class="chart-sub">比例 = 单角色(首次读入 + 输出) / 完整记录角色的首次读入 + 输出之和</div>
+        </div>
+        ${seatSegs.some((s) => s.val > 0)
+          ? renderDonutSvg(seatSegs, fmtTok(totalRealTok), `${seatSegs.length}/${ACTORS.length} 角色有分项`, fmtTok)
+          : `<div class="muted">未记录：${esc(ACTORS.length ? "角色用量分项缺失" : cockpitSeatsReason)}</div>`}
+        ${missingTokSeats.length ? `<div class="muted" style="font-size:11.5px;margin-top:6px">以下角色用量缺失未计入环图：${esc(missingTokSeats.join("、"))}</div>` : ""}
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">各角色用量</div>
+      <div class="chart-sub">首次读入、输出、缓存重读、工单一次通过数，以及开始改文件前的时间（多次时取中位数）</div>
+      <div class="tw">
+        ${ACTORS.length ? `<table class="clean">
+          <thead>
+            <tr>
+              <th>角色（框架 · 模型 · 思考强度）</th>
+              <th>活跃时长</th>
+              <th>首次读入 + 输出</th>
+              <th>缓存重读</th>
+              <th>工单与完成情况 / 开始改文件前</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ACTORS.map((a) => {
+              const fw = fwInfo(a.fw);
+              const fPct = a.fresh ? (a.fresh / maxReal) * 100 : 0;
+              const oPct = a.output ? Math.max(2.5, (a.output / maxReal) * 100) : 0;
+              const dim = state.filterActor && state.filterActor !== a.id ? 'style="opacity:.25"' : "";
+              return `<tr ${dim}>
+                <td>
+                  <div style="font-weight:700"><span class="actor-dot" style="background:${fw.solid};margin-right:5px"></span>${esc(a.role)} <span class="effort-pill">思考:${esc(a.effort)}</span></div>
+                  <div class="model-line">${esc(`${fw.label} · ${a.model} · ${a.runsText}`)}</div>
+                </td>
+                <td class="num"><b>${esc(fmtMin(a.minutes))}</b><div class="muted">${esc(a.runsText)}</div></td>
+                <td>
+                  <div class="mini-bar">
+                    <div style="width:${fPct.toFixed(1)}%;background:${fw.solid}"></div>
+                    <div style="width:${oPct.toFixed(1)}%;background:var(--out)"></div>
+                  </div>
+                  <div class="num" style="margin-top:3px">首次读入 <b>${esc(fmtTok(a.fresh))}</b> · 输出 <b style="color:var(--good)">${esc(fmtTok(a.output))}</b></div>
+                  ${a.note ? `<div style="color:var(--warning);font-size:11px">注意：${esc(a.note)}</div>` : ""}
+                </td>
+                <td class="num"><b>${esc(fmtTok(a.cached))}</b><div class="muted">${esc(a.turns !== null ? `${a.turns} 轮工具调用` : "轮数未记录")}</div></td>
+                <td><b>${esc(a.pass)}</b><div class="muted">${esc(a.readDoc)}</div></td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>` : `<div class="muted">未记录：${esc(cockpitSeatsReason)}</div>`}
+      </div>
+    </div>`;
+  };
+
+  const renderWaterfallLens = () => {
+    const dispatchRaw = S && S.dispatches ? val(S.dispatches) : null;
+    if (!Array.isArray(dispatchRaw)) {
+      return `<div class="muted" style="padding:12px;border-radius:9px;background:var(--wash)">未记录：${esc(findMissingReason("dispatches", cockpitMissingReason))}</div>`;
+    }
+    if (!dispatches.length) {
+      return `<div class="muted" style="padding:12px;border-radius:9px;background:var(--wash)">本场为纯主会话执行模式（0 次外部 CLI 派发）。</div>`;
+    }
+    const notesMap = R.dispatchNotes || {};
+    const maxMin = Math.max(1, ...dispatches.map((d) => Number(val(d.minutes)) || 0));
+    const rowsHtml = dispatches.map((d) => {
+      const fw = fwInfo(d.framework || d.agent || "codex");
+      const m = val(d.minutes);
+      const u = normUsage(d.usage);
+      const exit = val(d.exitCode);
+      const ok = exit === 0 || exit === null;
+      const actorId = findActorForDispatch(d);
+      const dim = state.filterActor && actorId && state.filterActor !== actorId ? "dimmed" : "";
+      const leftPct = AXIS && val(d.start) ? Math.max(0, Math.min(92, ((Date.parse(val(d.start)) - AXIS.segs[0][0]) / Math.max(1, AXIS.segs[AXIS.segs.length - 1][1] - AXIS.segs[0][0])) * 100)) : 0;
+      const wPct = typeof m === "number" ? Math.max(4, Math.min(100 - leftPct, (m / maxMin) * 78)) : 12;
+      const ov = overheadMap.get(d.record);
+      const editM = ov ? val(ov.minutes) : null;
+      const autoStory = notesMap[d.record] || `${ok ? "✓" : "✕"} ${val(d.category) || "派发"}${d.ticket ? ` · 工单 #${d.ticket}` : ""}${typeof editM === "number" ? ` · 开始改文件前 ${fmtMin(editM)}` : ""}${exit !== null && exit !== 0 ? `（退出码 ${exit}）` : ""}`;
+      return `<div class="wf-row ${dim}">
+        <div>
+          <div style="font-weight:700">${esc(d.record || "未命名记录")}</div>
+          <div class="model-line">${esc(`${fw.label} · ${d.actualModel || d.model || "默认"} (${d.actualEffort || d.effort || "默认"})`)}</div>
+        </div>
+        <div>
+          <div class="wf-axis-track"><div class="wf-bar ${ok ? "" : "aborted"}" style="left:${leftPct.toFixed(1)}%;width:${wPct.toFixed(1)}%;background:${fw.solid}"></div></div>
+          <div class="muted" style="font-size:11px;margin-top:2px">${esc(`${fmtTime(val(d.start))} · ${val(d.category) || why(d.category)}`)}</div>
+        </div>
+        <div style="color:var(--ink2)">${esc(autoStory)}</div>
+        <div class="num" style="text-align:right">
+          <b>${esc(typeof m === "number" ? fmtMin(m) : why(d.minutes))}</b>
+          <div class="muted">${esc(u ? `首次读入 ${fmtTok(u.fresh)} · 输出 ${fmtTok(u.output)}` : why(d.usage))}</div>
+        </div>
+      </div>`;
+    }).join("");
+
+    return `<div class="wf-list">${rowsHtml}</div>`;
+  };
+
+  const renderFootDetails = (openAll) => {
+    const findings = R.findings || [];
+    const notes = [
+      ...(R.notes || []).map((n) => [n.item, n.note]),
+      ...((S && S.missing) || []).map((m) => [`评分表缺项：${m.field}`, m.reason]),
+      ...((S && S.subagentAnomalies) || []).map((a, i) => [`子代理异常 #${i + 1}`, typeof a === "string" ? a : JSON.stringify(a)])
+    ];
+    const verRuns = (ver && ver.runs) || [];
+    return `<details class="fold-box" ${openAll ? "open" : ""}>
+      <summary>流程发现与口径（验证明细、口径与缺项说明）</summary>
+      <div style="margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr);gap:12px">
+        ${findings.length ? `<div style="min-width:0;overflow-wrap:anywhere"><b>流程发现</b><ul style="margin:6px 0 0;padding-left:20px">${findings.map((f) => `<li>${esc(f)}</li>`).join("")}</ul></div>` : ""}
+        ${verRuns.length ? `<div style="min-width:0"><b>验证执行台账（完整 ${ver.fullCount} 次 · 静态 ${ver.staticCount} 次）</b>
+          <div class="tw" style="margin-top:6px"><table class="clean">
+            <thead><tr><th>层级</th><th>对象</th><th>调用方</th><th>开始时间</th><th>耗时</th><th>退出码</th></tr></thead>
+            <tbody>${verRuns.map((r) => `<tr><td>${esc(r.layer === "full" ? "完整验证" : "静态检查")}</td><td>${esc(r.target && r.target.kind === "main" ? "主工作区" : `${r.target ? r.target.kind : ""} #${r.target ? r.target.number : ""}`)}</td><td><code>${esc(r.caller)}</code></td><td>${esc(fmtTime(r.start))}</td><td class="num">${esc(fmtMin(r.minutes))}</td><td class="num">${esc(r.exitCode)}</td></tr>`).join("")}</tbody>
+          </table></div></div>` : ""}
+        ${notes.length ? `<div style="min-width:0"><b>数据口径与缺项说明</b>
+          <div class="tw" style="margin-top:6px"><table class="clean">
+            <thead><tr><th>条目</th><th>说明</th></tr></thead>
+            <tbody>${notes.map(([k, v]) => `<tr><td><code>${esc(k)}</code></td><td>${esc(v)}</td></tr>`).join("")}</tbody>
+          </table></div></div>` : ""}
+      </div>
+    </details>`;
+  };
+
+  const render = () => {
+    const collapsed = state.sidebarCollapsed;
+    const all = state.expandAll;
+    const asks = R.asks || [];
+    const prText = R.pr ? `PR #${R.pr.number} · ${R.pr.state}` : "无关联 PR";
+
+    const app = document.getElementById("app");
+    app.innerHTML = `<div class="shell">
+      ${collapsed ? `<div class="expand-bar">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button type="button" class="icon-btn" id="toggle-side">展开目录 ([)</button>
+          <span class="pr-pill"><i class="pr-dot"></i>${esc(prText)}</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${ACTORS.map((a) => {
+            const fw = fwInfo(a.fw);
+            return `<button type="button" class="icon-btn ${state.filterActor === a.id ? "on" : ""}" data-actor="${esc(a.id)}"><span class="actor-dot" style="background:${fw.solid};margin-right:4px"></span>${esc(a.role)} · ${esc(fw.label)}</button>`;
+          }).join("")}
+        </div>
+      </div>` : ""}
+
+      <div class="cockpit-grid ${collapsed ? "collapsed" : ""}">
+        <aside class="cockpit-side" ${collapsed ? "hidden" : ""}>
+          <div class="side-top">
+            <span class="pr-pill"><i class="pr-dot"></i>${esc(R.pr ? `PR #${R.pr.number}` : `Spec ${R.spec}`)}</span>
+            <button type="button" class="icon-btn" id="toggle-side" title="快捷键 [ 收起或展开目录">收起目录</button>
+          </div>
+          <div>
+            <div style="font-weight:750;font-size:14px;line-height:1.38">${esc(R.title || "")}</div>
+            <div class="muted" style="margin-top:4px">${esc(R.date || "")} · Spec ${esc(R.spec)}</div>
+          </div>
+          <div>
+            <div class="side-nav-label">目录</div>
+            <div class="side-nav">
+              <button type="button" class="nav-btn ${!all && state.topTab === "overview" ? "active" : ""}" data-jump-top="overview"><span>改了什么</span><span class="nav-count">${(R.delivered || []).length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.topTab === "goals" ? "active" : ""}" data-jump-top="goals"><span>目标与证明</span><span class="nav-count">${goals.length + SHOTS.length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.topTab === "risks" ? "active" : ""}" data-jump-top="risks"><span>风险与遗留</span><span class="nav-count">${(R.risks || []).length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.costLens === "charts" ? "active" : ""}" data-jump-lens="charts"><span>时间</span><span class="nav-count">图</span></button>
+              <button type="button" class="nav-btn ${!all && state.costLens === "tokens" ? "active" : ""}" data-jump-lens="tokens"><span>Token</span><span class="nav-count">${ACTORS.length}</span></button>
+              <button type="button" class="nav-btn ${!all && state.costLens === "waterfall" ? "active" : ""}" data-jump-lens="waterfall"><span>逐次派发</span><span class="nav-count">${dispatches.length}</span></button>
+            </div>
+          </div>
+          <div>
+            <div class="side-nav-label" style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+              <span title="点击按角色筛选">角色（框架 · 模型 · 思考强度）</span>
+              ${state.filterActor ? `<button type="button" class="icon-btn" id="clear-actor" style="padding:1px 6px;font-size:11px">重置</button>` : ""}
+            </div>
+            <div class="roster-list">
+              ${ACTORS.map((a) => {
+                const fw = fwInfo(a.fw);
+                return `<button type="button" class="roster-card ${state.filterActor === a.id ? "active" : ""}" data-actor="${esc(a.id)}">
+                  <div class="roster-row1">
+                    <span style="font-weight:700;font-size:12.5px"><span class="actor-dot" style="background:${fw.solid};margin-right:5px"></span>${esc(a.role)}</span>
+                    <span class="effort-pill">${esc(`${fw.label} · ${a.effort}`)}</span>
+                  </div>
+                  <div class="model-line">${esc(a.model)}</div>
+                </button>`;
+              }).join("")}
+            </div>
+          </div>
+        </aside>
+
+        <div>
+          <header class="hero-card" aria-label="页首">
+            <div class="hero-top">
+              <div class="top-meta">
+                <span>${esc(R.date || "")}</span><span>·</span>
+                <span>${esc(R.repo || "")}</span><span>·</span>
+                <span>Spec ${esc(R.spec)}</span>
+                <span class="pr-pill"><i class="pr-dot"></i>${esc(prText)}</span>
+              </div>
+              <div class="hero-actions">
+                <button type="button" class="icon-btn ${all ? "on" : ""}" id="expand-all-btn" data-action="expand-all" aria-pressed="${all ? "true" : "false"}">${all ? "按页签查看" : "全部展开"}</button>
+                <button type="button" class="icon-btn" id="theme-btn">深浅色切换</button>
+              </div>
+            </div>
+            <h1>${esc(R.title || "")}</h1>
+            <p class="lead">${esc(R.result || "")}</p>
+
+            <div class="ask-banner" ${asks.length ? "" : "hidden"}>
+              <div class="ask-head">要你决定的事（共 ${asks.length} 项）</div>
+              <div class="ask-grid">
+                ${asks.map((a, idx) => `<div class="ask-box">
+                  <div><b>${idx + 1}. 【${esc(a.kind || "确认")}】${esc(a.what)}</b></div>
+                  ${a.why ? `<div class="muted" style="margin:3px 0">${esc(a.why)}</div>` : ""}
+                  ${(a.options || []).length ? `<div style="font-size:12px;color:var(--ink2)">选项：${esc(a.options.join(" / "))}</div>` : ""}
+                  ${a.recommend ? `<div style="color:var(--good);font-weight:600;margin-top:2px">推荐：${esc(a.recommend)}</div>` : ""}
+                </div>`).join("")}
+              </div>
+            </div>
+
+            <div class="kpi-grid">
+              ${KPIS.map((k) => `<div class="kpi-card">
+                <div style="min-width:0">
+                  <div class="kpi-val">${esc(k.v)}</div>
+                  <div class="kpi-lbl">${esc(k.k)}</div>
+                  <div class="kpi-sub">${esc(k.n)}</div>
+                </div>
+                ${renderKpiRing(k.pct, k.color)}
+              </div>`).join("")}
+            </div>
+          </header>
+
+          <section class="deck" id="deck-top">
+            <div class="deck-head">
+              <div class="deck-title"><span>交付</span></div>
+              <div class="seg-tabs" role="tablist" aria-label="交付视图切换">
+                <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="${all || state.topTab === "overview" ? "true" : "false"}" class="seg-tab ${!all && state.topTab === "overview" ? "active" : ""}" data-top="overview">
+                  <span>改了什么</span><span class="tab-badge">${(R.delivered || []).length}</span>
+                </button>
+                <button type="button" role="tab" id="tab-goals" aria-controls="panel-goals" aria-selected="${all || state.topTab === "goals" ? "true" : "false"}" class="seg-tab ${!all && state.topTab === "goals" ? "active" : ""}" data-top="goals">
+                  <span>目标与证明</span><span class="tab-badge">${SHOTS.length ? `${SHOTS.length}图` : goals.length}</span>
+                </button>
+                <button type="button" role="tab" id="tab-risks" aria-controls="panel-risks" aria-selected="${all || state.topTab === "risks" ? "true" : "false"}" class="seg-tab ${!all && state.topTab === "risks" ? "active" : ""}" data-top="risks">
+                  <span>风险与遗留</span><span class="tab-badge">${(R.risks || []).length}</span>
+                </button>
+              </div>
+            </div>
+            <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" class="tabpanel" ${all || state.topTab === "overview" ? "" : "hidden"}>${renderDeliveryPanel()}</div>
+            <div role="tabpanel" id="panel-goals" aria-labelledby="tab-goals" class="tabpanel" ${all || state.topTab === "goals" ? "" : "hidden"}>${renderGoalsPanel()}</div>
+            <div role="tabpanel" id="panel-risks" aria-labelledby="tab-risks" class="tabpanel" ${all || state.topTab === "risks" ? "" : "hidden"}>${renderRisksPanel()}</div>
+          </section>
+
+          <section class="deck" id="deck-cost">
+            <div class="deck-head">
+              <div class="deck-title"><span>代价与时间</span><span class="muted">过程数据全部来自评分表</span></div>
+              <div class="seg-tabs" role="tablist" aria-label="代价与时间视图切换">
+                <button type="button" role="tab" id="tab-charts" aria-controls="panel-charts" aria-selected="${all || state.costLens === "charts" ? "true" : "false"}" class="seg-tab ${!all && state.costLens === "charts" ? "active" : ""}" data-lens="charts">
+                  <span>时间</span>
+                </button>
+                <button type="button" role="tab" id="tab-tokens" aria-controls="panel-tokens" aria-selected="${all || state.costLens === "tokens" ? "true" : "false"}" class="seg-tab ${!all && state.costLens === "tokens" ? "active" : ""}" data-lens="tokens">
+                  <span>Token</span><span class="tab-badge">${ACTORS.length}</span>
+                </button>
+                <button type="button" role="tab" id="tab-waterfall" aria-controls="panel-waterfall" aria-selected="${all || state.costLens === "waterfall" ? "true" : "false"}" class="seg-tab ${!all && state.costLens === "waterfall" ? "active" : ""}" data-lens="waterfall">
+                  <span>逐次派发</span><span class="tab-badge">${dispatches.length}</span>
+                </button>
+              </div>
+            </div>
+
+            ${TAKEAWAYS.length ? `<div class="takeaway-strip">
+              ${TAKEAWAYS.map((t) => `<div class="takeaway-card"><b>${esc(t.title)}</b>${esc(t.body)}</div>`).join("")}
+            </div>` : ""}
+
+            ${renderTimelineBox()}
+
+            <div role="tabpanel" id="panel-charts" aria-labelledby="tab-charts" class="tabpanel" ${all || state.costLens === "charts" ? "" : "hidden"}>${renderChartsLens()}</div>
+            <div role="tabpanel" id="panel-tokens" aria-labelledby="tab-tokens" class="tabpanel" ${all || state.costLens === "tokens" ? "" : "hidden"}>${renderTokensLens()}</div>
+            <div role="tabpanel" id="panel-waterfall" aria-labelledby="tab-waterfall" class="tabpanel" ${all || state.costLens === "waterfall" ? "" : "hidden"}>${renderWaterfallLens()}</div>
+          </section>
+
+          ${renderFootDetails(all)}
+
+          <footer>过程数据来自评分表（<code>tickets.ts scorecard ${esc(R.spec)}</code>），截点 ${esc(fmtTime(S && S.cutoffAt))}，采集 ${esc(fmtTime(S && S.collectedAt))}。目标、证据、要你决定的事与风险由设计负责人核定填写。</footer>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const tipEl = document.getElementById("floating-tip");
+  document.addEventListener("mouseover", (ev) => {
+    const holder = ev.target && ev.target.closest ? ev.target.closest("[data-tip]") : null;
+    if (!holder) { tipEl.hidden = true; return; }
+    tipEl.textContent = holder.getAttribute("data-tip") || "";
+    tipEl.hidden = false;
+    if (holder.classList.contains("donut-slice")) {
+      const svg = holder.closest("svg");
+      const v = svg && svg.querySelector(".donut-center-v");
+      const k = svg && svg.querySelector(".donut-center-k");
+      if (v && holder.dataset.centerVal) v.textContent = holder.dataset.centerVal;
+      if (k && holder.dataset.centerLbl) k.textContent = holder.dataset.centerLbl;
+    }
+  });
+  document.addEventListener("mousemove", (ev) => {
+    if (tipEl.hidden) return;
+    const x = Math.min(window.innerWidth - 320, ev.clientX + 14);
+    const y = Math.min(window.innerHeight - 96, ev.clientY + 14);
+    tipEl.style.left = `${Math.max(8, x)}px`;
+    tipEl.style.top = `${Math.max(8, y)}px`;
+  });
+  document.addEventListener("mouseout", (ev) => {
+    const holder = ev.target && ev.target.closest ? ev.target.closest("[data-tip]") : null;
+    if (holder && (!ev.relatedTarget || !holder.contains(ev.relatedTarget))) tipEl.hidden = true;
+  });
+
+  document.addEventListener("click", (ev) => {
+    const raw = ev.target;
+    if (!raw || !raw.closest) return;
+    if (raw.id === "clear-actor") {
+      state.filterActor = null;
+      render();
+      return;
+    }
+    const target = raw.closest("button, [data-shot], .bar-chart-row");
+    if (!target) return;
+    if (target.id === "toggle-side") {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      render();
+      return;
+    }
+    if (target.getAttribute("data-action") === "expand-all") {
+      state.expandAll = !state.expandAll;
+      render();
+      return;
+    }
+    if (target.id === "theme-btn") {
+      const darkNow = document.documentElement.getAttribute("data-theme") === "dark" ||
+        (!document.documentElement.hasAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-theme", darkNow ? "light" : "dark");
+      return;
+    }
+    if (target.hasAttribute("data-top")) {
+      state.expandAll = false;
+      state.topTab = target.getAttribute("data-top") || "overview";
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-lens")) {
+      state.expandAll = false;
+      state.costLens = target.getAttribute("data-lens") || "charts";
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-jump-top")) {
+      state.expandAll = false;
+      state.topTab = target.getAttribute("data-jump-top") || "overview";
+      render();
+      const deck = document.getElementById("deck-top");
+      if (deck) deck.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    if (target.hasAttribute("data-jump-lens")) {
+      state.expandAll = false;
+      state.costLens = target.getAttribute("data-jump-lens") || "charts";
+      render();
+      const deck = document.getElementById("deck-cost");
+      if (deck) deck.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    if (target.hasAttribute("data-actor")) {
+      const id = target.getAttribute("data-actor") || null;
+      state.filterActor = state.filterActor === id ? null : id;
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-shot")) {
+      const shot = SHOTS[Number(target.getAttribute("data-shot"))];
+      if (!shot) return;
+      const lb = document.getElementById("lightbox");
+      document.getElementById("lightbox-body").innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap">
+          <div><b>${esc(shot.title)}</b> <span class="muted">· ${esc(shot.url || "")}</span></div>
+          <button type="button" class="icon-btn" id="close-lightbox">关闭 (Esc)</button>
+        </div>
+        ${shot.focus ? `<div class="muted" style="margin-bottom:10px;color:var(--ink2)">${esc(shot.focus)}</div>` : ""}
+        ${shot.image ? `<img src="${esc(shot.image)}" alt="${esc(shot.imageAlt || shot.title)}">` : (shot.svg || "")}
+      `;
+      lb.hidden = false;
+    }
+  });
+
+  document.getElementById("lightbox").addEventListener("click", (ev) => {
+    if (ev.target.id === "lightbox" || ev.target.id === "close-lightbox") {
+      document.getElementById("lightbox").hidden = true;
+    }
+  });
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") { document.getElementById("lightbox").hidden = true; return; }
+    if (ev.target && ev.target.matches && ev.target.matches("input, textarea, [contenteditable]")) return;
+    if (ev.key === "[") { state.sidebarCollapsed = !state.sidebarCollapsed; render(); }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

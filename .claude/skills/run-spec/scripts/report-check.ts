@@ -7,7 +7,7 @@
  * 视口、配色、页签或折叠变化后，等待至少 250 毫秒及连续三帧尺寸稳定，再测量并截图；
  * 浅色、深色、手机按 800 像素高度分段编号。
  * 不输出整页长图；启动后立即打印浏览器 PID 和临时用户目录的绝对路径，便于中断后精确清理。
- * 结束时关闭自建浏览器并删除临时用户目录，保留截图。
+ * 结束时关闭自建浏览器，等进程退出及子进程管道关闭后删除临时用户目录，保留截图。
  * 四项通过退出 0，检查失败退出 1，参数、环境或 CDP 运行错误退出 2；无需仓库配置。
  */
 import { spawn, type ChildProcess } from "node:child_process";
@@ -218,14 +218,13 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
     writeFileSync(blank, '<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>');
     browser = spawn(program, [
       "--headless", "--no-sandbox", "--disable-dev-shm-usage", "--no-first-run",
-      "--no-default-browser-check", "--disable-background-networking",
+      "--no-default-browser-check", "--disable-background-networking", "--disable-component-update",
       "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
       `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"] });
     if (browser.pid) console.log(`浏览器现场：PID=${browser.pid}，用户目录=${profile}`);
     exited = new Promise((resolveExit) => {
-      browser!.once("exit", () => resolveExit());
-      browser!.once("error", () => resolveExit());
+      browser!.once("close", () => resolveExit());
     });
     const endpoint = await launch(browser);
     let session = "";
@@ -465,14 +464,14 @@ const reportCheck = async (values: Values, _numbers: number[], args: string[]): 
       client.close();
     }
     if (browser && browser.exitCode === null && browser.signalCode === null) {
-      browser.kill("SIGTERM");
+      if (!client) browser.kill("SIGTERM");
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([exited, new Promise<void>((resolveExit) => {
         timer = setTimeout(() => { browser?.kill("SIGKILL"); resolveExit(); }, 3000);
       })]);
       clearTimeout(timer);
-      await exited;
     }
+    await exited;
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", interrupt);
     rmSync(profile, { recursive: true, force: true });
@@ -502,7 +501,7 @@ Windows %LOCALAPPDATA%/ms-playwright；先查 chromium_headless_shell-*，再查
 短页面保留一张视口截图；不输出整页长图。逐张输出绝对路径，并列出每组张数和目录，截图要亲自看。
 --out 默认 out/report-check/<文件名（不含扩展名）>/；输出绝对路径。
 启动浏览器后立即输出一行“浏览器现场：PID=<进程号>，用户目录=<绝对路径>”，中断后按此精确清理。
-结束时只关闭自建浏览器、删除临时用户目录，保留截图。
+结束时只关闭自建浏览器，等进程退出及子进程管道关闭后删除临时用户目录，保留截图。
 --dry-run 只显示文件、浏览器和截图目录；--help 以 0 退出。
 四项全通过退出 0；有失败退出 1；文件不存在、找不到 Chromium、运行出错退出 2。`,
 };

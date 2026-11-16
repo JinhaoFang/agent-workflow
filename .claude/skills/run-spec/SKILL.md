@@ -25,7 +25,6 @@ description: 执行 GitHub 上的 spec 和工单：选出可做的工单，role:
 | `scorecard` | 采集本 spec 的评分表；`--post` 发到 spec |
 | `cleanup` | 清理本 spec 的本机记录、worktree 和分支；spec 上没有最新的评分表时先拦下 |
 | `doctor` | 自检前提和配置，报告各配置的实际值和来源 |
-| `watch` | 按需：长作业的巡检 |
 
 名字由脚本决定：集成分支 `spec/<S>-<英文短名>`，工单分支 `ticket/<T>`，worktree 在主工作区旁边的 `<仓库目录>.worktrees/<T>`，保留目录 `<仓库目录>.worktrees/.kept/<T>/`，派发记录 `gh-<T>`，验收产物在配置的验收产物目录下的 `spec-<S>/<T>/`，日志、台账和审查输出在主工作区的 `.codex-runs/`。
 
@@ -105,9 +104,9 @@ node .claude/skills/run-spec/scripts/tickets.ts run "用 code-review 技能审�
 1. **目标核对**（思路 1）：把 spec 问题陈述里的现状按同一口径重测，量大就用 `run --seat research` 只读去做。没达到的开返工工单，或者写进 PR 正文和汇报；问题陈述没有可度量现状的，写明用什么判断目标达成。
 2. 按第 6 步以 `main` 为固定点审一次整个分支，要修的返工做完。
 3. `gh pr create --base main` 开 PR，正文按 `pr` 技能的格式写，包含 `Closes #S` 和接受不修的审查意见。用 `tickets.ts pr-check <PR号>` 等检查跑完：这是 spec 收尾的那次全套验证（思路 5）。失败就查原因，本 spec 引入的按返工处理，既有的写进 PR 正文和汇报。
-4. 运行 `tickets.ts scorecard <S> --session <会话记录>… --post --out <文件>`，把评分表发到 spec。`run --spec` 派的辅助工作自动计入，其余辅助派发加 `--record <记录名>`。会话记录给本 spec 用过的全部主会话，包括写 spec 的会话，四种框架的都认。
+4. 运行 `tickets.ts scorecard <S> --session <会话记录>… --post --out <文件>`，把评分表发到 spec。`run --spec` 派的辅助工作自动计入，其余辅助派发加 `--record <记录名>`。会话记录给本 spec 用过的全部主会话，包括写 spec 的会话。
 5. 按 [report.md](report.md) 写 HTML 汇报（思路 4），过程数据只用评分表，存进配置说明里写的汇报目录。仓库有路线图这类新会话入口时，按思路 3 只更新它的「已定」和「待定」，和汇报同一个提交。推送到同一分支，把文件路径告诉用户。
-6. 运行 `tickets.ts cleanup <S>`。评分表之后又有本 spec 的验证或派发时它会拦下，重跑第 4 步的命令更新评论即可。清单按思路 4 先按类别汇总再给用户看；保留目录里还要用的先拷回主工作区；不干净的 worktree 会被跳过，看过里面的改动再处理，然后重跑。
+6. 运行 `tickets.ts cleanup <S>`。清单按思路 4 先按类别汇总再给用户看；保留目录里还要用的先拷回主工作区；不干净的 worktree 会被跳过，看过里面的改动再处理，然后重跑。
 
 完成标准：用户拿到了 PR 链接、CI 结果和汇报，spec 上有最新的评分表。
 
