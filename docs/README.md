@@ -12,6 +12,7 @@
 | `research/run-spec-migration.md` | 观察记录：流程每个版本在各仓库遇到的问题、分析和评估，改方法层从这里起步 |
 | `research/pathjx-rule-review/` | 规则归类的判定标准第二版（`criteria.md`）和 PathJX 规则复核明细 |
 | `research/pathjx-rule-layers.md` | 已被判定标准第二版取代的三层归类表，只作记录 |
+| `research/pstack-notes.md` | pstack 对照记录：借了什么、怎么借、哪些不用；原文在本机 `~/.claude/plugins/marketplaces/pstack-claude/plugins/pstack/` |
 | `research/rehearsal-findings.md`、`research/dispatchdock-notes.md` | 第一次彩排的发现、DispatchDock 的实测记录 |
 | `workflow/bootstrap.md` | 开局：在新仓库或已有仓库里搭起这套工作方式的步骤（写于 video-studio，路径按那边的写） |
 | `reports/` | 每个 spec 和版本的汇报，以及建仓复盘（`bootstrap-retro.*`）和 v3.1 效果评估 |
