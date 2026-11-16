@@ -2,7 +2,7 @@
  * scorecard <spec> 从只读本机记录生成过程数据 JSON；--session 可重复传四框架会话，
  * JSONL，--out 写文件，--post 用稳定标记创建或更新折叠评论。cleanup 共用归属
  * 和截点检查；只有显式 --no-scorecard 才绕过。所有缺数以 value:null 和中文
- * reason 表示，missing 汇总字段路径。保留 version:2 既有字段不变，主会话明细
+ * reason 表示，missing 汇总字段路径。version:3 移除子代理用量和通知汇总；主会话明细
  * 补充活跃时段 spans，并在顶层 cockpit 预计算全局与各角色（框架 · 模型 · 思考强度，cockpit.seats
  * 含合并有序区间 spans）的三项 Token、工具轮数、耗时、工作时间（重叠只算一次）activeMinutes、
  * 日历跨度 wallSpanMinutes 与全局/角色工单一次通过及返工统计 tickets。
@@ -181,15 +181,15 @@ const dispatchTurns = (
   }
   return null;
 };
-const marker = "<!-- run-spec-scorecard:v2 -->";
-const marked = (body: unknown): body is string => typeof body === "string" && /^<!-- run-spec-scorecard:v[12] -->/.test(body);
+const marker = "<!-- run-spec-scorecard:v3 -->";
+const marked = (body: unknown): body is string => typeof body === "string" && /^<!-- run-spec-scorecard:v[123] -->/.test(body);
 const comments = (endpoint: string): Json[] => JSON.parse(gh(["api", "--method", "GET", `${endpoint}/comments`, "--paginate", "--slurp"])).flat();
 const postedCards = (endpoint: string, spec: number): Json[] => comments(endpoint).flatMap((comment) => {
   if (!marked(comment.body)) return [];
   const json = comment.body.match(/```json\n([\s\S]*?)\n```/);
   try {
     const card = JSON.parse(json?.[1] ?? "");
-    return [1, 2].includes(card.version) && card.spec === spec && (card.cutoffAt === null || timestamp(card.cutoffAt)) ? [{ ...comment, card }] : [];
+    return [1, 2, 3].includes(card.version) && card.spec === spec && (card.cutoffAt === null || timestamp(card.cutoffAt)) ? [{ ...comment, card }] : [];
   } catch { return []; }
 });
 
@@ -509,8 +509,6 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     record: JSON.parse(read(join(root, ".codex-runs", name))) as Json,
   })) : [];
   const reviews = reviewRecords.map(({ record }) => record.spec === spec ? claudeTokens(record.usage) : null);
-  const childUsages = children.map((session) => sessionTokens(session, window));
-  const childKnown = children.length > 0 && childUsages.every((usage) => usage !== null);
   const mainMissing = main.reason;
   const cutoffAt = options.cutoffAt ?? [sources.cutoffAt, main.cutoffAt].filter((at): at is string => typeof at === "string").sort().at(-1) ?? null;
   const auxiliaryGroups = new Map<string, typeof dispatches>();
@@ -749,7 +747,7 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
     tickets: globalTickets,
     seats: cockpitSeats,
   };
-  return { version: 2, spec, startedAt: window.startedAt ?? main.startedAt, mainFrameworks: main.frameworks, mainSessions: main.sessions,
+  return { version: 3, spec, startedAt: window.startedAt ?? main.startedAt, mainFrameworks: main.frameworks, mainSessions: main.sessions,
     subagents: [...main.children, ...childDetails], subagentAnomalies: main.childFailures, batches,
     dispatchLanes: metric("dispatchLanes", dispatchLanes.length || zeroDispatch ? dispatchLanes : null, "未记录：缺少派发记录"), ...(sources.recordBindings.length ? { recordBindings: sources.recordBindings } : {}), cutoffAt, collectedAt: new Date().toISOString(), verification, merges,
     dispatches: metric("dispatches", dispatches.length || zeroDispatch ? dispatches.map(({ overhead: _overhead, turns: _turns, ...item }) => item) : null, "未记录：缺少本 spec 派发记录"),
@@ -772,8 +770,6 @@ const collect = (root: string, spec: SpecId, tickets: Set<number>, sessions: str
       dispatches: metric("usage.dispatches", groupedUsage.length || zeroDispatch ? groupedUsage : null, "未记录：缺少派发用量分组"),
       mainSession: metric("usage.mainSession", main.mainUsage, main.usageReason),
       independentReview: metric("usage.independentReview", reviews.length && reviews.every((value) => value !== null) ? sumTokens(reviews as Tokens[]) : null, "未记录独立审查或 JSON 用量不完整"),
-      subagents: metric("usage.subagents", (children.length && !childKnown) || (main?.hasChildren && !main.childUsage) ? null : childKnown && main?.childUsage ? sumTokens([...(childUsages as Tokens[]), main.childUsage]) : childKnown ? sumTokens(childUsages as Tokens[]) : main?.childUsage ?? null, "未记录可关联的子代理完整用量"),
-      subagentNotifications: metric("usage.subagentNotifications", main?.notifiedTokens ?? null, "未提供 Claude 会话或任务通知没有 subagent_tokens"),
     },
     cockpit,
     missing };
@@ -845,7 +841,7 @@ export const scorecardCommand: Command = {
 --record 可重复，只接受不含路径、扩展名或通配符的精确派发名；正常调用持久登记到主工作区
 .codex-runs/scorecard-records.json，重复登记幂等，跨 spec 或规范归属冲突拒绝；重跑和 cleanup 自动读取。
 --dry-run 仅预览关联，不持久登记；缺失记录保留占位和 missing，不搜索任意外部目录。
-JSON version=2，评论标记 run-spec-scorecard:v2（cleanup 同时接受 v1/v2）；recordBindings 可选，列出本次覆盖的显式关联精确名；计算指标为 {value,reason}，缺数 value=null、中文 reason；missing 列字段路径，未记录的派发模型/强度等元数据为 null。
+JSON version=3，评论标记 run-spec-scorecard:v3（cleanup 同时接受 v1/v2/v3）；recordBindings 可选，列出本次覆盖的显式关联精确名；计算指标为 {value,reason}，缺数 value=null、中文 reason；missing 列字段路径，未记录的派发模型/强度等元数据为 null。
 startedAt/cutoffAt 是采集窗边界；cutoffAt 优先显式封账时间，再取本地源记录截点，无本地截点时取会话末尾（无记录为 null）；collectedAt 是采集时间。
 输入：主工作区 .codex-runs/verification.jsonl；主工作区及直接子工单 worktree 的派发文件，
 内置派发层及旧 DispatchDock runs.jsonl（CODEX_DISPATCH_HOME 或默认配置目录），CODEX_HOME/sessions（默认 ~/.codex/sessions）。
@@ -894,11 +890,9 @@ usage.dispatches 按 seat/framework 分组，逐组给 {seat,framework,usage:{va
 辅助派发去末尾数字序号后同前缀超过 10 条时，batches 给条数、起止、成功率、总分钟、总 Token、异常、首尾代表项；dispatches 保留全部明细。
 主会话：Claude 按 message.id 去重累加 usage；Codex 取窗内最后累计 token_count 或 thread_token_usage 并扣窗前基线；pi 按 message.id 去重累加 assistant usage；agy 累加每步 input_tokens + cache_read_tokens（总输入）、cache_read_tokens（缓存重读）及 output_tokens（输出）。
 独立审查取 review-spec-<号>-<序号>.json；子代理取关联 Codex 后代、给定 Claude sidechain 及 agy invoke_subagent 原生子会话的窗内完整 usage。
-subagentNotifications 读取给定会话任务通知的 subagent_tokens 总数，按 task-id/uuid 去重；
-这是只有总 token 的另一种来源，可能与子代理会话重叠，不与 subagents 相加，不能拆分的输入/输出不估算。
 inputTokens 包含缓存输入；Claude 包含 cache_read 和 cache_creation，pi 包含 cacheRead 和 cacheWrite；cachedInputTokens 只计缓存重读，outputTokens 为输出。
-主会话或子代理任一关联用量不完整时对应汇总为 null；派发组累计有效记录并列异常，不完整的审查/子代理不推成 0。
-cockpit：保持 version:2 既有字段不变，顶层新增 {totals,activeMinutes,wallSpanMinutes,tickets,seats} 供汇报页面消费；三项 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
+主会话任一关联用量不完整时汇总为 null；派发组累计有效记录并列异常，不完整的审查/子代理不推成 0。
+cockpit：顶层 {totals,activeMinutes,wallSpanMinutes,tickets,seats} 供汇报页面消费；三项 Token 由有效用量派生：freshInput=inputTokens-cachedInputTokens、output=outputTokens、cachedReplay=cachedInputTokens、input=inputTokens（满足 freshInput+cachedReplay===input），附带工具调用轮数 turns（可识别为非负整数，零调用为 0，仅旧汇总无事件明细保留 null；单次派发优先统计 .events.jsonl 的 tool/cmd 去重计数，仅含 turn 事件退化计 turn，缺失时回退原始日志或关联会话）。
 cockpit.totals 汇总全局有效来源（主会话、派发、独立审查与子代理）的三项 Token 与 turns，支持部分缺数容错并附 complete 与 anomalies；cockpit.activeMinutes 为全部角色已记录 spans 与验证时段 spans 并集（lane）的工作时间（重叠只算一次）总分钟数（排除 waitingUser、longPause 与排队；仅存在空/他分支验证台账而不含有效时段或主会话/零派发依据时仍为 null，缺部分时段或台账时保留已知部分并置 complete=false；派发前独立审查 review-spec-* 仅有总时长、缺少起止时段时无法并入，置 complete=false 并写入 anomalies 与为空时的 reason）；cockpit.wallSpanMinutes 为角色、验证、排队、等你确认及超过 45 分钟的停顿完整时段的最大结束减最小开始分钟数（仅单事件无间隔主会话为 0，缺完整起止为 null）；cockpit.tickets 汇总去重工程工单数 total、一次通过数 firstPass（严格要求该工单首条派发退出 0、起止完整、category="首次" 且之后没有返工或重派）、返工工单数 rework（含 category="返工" 派发的工单数）、仅重派工单数 redispatch（派发超过 1 次且不含返工）、含中断/歧义派发工单数 interrupted（包含缺退出码/结束时间与 category=null 的歧义派发）、工单派发总次数 dispatches 与返工派发次数 reworkDispatches（未知分类跟进派发不猜返工，计入 interrupted、置 complete=false 并记入 anomalies）；零派发但有有效主会话时各项计 0，缺全部派发来源时为 null。
 cockpit.seats 按角色（role/seat · agent/framework · actualModel??model · actualEffort??effort）聚合，逐项给角色字段、runs、spans（合并后的有序无重叠区间数组 [{start,end}]，无区间记录为 []）、activeMinutes（工作时间并集或累计有效活跃分钟）、medianFirstEditMinutes（可写角色开始改文件前耗时中位数，只读角色或无数据为 null）、tickets（{value,reason,complete,anomalies}：该角色关联工单的上述分项，按与全局一致的口径统计 interrupted/firstPass/complete/anomalies，其中 firstPass 只计全局一次通过且唯一派发落在此角色的工单，未知分类同时计入该角色 anomalies 与 complete；无工单派发的角色为 null 并写明原因，complete=true、anomalies=[]）、usage、complete 与 anomalies。
 cleanup 要求已发布评分表覆盖当前全部显式关联集合，不能只比较时间戳；不扩大原有删除范围。

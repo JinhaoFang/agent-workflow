@@ -97,7 +97,7 @@ const fixture = () => {
     user(45, [{ type: "tool_result", tool_use_id: "question", content: "批准" }]), user(46, "好了"),
     user(47, "后台通知", { origin: { kind: "task-notification" } }),
     assistant(50, 4),
-    user(51, "<task-notification><task-id>notification-child</task-id>subagent_tokens: 99</task-notification>", { isMeta: true }),
+    user(51, "<task-notification>后台通知</task-notification>", { isMeta: true }),
     assistant(2, 0, { isSidechain: true, message: { id: "child", content: [], usage: { input_tokens: 1, cache_read_input_tokens: 2, cache_creation_input_tokens: 3, output_tokens: 4 } } }),
   ];
   lines(claude, claudeRows);
@@ -259,7 +259,7 @@ const expected = (collectedAt: string, claude: string) => {
     complete: true, anomalies: [],
   });
   const reason = "只读席位不统计首次编辑";
-  return { version: 2, spec: 2, startedAt: at(0), mainFrameworks: ["claude"], mainSessions: [{ session: "claude:main", path: claude, ...identity("design", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(150, 20, 10), child: false, startedAt: at(0), cutoffAt: at(51), spans: [{ start: at(0), end: at(21) }, { start: at(45), end: at(50) }] }],
+  return { version: 3, spec: 2, startedAt: at(0), mainFrameworks: ["claude"], mainSessions: [{ session: "claude:main", path: claude, ...identity("design", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(150, 20, 10), child: false, startedAt: at(0), cutoffAt: at(51), spans: [{ start: at(0), end: at(21) }, { start: at(45), end: at(50) }] }],
     subagents: [{ session: "claude:main:sidechain:claude:main", path: claude, child: true, ...identity("subagent", "claude"), sources: { actualModel: null, actualEffort: null }, usage: tokens(6, 2, 4) }, { session: "codex:child", ...identity("subagent"), usage: tokens(20, 10, 2) }], subagentAnomalies: [], batches: [],
     dispatchLanes: value([{ framework: "codex", anomalies: [], time: value(spans([0, 20])) }]), cutoffAt: at(51), collectedAt, verification: value({ runs: [
     { layer: "full", target: { kind: "ticket", number: 5 }, caller: "land", branch: "ticket/5", start: at(3), end: at(8), queuedMinutes: 2, minutes: 5, exitCode: 1 },
@@ -269,7 +269,7 @@ const expected = (collectedAt: string, claude: string) => {
     time: { dispatchSlots: value(spans([0, 20])), verification: value(spans([3, 8], [9, 10])), queue: value(spans([1, 3])), designLead: value(spans([0, 21], [45, 50])), waitingUser: value(spans([21, 45])), longPause: value({ count: 0, ...spans(), intervals: [] }) },
     overhead: value([{ record: "gh-5", firstEditAt: value(at(4)), minutes: value(4), inputTokens: value(100) }, { record: "review-2-batch", firstEditAt: value(null, reason), minutes: value(null, reason), inputTokens: value(null, reason) }]),
     userInterventions: value(4), failures: { dispatchWithoutReport: value(0), landStops: value(1), verificationLaunch: value(0) },
-    usage: { dispatches: value([{ seat: "engineering", framework: "codex", identities: [identity("engineering")], anomalies: [], complete: true, usage: value(tokens(1000, 800, 50)) }, { seat: "review", framework: "codex", identities: [identity("review")], anomalies: [], complete: true, usage: value(tokens(200, 100, 20)) }]), mainSession: value(tokens(150, 20, 10)), independentReview: value(tokens(10, 2, 4)), subagents: value(tokens(26, 12, 6)), subagentNotifications: value(99) },
+    usage: { dispatches: value([{ seat: "engineering", framework: "codex", identities: [identity("engineering")], anomalies: [], complete: true, usage: value(tokens(1000, 800, 50)) }, { seat: "review", framework: "codex", identities: [identity("review")], anomalies: [], complete: true, usage: value(tokens(200, 100, 20)) }]), mainSession: value(tokens(150, 20, 10)), independentReview: value(tokens(10, 2, 4)) },
     cockpit: {
       totals: { value: { freshInput: 452, output: 90, cachedReplay: 934, input: 1386, turns: null }, reason: null, complete: true, anomalies: [] },
       activeMinutes: { value: 26, reason: null, complete: true, anomalies: [] },
@@ -533,7 +533,7 @@ test("wrapped patch、长元数据、未知类别和启动故障按实际记录�
   } finally { f.cleanup(); }
 });
 
-test("更新损坏的原评分表评论，不再新建；缺子代理用量不报成部分总量", () => {
+test("更新损坏的原评分表评论，不再新建", () => {
   const f = fixture();
   try {
     f.write(f.comments, JSON.stringify([{ id: 101, body: "<!-- run-spec-scorecard:v1 -->\n损坏的旧评论" }]));
@@ -541,12 +541,6 @@ test("更新损坏的原评分表评论，不再新建；缺子代理用量不�
     const comments = JSON.parse(readFileSync(f.comments, "utf8"));
     assert.equal(comments.length, 1);
     assert.equal(comments[0].id, 101);
-    const path = f.sessionFile("child");
-    const rows = readFileSync(path, "utf8").trim().split("\n").map((line) => JSON.parse(line));
-    f.lines(path, rows.filter((row) => row.payload?.type !== "token_count"));
-    const card = JSON.parse(f.run(["scorecard", "2", "--session", f.claude]).stdout);
-    assert.equal(card.usage.subagents.value, null);
-    assert.equal(card.usage.subagentNotifications.value, 99);
   } finally { f.cleanup(); }
 });
 
@@ -956,22 +950,27 @@ test("多框架派发按席位和框架分组，保留配置与实际模型并�
   } finally { f.cleanup(); }
 });
 
-test("cleanup 接受新旧两版评分表，post 原位升级旧评论且重复新旧评论拦截", () => {
+test("cleanup 接受三版评分表，post 原位升级旧评论且重复新旧评论拦截", () => {
   const f = fixture();
   try {
     assert.equal(f.run(["scorecard", "2", "--post"]).status, 0);
     const comments = JSON.parse(readFileSync(f.comments, "utf8"));
-    assert.match(comments[0].body, /^<!-- run-spec-scorecard:v2 -->/);
+    assert.match(comments[0].body, /^<!-- run-spec-scorecard:v3 -->/);
     assert.equal(f.run(["cleanup", "2", "--dry-run"]).status, 0);
-    comments[0].body = comments[0].body.replace("scorecard:v2", "scorecard:v1").replace('"version": 2', '"version": 1');
-    f.write(f.comments, JSON.stringify(comments));
-    assert.equal(f.run(["cleanup", "2", "--dry-run"]).status, 0);
-    assert.equal(f.run(["scorecard", "2", "--post"]).status, 0);
-    const updated = JSON.parse(readFileSync(f.comments, "utf8"));
-    assert.equal(updated.length, 1);
-    assert.equal(updated[0].id, comments[0].id);
-    assert.match(updated[0].body, /^<!-- run-spec-scorecard:v2 -->/);
-    f.write(f.comments, JSON.stringify([...comments, { ...updated[0], id: 102 }]));
+    const currentBody = comments[0].body;
+    for (const version of [1, 2]) {
+      comments[0].body = currentBody.replace("scorecard:v3", `scorecard:v${version}`).replace('"version": 3', `"version": ${version}`);
+      f.write(f.comments, JSON.stringify(comments));
+      const cleanup = f.run(["cleanup", "2", "--dry-run"]);
+      assert.equal(cleanup.status, 0, cleanup.stderr);
+      assert.match(cleanup.stdout, /评分表检查通过/);
+      assert.equal(f.run(["scorecard", "2", "--post"]).status, 0);
+      const updated = JSON.parse(readFileSync(f.comments, "utf8"));
+      assert.equal(updated.length, 1);
+      assert.equal(updated[0].id, comments[0].id);
+      assert.match(updated[0].body, /^<!-- run-spec-scorecard:v3 -->/);
+    }
+    f.write(f.comments, JSON.stringify([...comments, { ...comments[0], body: currentBody, id: 102 }]));
     assert.equal(f.run(["scorecard", "2", "--post"]).status, 1);
   } finally { f.cleanup(); }
 });
@@ -1004,7 +1003,6 @@ test("共享 sessionId 的 Claude 主日志、sidechain 与重叠快照合并不
       assert.equal(result.status, 0, result.stderr);
       const card = JSON.parse(result.stdout);
       assert.deepEqual(card.usage.mainSession.value, tokens(24, 4, 2));
-      assert.deepEqual(card.usage.subagents.value, tokens(24, 4, 2));
       assert.equal(card.mainSessions.length, 1);
       assert.equal(card.subagents.length, 1);
       assert.equal(card.subagents[0].session, "claude:shared:sidechain:child-a");
@@ -1045,7 +1043,6 @@ for (const framework of ["agy", "codex"]) {
       const result = f.run(["scorecard", "pre-window-child", "--session", main, "--started-at", moment(5), "--cutoff-at", moment(10)]);
       assert.equal(result.status, 0, result.stderr);
       const card = JSON.parse(result.stdout);
-      assert.deepEqual(card.usage.subagents.value, framework === "agy" ? tokens(60, 40, 6) : tokens(60, 30, 6));
       assert.deepEqual(card.subagents.map((child: { session: string }) => child.session), [`${framework}:active-child`]);
       assert.deepEqual(card.subagentAnomalies, []);
       assert.equal(card.userInterventions.value, 1);
@@ -1057,7 +1054,6 @@ for (const framework of ["agy", "codex"]) {
         const dispatchResult = f.run(["scorecard", "dispatch-window", "--record", "window-dispatch", "--started-at", moment(5), "--cutoff-at", moment(10)]);
         assert.equal(dispatchResult.status, 0, dispatchResult.stderr);
         const dispatchCard = JSON.parse(dispatchResult.stdout);
-        assert.deepEqual(dispatchCard.usage.subagents.value, tokens(60, 30, 6));
         assert.deepEqual(dispatchCard.subagents.map((child: { session: string }) => child.session), ["codex:active-child"]);
       }
     } finally { f.cleanup(); }
@@ -1133,7 +1129,6 @@ test("agy 会话 ID、目录、路径解析与子代理去重，缺模型只接�
       assert.equal(card.mainSessions[0].actualModel, null);
       assert.deepEqual(card.mainSessions[0].sources, { actualModel: null, actualEffort: null });
       assert.deepEqual(card.usage.mainSession.value, tokens(28225, 10925, 7));
-      assert.deepEqual(card.usage.subagents.value, tokens(30, 20, 3));
       assert.equal(card.subagents.length, 1);
       assert.equal(card.subagents[0].actualModel, "child-model");
       assert.equal(card.subagents[0].actualEffort, "low");
@@ -1164,7 +1159,6 @@ test("agy 会话 ID、目录、路径解析与子代理去重，缺模型只接�
     assert.deepEqual(recorded.mainSessions[0].sources, { actualModel: "session", actualEffort: "session" });
     rmSync(child);
     const missing = JSON.parse(f.run(["scorecard", "local-agy", "--session", main, "--cutoff-at", moment(30)]).stdout);
-    assert.equal(missing.usage.subagents.value, null);
     assert.match(missing.subagentAnomalies[0], /子代理会话文件不存在/);
   } finally { f.cleanup(); }
 });
@@ -1215,7 +1209,6 @@ test("Codex 窗内累计用量扣窗前基线，原生后代按同一时间窗�
     assert.equal(result.status, 0, result.stderr);
     const card = JSON.parse(result.stdout);
     assert.deepEqual(card.usage.mainSession.value, tokens(100, 50, 10));
-    assert.deepEqual(card.usage.subagents.value, tokens(60, 30, 6));
     assert.equal(card.subagents[0].actualModel, "child-codex");
     assert.equal(card.subagents[0].actualEffort, "medium");
     assert.equal(card.userInterventions.value, 2);
@@ -1472,7 +1465,6 @@ test("cutoffAt 之后启动的子代理即使已在磁盘生成空文件也在�
     const card = JSON.parse(result.stdout);
     assert.deepEqual(card.subagentAnomalies, []);
     assert.deepEqual(card.subagents.map((item: { session: string }) => item.session), ["agy:cutoff-active-child"]);
-    assert.deepEqual(card.usage.subagents.value, tokens(30, 20, 3));
     assert.equal(card.cockpit.totals.complete, true);
   } finally { f.cleanup(); }
 });

@@ -11,6 +11,14 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { claudeTokens, codexSessions, inWindow, jsonLines, lane, minutes, read, sessionTokens, span, sumTokens, timestamp, type CodexSession, type Json, type Span, type TimeWindow, type Tokens } from "./scorecard-records.ts";
 
+const eventUsage = (events: Json[], sidechain: boolean): Tokens | null => {
+  const messages = new Map<string, Json>();
+  for (const event of events) if (event.type === "assistant" && Boolean(event.isSidechain) === sidechain && event.message?.id)
+    messages.set(`${event.sessionId ?? event.sourcePath}:${event.isSidechain ? event.agentId ?? "sidechain" : "main"}:${event.message.id}`, event.message);
+  const parsed = [...messages.values()].map((message) => claudeTokens(message.usage));
+  return parsed.length && parsed.every((value) => value !== null) ? sumTokens(parsed as Tokens[]) : null;
+};
+
 const analyze = (events: Json[]) => {
   const content = (event: Json): Json[] => typeof event.message?.content === "string" ? [{ type: "text", text: event.message.content }] : event.message?.content ?? [];
   const conversationKey = (event: Json) => event.sessionId ?? event.sourcePath;
@@ -46,24 +54,8 @@ const analyze = (events: Json[]) => {
       }
     }
   }
-  const usages = (sidechain: boolean) => {
-    const messages = new Map<string, Json>();
-    for (const event of events) if (event.type === "assistant" && Boolean(event.isSidechain) === sidechain && event.message?.id)
-      messages.set(`${event.sessionId ?? event.sourcePath}:${event.isSidechain ? event.agentId ?? "sidechain" : "main"}:${event.message.id}`, event.message);
-    const parsed = [...messages.values()].map((message) => claudeTokens(message.usage));
-    return parsed.length && parsed.every((value) => value !== null) ? sumTokens(parsed as Tokens[]) : null;
-  };
-  const notifications = new Map<string, number>();
-  for (const event of events) {
-    const text = content(event).filter((item) => item.type === "text").map((item) => item.text ?? "").join("\n");
-    const match = text.match(/subagent_tokens["'\s]*[:=]\s*(\d+)|<subagent_tokens>\s*(\d+)\s*<\/subagent_tokens>/);
-    const count = event.subagent_tokens ?? (match ? Number(match[1] ?? match[2]) : null);
-    if (Number.isSafeInteger(count) && count >= 0 && (event.subagent_tokens !== undefined || /<task-notification>/.test(text)))
-      notifications.set(event.taskId ?? text.match(/<task-id>([^<]+)<\/task-id>/)?.[1] ?? event.uuid ?? text, count);
-  }
-  return { director: lane(director), waiting: lane(waiting), longPause: { count: pauses.length, ...lane(pauses), intervals: pauses }, interventions: main.filter(human).length, mainUsage: usages(false), childUsage: usages(true),
-    hasMain: main.length > 0, hasChildren: events.some((event) => event.isSidechain && event.type === "assistant"),
-    notifiedTokens: notifications.size ? [...notifications.values()].reduce((sum, count) => sum + count, 0) : null,
+  return { director: lane(director), waiting: lane(waiting), longPause: { count: pauses.length, ...lane(pauses), intervals: pauses }, interventions: main.filter(human).length, mainUsage: eventUsage(events, false),
+    hasMain: main.length > 0,
     startedAt: main.map((event) => event.timestamp as string).sort()[0] ?? null,
     cutoffAt: events.map((event) => timestamp(event.timestamp)).filter((at): at is string => at !== null).sort().at(-1) ?? null };
 };
@@ -297,7 +289,7 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
           turns: childEvents.some((event) => event.type === "assistant" && !event.isMeta) ? countEventTurns(childEvents, true) : null,
           spans: subagentSpans(childEvents.filter((event) => !event.isMeta).map((event) => timestamp(event.timestamp))),
         });
-        details.push({ session: sidechainKey, path, child: true, ...attribution("subagent", framework, { actualModel: childModel, actualEffort: childEffort }), sources: { actualModel: childModel ? "session" : null, actualEffort: childEffort ? "session" : null }, usage: analyze(childEvents).childUsage });
+        details.push({ session: sidechainKey, path, child: true, ...attribution("subagent", framework, { actualModel: childModel, actualEffort: childEffort }), sources: { actualModel: childModel ? "session" : null, actualEffort: childEffort ? "session" : null }, usage: eventUsage(childEvents, true) });
       }
     }
     if (framework !== "claude" || data.child || result.hasMain || rows.some((row) => !row.isSidechain && ["user", "assistant"].includes(row.type))) {
@@ -311,7 +303,7 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
       });
       details.push({ session, path, ...attribution(data.child ? "subagent" : "design", framework, { actualModel: model, actualEffort: effort }),
         sources: { actualModel: actual.model ? "session" : model ? "manual" : null, actualEffort: actual.effort ? "session" : effort ? "manual" : null },
-        usage: data.child ? result.childUsage : result.mainUsage, child: data.child, startedAt: result.startedAt, cutoffAt: result.cutoffAt,
+        usage: data.child ? eventUsage(events, true) : result.mainUsage, child: data.child, startedAt: result.startedAt, cutoffAt: result.cutoffAt,
         ...(data.child ? {} : { spans: result.hasMain ? result.director.spans : null }) });
     }
     for (const event of events) byEvent.set(event.uuid, event);
@@ -322,7 +314,6 @@ export const mainSessions = (paths: string[], options: SessionOptions = {}) => {
   const missingMainUsage = mainDetails.some((item) => item.usage === null);
   const usageReason = [...frameworks].map((framework) => ({ claude: "Claude assistant.message.usage", codex: "Codex 累计 token_count 或 thread_token_usage（扣除窗前基线）", pi: "pi assistant.message.usage", agy: "agy PLANNER_RESPONSE input_tokens + cache_read_tokens、output_tokens" })[framework]).join("、");
   return { ...result, startedAt, sessions: mainDetails, children, childFailures, sessionMetrics, frameworks: [...frameworks].sort(), hasMain: result.hasMain && !failures.length,
-    hasChildren: result.hasChildren || childFailures.length > 0, childUsage: childFailures.length || children.some((item) => item.usage === null) ? null : result.childUsage,
     mainUsage: failures.length || missingMainUsage ? null : result.mainUsage,
     usageReason: failures.join("；") || (paths.length ? `主会话缺少完整有效用量：${usageReason || "未知格式"}` : "未提供 --session 主会话"),
     reason: failures.join("；") || (paths.length ? "主会话缺少可解析的事件或有效 usage" : "未提供 --session 主会话") };
