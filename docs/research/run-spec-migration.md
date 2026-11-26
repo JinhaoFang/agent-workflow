@@ -516,3 +516,21 @@ v6 逐项判定，来源见路线图目标 3。「返工后」是 #65—#71 做�
 153. **四个使用仓库要不要装 `verification`**（第 116 条的用过后看，用户 11-17 交给设计负责人判断）：按各仓库全部 issue 里带【实测】的行分类（`gh issue list --search "实测 in:body"`）。PathJX-01：192/243 个 issue 写了【实测】，128 行里用网页、截图、Playwright 驱动的 13 行，用 HTTP 驱动合成栈的 4 行，每个产品功能 spec 都有、每次现写（#283—#285），开发说明已经很全但散在几处 → 装，spec #294 为网页生成验证入口。design-system：47 行里驱动预览页面的集中在 10 月，11 月的工单只用 `ds validate-system` 和构建 → 暂不装，下一个页面类 spec 的【实测】又现写截图办法时再装。video-studio：117 行，近期是视频知识文档，【实测】基本是 `pnpm verify --static`，渲染类一次性 → 不装。organize_management：没有可启动的产物，0 行 → 不装。用过后看：#294 之后 PathJX 的【实测】是否引用功能编号、是否不再现写起栈办法。
 
 154. **设计工单的提交信息要到下一次验证才被检查**：PathJX spec #294 的 #296，设计负责人按第 3 步"`verify` 通过后提交"，提交信息正文含中文（`【实测】`），而 PathJX 要求提交信息全用英文。当时的 `verify` 在提交之前跑，查不到这个提交；PathJX 没有 commit-msg 钩子，`make check` 只在检查 `origin/main..HEAD` 时才看到它。下一张设计工单 #297 的 `verify` 才报 commit-language 失败，两个提交只改信息重写后 `--force-with-lease` 重推集成分支，#296 的验收评论补了更正。另一个失误是设计负责人把 `verify`、`commit`、`push` 用 `;` 串在一起，验证失败后仍然提交并推送了。比较：不加；第 3 步改成"提交后再 `verify`，失败就修改提交"（一句话，对所有仓库成立）；PathJX 加 commit-msg 钩子（video-studio、design-system 都有，PathJX 没有，属于 PathJX 的工程工单）。倾向后两种一起，第二种下个版本定，第三种在 PathJX 开工单前问用户。用过后看：设计工单的提交信息是否在提交当时就被查出。
+
+155. **`land` 移走被忽略的生成媒体时报"文件不存在"，每重跑一次停在不同的文件上**：video-studio spec #147（JinhaoFang/video-studio#147）的工单都会在 worktree 里运行生成器，在 `public/episodes/pure-code-sample/` 下生成底图和混音，这个目录被 git 忽略。证据：
+    - **#149**：合并、推送、复制记录都成功了，最后"移走被忽略的条目"一步失败，连跑四次：
+      - 第 1 次：`public` 列 6 个文件，报 `出错：文件或程序不存在：…worktrees/149/public/episodes/pure-code-sample/background.png`；
+      - 第 2 次：列 4 个，停在 `impact.wav`；
+      - 第 3 次：列 2 个，停在 `mix.wav`；
+      - 第 4 次：列 0 个文件，停在目录 `public/episodes/pure-code-sample/` 本身。
+
+      前三次失败前都先打印"已有同名条目移到历史保留目录：….kept/149/.previous-*"（会话 fb255681，11-25 14:33）。
+    - **#155、#156**：同样失败，设计负责人手动把 worktree 的 `public` 移进保留目录才收尾；评分表 `failures.landStops` 计 11 次。
+
+    读代码看到：`ignored-artifacts.ts` 的清单在移动前当场用 `git ls-files --others --ignored --directory` 加 `leaves()` 算出，按理不会列出不存在的文件。Node 的 `renameSync` 报 ENOENT 时，`error.path` 给的是源路径，但目标的父目录不存在也报同样的错。所以报错里的路径不能说明是源还是目标出了问题，根因没查明。disposableIgnored 的删除用的是不带 `force` 的 `rmSync`，如果清单本身过期，删除也会报同样的错。video-studio 这次给 `disposableIgnored` 配了这个目录作为绕法，有没有用要看下次。比较：先用一个 worktree 复现，并打印 `rename` 的源和目标；移动、删除碰到 ENOENT 时报出源和目标两个路径。倾向先复现。用过后看：video-studio 下一个在 worktree 里生成媒体的 spec，`land` 是否还会停下。
+
+156. **派发日志超过 V8 字符串上限，`accept`、`scorecard`、`cleanup` 报 `ERR_STRING_TOO_LONG`**：video-studio #156 派给 pi（zai-coding-cn/glm-5.4，max），跑了 135 分钟，`.codex-runs/gh-156.log` 有 770 MB。`accept`、`scorecard` 读它时抛 `ERR_STRING_TOO_LONG`，设计负责人每次都先把日志临时改名，跑完再改回来。评分表因此缺了 `overhead.gh-156.inputTokens`（"首次改文件之前缺少完整用量"）。读代码：`scorecard-records.ts` 的 `read()` 和 `accept.ts` 都用 `readFileSync(file, "utf8")` 把整个文件读成一个字符串，超过上限（约 5 亿字符）就失败。同一张工单的输入 token 是 8510 万，同类工单 agy 只有 1197 万（JinhaoFang/video-studio#157），日志为什么这么大没查，可能是 pi 把读过的图片原样写进了日志。比较：读用量时按行流式读；派发层限制或截断单条事件里的大字段；两者都做。倾向流式读（能机械判断，进脚本），截断要先查清日志里是什么。用过后看：下一次长时间的看图工单，日志大小和这三个子命令。
+
+157. **设计工单的过程记录在上下文压缩后丢失**：video-studio #153（镜头 1，设计负责人亲手做）自查了 6 轮，跨了约 6 小时、3 次上下文压缩，每轮记录攒到收尾才写进工单。第 2 轮的"最不像的三处"只剩一条，评论里照实写了"另外两处当时没有写进提交或评论，这里不补写"（JinhaoFang/video-studio#153）。run-spec 第 3 步对 `role:design` 的要求是做完、验证、提交、验收，没有说过程中的记录什么时候写。比较：不加；第 3 步加一句"多轮的设计工单，每轮的记录当轮评论到工单，会话会压缩"；写进思路 4 的例子。倾向第二种。用过后看：下一张多轮的设计工单，每轮记录是否当轮就在工单上。
+
+158. **`accept` 把「提交」字段里所有像提交号的字都当成要核对的提交**：video-studio #150 的验收评论在括号里提到了 rebase 前的旧提交号，`accept` 核对时报它不在远端集成分支上，去掉才通过（会话 fb255681，11-25 14:08）。`accept --help` 已经写明"核对「提交」字段每个至少 7 位的十六进制提交号"，这是用法失误，不是脚本问题。倾向不加；同类失误再出现再看。
